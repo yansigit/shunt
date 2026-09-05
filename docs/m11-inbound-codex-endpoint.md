@@ -50,15 +50,33 @@ When opted in, shunt registers three routes, all mapping to one passthrough hand
 
 | Method | Path |
 | :-- | :-- |
-| `POST` | `/backend-api/codex/responses` |
-| `POST` | `/responses` |
-| `POST` | `/v1/responses` |
+| `GET` (WebSocket), `POST` | `/backend-api/codex/responses` |
+| `GET` (WebSocket), `POST` | `/responses` |
+| `GET` (WebSocket), `POST` | `/v1/responses` |
 
 Three Responses paths exist because the Codex CLI always appends `/responses` to whatever `base_url` it is
 pointed at: a base ending in `/backend-api/codex` produces `/backend-api/codex/responses` (the
 literal path the real ChatGPT backend uses), a base ending in `/v1` produces `/v1/responses`, and
 a bare base produces `/responses`. Registering all three lets an operator use either CLI setup
 style (§ "Codex CLI setup" below) without shunt needing to know which one a given client chose.
+
+### WebSocket transport
+
+An authenticated `GET` WebSocket upgrade is available on the same three paths. Authentication is
+checked before the `101 Switching Protocols` response. Each socket permits one active turn:
+`response.create` starts a turn through the same account-pool dispatcher as HTTP, a replacement
+`response.create` cancels the prior upstream body, and closing the socket cancels the active turn.
+`response.processed` is an acknowledgement no-op. A `response.create` with `generate: false` is
+answered locally with empty-id `response.created` and `response.completed` frames and makes no
+upstream request.
+
+Successful upstream SSE `data:` payloads are forwarded as WebSocket text without JSON
+reserialization through the first `response.completed`, `response.failed`, or
+`response.incomplete`. Client messages and individual upstream SSE events are limited to 4 MiB;
+the internal output queue holds one frame and every send is awaited. Premature EOF, malformed SSE
+JSON, and upstream failures become standalone `type: "error"` frames. Their optional `headers`
+object contains only Responses-safe request IDs, retry/rate-limit metadata, and `x-codex-*`
+metadata—never cookies, credentials, hop-by-hop, or Shunt-owned headers.
 
 ### Client analytics sink
 
@@ -212,11 +230,11 @@ failover, no `x-shunt-account` header — mirroring M10's existing single-accoun
 outbound path. A user with one Codex login therefore works out of the box the moment
 `[server.codex_endpoint]` is set, with no account configuration at all.
 
-## Transport: HTTP/SSE only
+## Transport: HTTP/SSE and inbound WebSocket
 
-Even if the configured provider sets `websocket = true`, this endpoint always uses the HTTP path.
-The experimental [Codex WebSocket v2 transport](codex-websocket-v2-protocol.md) is out of scope for
-M11 and is tracked as a follow-up (see below).
+HTTP `POST` remains the byte-for-byte passthrough specified by M11. WebSocket `GET` is an
+additional inbound transport and does not depend on the target provider's outbound
+`websocket = true` setting; its upstream turn still uses the existing HTTP/SSE account-pool path.
 
 ## Reload behavior
 
@@ -269,9 +287,8 @@ shunt this way — shunt supplies the account from its own pool, not the CLI's l
 
 ## Out of scope / follow-up
 
-- **WebSocket transport.** This endpoint is HTTP/SSE-only even when the target provider has
-  `websocket = true`; wiring the inbound path onto the
-  [Codex WebSocket v2 transport](codex-websocket-v2-protocol.md) is a separate follow-up.
+- **JSON-success synthesis.** The inbound WebSocket bridge currently expects successful live turns
+  to return Responses SSE. Synthesizing event sequences from successful JSON responses is deferred.
 - **Model-based provider selection.** The endpoint is pinned to one provider by config; routing
   inbound Responses requests to different providers by `model` (mirroring `[[routes]]`) is not
   implemented and would need its own design (this endpoint has no Anthropic-shaped request to key
