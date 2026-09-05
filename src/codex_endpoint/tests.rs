@@ -221,3 +221,113 @@ fn is_none_without_a_session_id() {
     assert_eq!(pool_sticky_key(Some("alice"), None), None);
     assert_eq!(pool_sticky_key(None, None), None);
 }
+
+#[cfg(test)]
+mod ws_tests {
+    use crate::{
+        config::{CodexEndpointConfig, Config, InboundAuthConfig},
+        server::build_router,
+    };
+    use axum::{
+        body::{to_bytes, Body},
+        http::{Request, StatusCode},
+    };
+    use tower::ServiceExt;
+
+    fn test_config_with_codex_endpoint(auth_header: &str, token: &str) -> (Config, String) {
+        let env = format!("SHUNT_TEST_WS_AUTH_{}", std::process::id());
+        std::env::set_var(&env, format!("tester:{token}"));
+        let mut config = Config::default();
+        config.server.auth = Some(InboundAuthConfig {
+            header: auth_header.to_string(),
+            tokens_env: env.clone(),
+        });
+        config.server.codex_endpoint = Some(CodexEndpointConfig {
+            provider: "codex".to_string(),
+        });
+        (config, env)
+    }
+
+    #[tokio::test]
+    async fn unauthorized_get_returns_401_openai_error_before_upgrade() {
+        let (config, env) = test_config_with_codex_endpoint("x-shunt-token", "secret123");
+        let (router, _shared, _state) = build_router(config).unwrap();
+
+        for path in crate::codex_endpoint::PATHS {
+            let req = Request::builder()
+                .uri(path)
+                .method("GET")
+                .header("connection", "upgrade")
+                .header("upgrade", "websocket")
+                .header("sec-websocket-version", "13")
+                .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+                .body(Body::empty())
+                .unwrap();
+
+            let response = router.clone().oneshot(req).await.unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "path: {path}");
+
+            let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert!(body.get("error").is_some());
+            assert_eq!(body["error"]["type"], "authentication_error");
+        }
+        std::env::remove_var(&env);
+    }
+
+    #[tokio::test]
+    async fn authorized_get_upgrades_to_websocket_101() {
+        let (config, env) = test_config_with_codex_endpoint("x-shunt-token", "secret123");
+        let (router, _shared, _state) = build_router(config).unwrap();
+
+        for path in crate::codex_endpoint::PATHS {
+            let req = Request::builder()
+                .uri(path)
+                .method("GET")
+                .header("authorization", "Bearer secret123")
+                .header("connection", "upgrade")
+                .header("upgrade", "websocket")
+                .header("sec-websocket-version", "13")
+                .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+                .body(Body::empty())
+                .unwrap();
+
+            let response = router.clone().oneshot(req).await.unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::SWITCHING_PROTOCOLS,
+                "path: {path}"
+            );
+            assert_eq!(
+                response
+                    .headers()
+                    .get("upgrade")
+                    .and_then(|v| v.to_str().ok()),
+                Some("websocket")
+            );
+        }
+        std::env::remove_var(&env);
+    }
+
+    #[tokio::test]
+    async fn disabled_codex_endpoint_returns_404_on_get() {
+        let mut config = Config::default();
+        config.server.codex_endpoint = None;
+        let (router, _shared, _state) = build_router(config).unwrap();
+
+        for path in crate::codex_endpoint::PATHS {
+            let req = Request::builder()
+                .uri(path)
+                .method("GET")
+                .header("connection", "upgrade")
+                .header("upgrade", "websocket")
+                .header("sec-websocket-version", "13")
+                .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+                .body(Body::empty())
+                .unwrap();
+
+            let response = router.clone().oneshot(req).await.unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "path: {path}");
+        }
+    }
+}
