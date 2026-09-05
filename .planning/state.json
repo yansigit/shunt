@@ -1,0 +1,53 @@
+{
+  "contract": "1.0.0",
+  "flavor": "core",
+  "milestone": null,
+  "phases": [
+    {
+      "number": "1",
+      "name": "Inbound Responses WebSocket",
+      "status": "pending"
+    },
+    {
+      "number": "2",
+      "name": "Native Responses Routing",
+      "status": "pending"
+    },
+    {
+      "number": "3",
+      "name": "Quota-Aware Resilience",
+      "status": "pending"
+    },
+    {
+      "number": "4",
+      "name": "Native Compaction",
+      "status": "pending"
+    },
+    {
+      "number": "5",
+      "name": "Anthropic Translation",
+      "status": "pending"
+    },
+    {
+      "number": "6",
+      "name": "Capability-Aware Fallback",
+      "status": "pending"
+    },
+    {
+      "number": "7",
+      "name": "Collaboration Preservation",
+      "status": "pending"
+    },
+    {
+      "number": "8",
+      "name": "Bounded Shutdown",
+      "status": "pending"
+    }
+  ],
+  "next": {
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 1 of 8 · 0% · executing"
+  },
+  "updated_at": "2026-09-05T22:54:30.718Z"
+}
