@@ -7,13 +7,13 @@
 
 ### Inbound Responses WebSocket
 
-- [ ] **WS-01**: A client can upgrade any configured inbound Responses path to WebSocket, and configured client authentication is enforced before the upgrade succeeds.
-- [ ] **WS-02**: A `response.create` frame with `generate: false` completes locally with deterministic `response.created` and `response.completed` frames and causes no upstream request.
-- [ ] **WS-03**: A normal `response.create` frame is forwarded through the existing ChatGPT OAuth account-pool path as a streaming Responses request, while `response.processed` acknowledgements are harmless no-ops.
-- [ ] **WS-04**: Upstream SSE data payloads are delivered as byte-faithful WebSocket text frames through the first `response.completed`, `response.failed`, or `response.incomplete` terminal event.
-- [ ] **WS-05**: Handshake, gateway, upstream, malformed-stream, and premature-EOF failures use the correct HTTP or WebSocket OpenAI Responses error envelope and expose only safe response headers.
-- [ ] **WS-06**: A replacement turn or disconnected socket promptly cancels the active upstream turn, releases its resources, and cannot leak stale frames into a newer turn.
-- [ ] **WS-07**: Client frames, SSE events, and downstream delivery are explicitly bounded and respect backpressure without buffering an upstream SSE response.
+- [x] **WS-01**: A client can upgrade any configured inbound Responses path to WebSocket, and configured client authentication is enforced before the upgrade succeeds.
+- [x] **WS-02**: A `response.create` frame with `generate: false` completes locally with deterministic `response.created` and `response.completed` frames and causes no upstream request.
+- [x] **WS-03**: A normal `response.create` frame is forwarded through the existing ChatGPT OAuth account-pool path as a streaming Responses request, while `response.processed` acknowledgements are harmless no-ops.
+- [x] **WS-04**: Upstream SSE data payloads are delivered as byte-faithful WebSocket text frames through the first `response.completed`, `response.failed`, or `response.incomplete` terminal event.
+- [x] **WS-05**: Handshake, gateway, upstream, malformed-stream, and premature-EOF failures use the correct HTTP or WebSocket OpenAI Responses error envelope and expose only safe response headers.
+- [x] **WS-06**: A replacement turn or disconnected socket promptly cancels the active upstream turn, releases its resources, and cannot leak stale frames into a newer turn.
+- [x] **WS-07**: Client frames, SSE events, and downstream delivery are explicitly bounded and respect backpressure without buffering an upstream SSE response.
 
 ### Protocol Conformance
 
@@ -70,13 +70,13 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WS-01 | Phase 1 | Pending |
-| WS-02 | Phase 1 | Pending |
-| WS-03 | Phase 1 | Pending |
-| WS-04 | Phase 1 | Pending |
-| WS-05 | Phase 1 | Pending |
-| WS-06 | Phase 1 | Pending |
-| WS-07 | Phase 1 | Pending |
+| WS-01 | Phase 1 | Complete |
+| WS-02 | Phase 1 | Complete |
+| WS-03 | Phase 1 | Complete |
+| WS-04 | Phase 1 | Complete |
+| WS-05 | Phase 1 | Complete |
+| WS-06 | Phase 1 | Complete |
+| WS-07 | Phase 1 | Complete |
 | CONF-01 | Phase 1 | Pending |
 | CONF-02 | Phase 1 | Pending |
 | ROUTE-01 | Phase 2 | Pending — approval gate |
@@ -92,6 +92,7 @@
 | OPS-01 | Phase 8 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 20 total
 - Mapped to phases: 20
 - Unmapped: 0 ✓
