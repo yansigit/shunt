@@ -224,6 +224,8 @@ fn is_none_without_a_session_id() {
 
 #[cfg(test)]
 mod ws_tests {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
     use crate::{
         config::{CodexEndpointConfig, Config, InboundAuthConfig},
         server::build_router,
@@ -233,9 +235,16 @@ mod ws_tests {
         http::{Request, StatusCode},
     };
     use tower::ServiceExt;
+    use tungstenite::client::IntoClientRequest;
+
+    static AUTH_ENV_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     fn test_config_with_codex_endpoint(auth_header: &str, token: &str) -> (Config, String) {
-        let env = format!("SHUNT_TEST_WS_AUTH_{}", std::process::id());
+        let env = format!(
+            "SHUNT_TEST_WS_AUTH_{}_{}",
+            std::process::id(),
+            AUTH_ENV_COUNTER.fetch_add(1, Ordering::Relaxed)
+        );
         std::env::set_var(&env, format!("tester:{token}"));
         let mut config = Config::default();
         config.server.auth = Some(InboundAuthConfig {
@@ -279,33 +288,28 @@ mod ws_tests {
     async fn authorized_get_upgrades_to_websocket_101() {
         let (config, env) = test_config_with_codex_endpoint("x-shunt-token", "secret123");
         let (router, _shared, _state) = build_router(config).unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
 
         for path in crate::codex_endpoint::PATHS {
-            let req = Request::builder()
-                .uri(path)
-                .method("GET")
-                .header("authorization", "Bearer secret123")
-                .header("connection", "upgrade")
-                .header("upgrade", "websocket")
-                .header("sec-websocket-version", "13")
-                .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
-                .body(Body::empty())
+            let mut request = format!("ws://{address}{path}")
+                .into_client_request()
                 .unwrap();
-
-            let response = router.clone().oneshot(req).await.unwrap();
+            request
+                .headers_mut()
+                .insert("authorization", "Bearer secret123".parse().unwrap());
+            let (socket, response) = tokio_tungstenite::connect_async(request).await.unwrap();
             assert_eq!(
                 response.status(),
                 StatusCode::SWITCHING_PROTOCOLS,
                 "path: {path}"
             );
-            assert_eq!(
-                response
-                    .headers()
-                    .get("upgrade")
-                    .and_then(|v| v.to_str().ok()),
-                Some("websocket")
-            );
+            drop(socket);
         }
+        server.abort();
         std::env::remove_var(&env);
     }
 
