@@ -17,8 +17,8 @@
 
 ### Protocol Conformance
 
-- [ ] **CONF-01**: Focused Rust fixtures cover OpenCodex-proven warmup, frame splitting, CRLF/multiline SSE, terminal variants, malformed input, premature EOF, and safe-header behavior without duplicating existing Shunt tests.
-- [ ] **CONF-02**: End-to-end tests cover authenticated upgrade, all registered inbound paths, live event delivery, replacement/disconnect cancellation, and disabled-endpoint behavior.
+- [x] **CONF-01**: Focused Rust fixtures cover OpenCodex-proven warmup, frame splitting, CRLF/multiline SSE, terminal variants, malformed input, premature EOF, and safe-header behavior without duplicating existing Shunt tests.
+- [x] **CONF-02**: End-to-end tests cover authenticated upgrade, all registered inbound paths, live event delivery, replacement/disconnect cancellation, and disabled-endpoint behavior.
 
 ### Native Responses Routing
 
@@ -77,8 +77,8 @@
 | WS-05 | Phase 1 | Complete |
 | WS-06 | Phase 1 | Complete |
 | WS-07 | Phase 1 | Complete |
-| CONF-01 | Phase 1 | Pending |
-| CONF-02 | Phase 1 | Pending |
+| CONF-01 | Phase 1 | Complete |
+| CONF-02 | Phase 1 | Complete |
 | ROUTE-01 | Phase 2 | Pending — approval gate |
 | ROUTE-02 | Phase 2 | Pending — approval gate |
 | RES-01 | Phase 3 | Pending |

@@ -36,8 +36,8 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
 
 - [x] 01-01-PLAN.md
 - [x] 01-02-PLAN.md
-- [ ] 01-03-PLAN.md
-- [ ] 01-04-PLAN.md
+- [x] 01-03-PLAN.md
+- [x] 01-04-PLAN.md
 
 ### Phase 2: Native Responses Routing
 
@@ -133,7 +133,7 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Inbound Responses WebSocket | 2/4 | In Progress|  |
+| 1. Inbound Responses WebSocket | 4/4 | In Progress|  |
 | 2. Native Responses Routing | 0/TBD | Approval gated | - |
 | 3. Quota-Aware Resilience | 0/TBD | Not started | - |
 | 4. Native Compaction | 0/TBD | Not started | - |
