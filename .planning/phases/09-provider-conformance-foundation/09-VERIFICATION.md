@@ -1,9 +1,10 @@
 ---
 phase: 09-provider-conformance-foundation
-verified: 2026-09-06T22:43:33Z
+verified: 2026-09-06T22:49:10Z
 status: passed
 score: 8/8 must-haves verified
 covered_files:
+  - .planning/PROJECT.md
   - .planning/REQUIREMENTS.md
   - .planning/ROADMAP.md
   - .planning/STATE.md
@@ -21,6 +22,7 @@ covered_files:
   - .planning/phases/09-provider-conformance-foundation/09-REVIEW-FIX.md
   - .planning/phases/09-provider-conformance-foundation/09-REVIEW.md
   - .planning/phases/09-provider-conformance-foundation/09-VALIDATION.md
+  - .planning/state.json
   - docs/m1-responses-translation.md
   - site/src/content/docs/ja/reference/configuration.md
   - site/src/content/docs/ja/reference/troubleshooting.md
@@ -51,9 +53,15 @@ covered_files:
   - tests/passthrough.rs
   - tests/responses_translate.rs
   - tests/retry.rs
-covered_digest: "v1:sha256:7a3723a3fb67e6863622b7ef64ea12ef3158ed05668dadb61813472c96539c2d"
+covered_digest: "v1:sha256:4b3a4d0e6148bff2bb5b27694a9f68b8eb91fdefc0eb6832e6040e5b68640b50"
 behavior_unverified: 0
 overrides_applied: 0
+re_verification:
+  previous_status: passed
+  previous_score: 8/8
+  gaps_closed: []
+  gaps_remaining: []
+  regressions: []
 decision_coverage:
   honored: 16
   total: 16
@@ -64,9 +72,9 @@ human_verification: []
 # Phase 9: Provider Conformance Foundation Verification Report
 
 **Phase Goal:** Operators can trust that existing providers and every later compatibility slice share explicit, testable safety and preservation guarantees.
-**Verified:** 2026-09-06T22:43:33Z
+**Verified:** 2026-09-06T22:49:10Z
 **Status:** passed
-**Re-verification:** No — initial verification
+**Re-verification:** Yes — after Phase 9 transition metadata commit `fc3ab06`; implementation source and tests are unchanged from the previously verified source HEAD.
 
 ## Goal Achievement
 
@@ -214,9 +222,9 @@ N/A — infrastructure/foundation phase with no user-facing elements. Every stat
 
 ### Gaps Summary
 
-No blocking gaps, behavior-unverified truths, or human-verification items remain. Phase 9 achieves its provider-conformance foundation goal and is ready for transition. The absent local site dependency install is recorded as a verification-environment limitation, not an implementation gap; Rust code gates and Markdown semantic review are clean.
+No blocking gaps, behavior-unverified truths, or human-verification items remain. Commit `fc3ab06` changes only Phase 9 completion/transition metadata (`.planning/PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `STATE.md`, and `state.json`); no source, test, documentation surface, dependency, or Phase 10 implementation changed after the prior final gates. Phase 9 achieves its provider-conformance foundation goal and has transitioned cleanly. The absent local site dependency install is recorded as a verification-environment limitation, not an implementation gap; Rust code gates and Markdown semantic review remain valid.
 
 ---
 
-_Verified: 2026-09-06T22:43:33Z_
+_Verified: 2026-09-06T22:49:10Z_
 _Verifier: Codex (gsd-verifier)_
