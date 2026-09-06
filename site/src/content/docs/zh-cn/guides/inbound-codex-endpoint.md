@@ -14,6 +14,7 @@ description: 把 OpenAI Codex CLI 本身指向 shunt,并让它在 ChatGPT/Codex 
 ```toml
 [server.codex_endpoint]   # all keys optional; default shown
 provider = "codex"        # must be a chatgpt_oauth provider
+collaboration = false     # translated V2 collaboration bridge is opt-in
 ```
 
 ```bash
@@ -108,7 +109,9 @@ name = "main"
 - **压缩的请求体直接透传。**当前的 Codex 版本在与 ChatGPT 后端通信时会用 zstd 压缩请求体,这也包括指向本端点的 `chatgpt_base_url` 形态。这些字节及其 `content-encoding: zstd` 头部会被原样转发;shunt 只是额外在内存中解码一份副本,用来读取请求的 `model` 以供指标、日志和 span 使用。shunt 无法解码的请求体照样能正常中继 —— 只有 `model` 标签会退化为 `unknown`,并附带一条说明原因的警告。
 - **精确模型路由。** 唯一的精确声明可以选择一个 Responses 原生或 Anthropic Messages 提供方。仅前缀、非精确和未匹配模型回退到固定的原生提供方；歧义声明会在上游请求前拒绝。
 - **Anthropic 转换严格且有界。** 支持 instructions、文本和 URL/data-URL 图片、函数工具/调用/结果、tool choice、生成控制和 reasoning effort。HTTP 与 WebSocket 共用同一 JSON/SSE 转换器。`end_turn`、`stop_sequence`、`tool_use` 映射为 completed，`max_tokens` 映射为 incomplete；畸形输出、未知停止原因、流错误和提前 EOF 映射为 failed。usage 包含缓存读取/写入输入 token。
+- **Collaboration 必须显式启用。** `collaboration = true` 允许精确 Anthropic 路由桥接已声明的 V2 `collaboration` 工具和明文 `agent_message` task 信封。获准调用会在 JSON 与 SSE 响应中恢复为 collaboration namespace。无论此开关如何，原生 Responses 流量都保持逐字节不透明。
 - **有损输入在分发前失败。** `previous_response_id`、加密 reasoning/compaction 状态、hosted/custom 工具、远程文件 id、畸形工具关系和不支持字段不会被猜测转换。原生 Responses 和 compaction 不受影响。
+- **没有隐藏恢复。** 只有密文的转换 agent task 会在解析凭据或网络分发前失败。shunt 不会解密、缓存、持久化或发起计费恢复请求；请提供明文历史或使用原生 Responses 路由。
 - **耗尽时逐字中继。**如果所有池化账户都已尝试过,并且至少收到过一个上游响应,shunt 会原样中继最后那个响应,而不是把它重新塑形成 Anthropic 风格的错误 —— 因为 Responses 客户端期待的是它从真实 ChatGPT 后端会得到的原始形态。
 - **配额感知轮换是有界的。** 单纯的 `429` 属于临时限流。只有当有界的响应体包含精确的结构化硬配额证据（`usage_limit_exceeded` 或 `insufficient_quota`）时，shunt 才会将账号抑制有限且内部有上限的冷却时间；格式错误、有歧义、超大或中断的响应体保持未验证状态。有效的 `Retry-After` 秒数（包括小数并安全向上取整）和 HTTP 日期值在有限上限内生效。候选账号耗尽时，最终的上游状态、响应体和安全的 `Retry-After` 元数据保持可见。账号轮换仅在输出开始前有效；无关的路由级故障转移行为保持不变。
 - **原生 compaction 保持不透明。** 仅限 HTTP 的 `POST /v1/responses/compact` 使用相同的认证、请求限制、原生路由判定和账号池，将正文与延续状态逐字节转发到已验证的 ChatGPT/Codex 或官方 OpenAI compact 端点。格式错误、存在歧义、需要转换或不受支持的目标会在网络分发前被拒绝。shunt 不会解密延续状态、合成摘要或存储请求历史。

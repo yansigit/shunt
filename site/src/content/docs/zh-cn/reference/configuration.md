@@ -186,6 +186,8 @@ headers = { "x-api-key" = "..." }
 
 此表启用入站 OpenAI Responses 透传，让 Codex CLI 将 shunt 作为 `base_url`。只有唯一的精确 `[models.upstream_model]` 或 `[[routes]]` 才能选择兼容的 `kind = "responses"` 提供方并覆盖固定提供方。仅前缀、非精确和无匹配模型回退到固定的 `[server.codex_endpoint].provider`;存在歧义、需要转换/非 Responses 或改写模型的声明会在分发前拒绝。正文保持不变，输出开始后不会切换提供方。
 
+`provider = "codex"` 选择默认的 `chatgpt_oauth` 提供方。`collaboration = false` 是默认值；设为 `true` 后，精确 Anthropic 路由可以桥接已声明的 V2 collaboration 工具与明文 agent task。原生 Responses 路由仍保持不透明。只有密文的 task 与 provider 延续状态仍会在分发前失败；shunt 不执行解密、缓存、持久化或计费恢复调用。
+
 ## `[server.usage]`(可选)
 
 存在此表会注册面向客户端的 `GET /usage`,返回共享账户池配额状态的**净化聚合**视图,使非管理员客户端无需管理界面也能预判限流([端点详情](/zh-cn/reference/endpoints/))。没有此表时,该路由不会注册。

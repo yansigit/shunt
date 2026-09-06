@@ -14,6 +14,7 @@ description: OpenAI の Codex CLI 自身を shunt へ向け、ChatGPT/Codex OAut
 ```toml
 [server.codex_endpoint]   # all keys optional; default shown
 provider = "codex"        # must be a chatgpt_oauth provider
+collaboration = false     # translated V2 collaboration bridge is opt-in
 ```
 
 ```bash
@@ -108,7 +109,9 @@ name = "main"
 - **圧縮されたリクエストボディはそのまま通過。** 現行の Codex リリースは ChatGPT バックエンドと通信する際にリクエストボディを zstd 圧縮します。これには、このエンドポイントへ向けた `chatgpt_base_url` の形状も含まれます。バイト列とその `content-encoding: zstd` ヘッダーは変更されずに転送されます。shunt は加えて、メトリクス・ログ・スパン用にリクエストの `model` を読み取るためだけに、メモリ上でコピーをデコードします。shunt がデコードできないボディでも中継自体は問題なく行われ、劣化するのは `model` ラベルが `unknown` になることだけで、理由を示す警告が出ます。
 - **厳密一致のモデルルーティング。** 一意な厳密一致宣言は Responses ネイティブまたは Anthropic Messages のプロバイダーを 1 つ選べます。プレフィックスのみ・非厳密・未一致は固定ネイティブプロバイダーへフォールバックし、曖昧な宣言は上流送信前に拒否します。
 - **Anthropic 変換は厳格かつ有界です。** instructions、テキストと URL/data-URL 画像、関数ツール・呼び出し・結果、tool choice、生成制御、reasoning effort を扱います。HTTP と WebSocket は同じ JSON/SSE 変換器を使います。`end_turn`・`stop_sequence`・`tool_use` は completed、`max_tokens` は incomplete、不正出力・未知の終了理由・ストリームエラー・早期 EOF は failed です。cache read/write の入力トークンも usage に含みます。
+- **Collaboration は明示的に有効化します。** `collaboration = true` にすると、厳密一致の Anthropic ルートが宣言済み V2 `collaboration` ツールと平文 `agent_message` task エンベロープを橋渡しします。許可された呼び出しは JSON と SSE レスポンスで collaboration namespace に復元されます。ネイティブ Responses トラフィックはフラグに関係なくバイト単位で不透明なままです。
 - **損失を伴う入力は送信前に失敗します。** `previous_response_id`、暗号化 reasoning/compaction 状態、hosted/custom tool、remote file id、不正な tool 関係、未対応フィールドは推測せず拒否します。ネイティブ Responses と compaction は影響を受けません。
+- **隠れたリカバリーはありません。** 暗号文だけの変換 agent task は認証情報解決やネットワーク送信の前に失敗します。shunt は復号・キャッシュ・永続化・課金リカバリー呼び出しを行いません。平文履歴を渡すか、ネイティブ Responses ルートを使ってください。
 - **枯渇時はそのまま中継。** プールされたすべてのアカウントを試行し、少なくとも 1 つの上流レスポンスが返っていた場合、shunt はその最後のレスポンスを Anthropic 形式のエラーへ作り直すのではなく、変更せずに中継します。Responses のクライアントは、実際の ChatGPT バックエンドから受け取るはずの生の形を期待するためです。
 - **クォータを意識したローテーションには上限があります。** 単独の `429` は一時的なスロットリングです。shunt は、限定されたレスポンス本文に正確な構造化ハードクォータの証拠（`usage_limit_exceeded` または `insufficient_quota`）が含まれている場合のみ、アカウントを有限の内部クールダウンに抑制します。不正、曖昧、サイズ超過、または中断された本文は未検証のままです。有効な `Retry-After` のデルタ秒（小数を安全に切り上げ）と HTTP 日付値は有限の上限内で尊重されます。候補を使い切った場合、最終的な上流ステータス、本文、安全な `Retry-After` メタデータがそのまま残ります。アカウントのローテーションは出力開始前のみ可能であり、無関係なルートレベルのフェイルオーバー動作は変更されません。
 - **ネイティブ compaction は不透明なままです。** HTTP 専用 `POST /v1/responses/compact` は同じ認証、リクエスト上限、ネイティブルート判定、アカウントプールを使い、本文と継続状態を検証済みの ChatGPT/Codex または公式 OpenAI compact エンドポイントへバイト単位で転送します。不正、曖昧、変換が必要、または未対応の対象はネットワーク送信前に拒否されます。shunt は継続状態を復号せず、要約を合成せず、リクエスト履歴を保存しません。

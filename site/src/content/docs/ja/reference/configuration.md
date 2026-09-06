@@ -186,6 +186,8 @@ headers = { "x-api-key" = "..." }
 
 このテーブルは、Codex CLI が shunt を `base_url` として使うためのインバウンド OpenAI Responses パススルーを有効にします。唯一の厳密一致 `[models.upstream_model]` または `[[routes]]` だけが、互換性のある `kind = "responses"` プロバイダーを選択して固定プロバイダーを上書きできます。プレフィックスのみ、非厳密、未一致のモデルは固定された `[server.codex_endpoint].provider` へフォールバックし、曖昧、変換/非 Responses、モデル書き換えの宣言はディスパッチ前に拒否されます。本文は変更せず、出力開始後のプロバイダー移行はありません。
 
+`provider = "codex"` は既定の `chatgpt_oauth` プロバイダーを選びます。`collaboration = false` が既定値で、`true` にすると厳密一致の Anthropic ルートが宣言済み V2 collaboration ツールと平文 agent task を橋渡しします。ネイティブ Responses ルートは不透明なままです。暗号文だけの task と provider 継続状態は引き続き送信前に失敗し、shunt は復号・キャッシュ・永続化・課金リカバリー呼び出しを行いません。
+
 ## `[server.usage]`（オプション）
 
 このテーブルの存在により、共有アカウントプールのクォータ状態をサニタイズして集約した `GET /usage` が登録されます。管理サーフェスを使わずに、クライアントがスロットリングを予測するためのエンドポイントです（[エンドポイントの詳細](/ja/reference/endpoints/)）。テーブルがなければ、ルートは登録されません。

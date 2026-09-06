@@ -283,9 +283,12 @@ By default, `/device` ignores forwarding headers and rate-limits the socket peer
 
 Presence of this table enables an inbound OpenAI Responses passthrough so the **Codex CLI** can point its `base_url` at shunt and be load-balanced across a ChatGPT/Codex OAuth account pool ([details](/guides/inbound-codex-endpoint/)). When the table is absent, none of those routes are registered.
 
+`provider = "codex"` selects the default `chatgpt_oauth` provider. `collaboration = false` is the default; setting it to `true` allows exact Anthropic routes to bridge declared V2 collaboration tools and plaintext agent tasks. Native Responses routes remain opaque. Translated ciphertext-only tasks and provider continuation state still fail before dispatch; shunt does not decrypt, cache, persist, or make billable recovery calls.
+
 | Key | Default | Meaning |
 | :-- | :-- | :-- |
 | `provider` | `codex` | Configured upstream name to serve inbound requests; must use `auth = "chatgpt_oauth"` |
+| `collaboration` | `false` | Allow exact Anthropic routes to bridge declared V2 collaboration tools and plaintext agent tasks; native routes remain opaque |
 
 Registers `POST /backend-api/codex/responses`, `POST /responses`, and `POST /v1/responses` — all served by the named provider's account pool. When `[server.auth]` is configured they require a valid client token (like the other injected-credential routes); with no `[server.auth]` they are **open** to anyone who can reach them while still injecting the operator's Codex credential, so gate them on anything beyond loopback. Unlike `/v1/messages`, the request is not translated to or from Anthropic Messages; it is relayed to and from the upstream verbatim.
 

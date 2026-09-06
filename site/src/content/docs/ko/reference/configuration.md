@@ -187,9 +187,12 @@ headers = { "x-api-key" = "..." }
 
 이 테이블은 **Codex CLI**가 `base_url`을 shunt로 지정하고 ChatGPT/Codex OAuth 계정 풀 사이에서 load balancing될 수 있도록 inbound OpenAI Responses passthrough를 활성화합니다([상세](/ko/guides/inbound-codex-endpoint/)). 테이블이 없으면 해당 route는 등록되지 않습니다.
 
+`provider = "codex"`는 기본 `chatgpt_oauth` 프로바이더를 선택합니다. `collaboration = false`가 기본값이며, `true`로 설정하면 정확한 Anthropic 경로가 선언된 V2 collaboration 도구와 평문 agent task를 연결합니다. 네이티브 Responses 경로는 불투명하게 유지됩니다. 암호문 전용 task와 provider 연속 상태는 계속 전송 전에 실패하며, shunt는 복호화·캐시·영속화·과금 복구 호출을 하지 않습니다.
+
 | 키 | 기본값 | 의미 |
 | :-- | :-- | :-- |
 | `provider` | `codex` | inbound request를 처리할 `[providers.<name>]` 테이블 이름. `auth = "chatgpt_oauth"`를 사용해야 함 |
+| `collaboration` | `false` | 정확한 Anthropic 경로에서 선언된 V2 collaboration 도구와 평문 agent task를 연결함. 네이티브 경로는 불투명하게 유지 |
 
 `POST /backend-api/codex/responses`, `POST /responses`, `POST /v1/responses`를 등록하며, 모두 지정한 provider의 account pool이 처리합니다. `[server.auth]`가 있으면 다른 server-side credential route처럼 유효한 client token을 요구합니다. `[server.auth]`가 없으면 operator의 Codex credential을 주입하면서도 접근 가능한 누구에게나 **open** 상태이므로 loopback 외 환경에서는 반드시 보호하세요. `/v1/messages`와 달리 request는 Anthropic Messages로 변환하거나 그 반대로 변환하지 않고 upstream과 verbatim relay합니다.
 

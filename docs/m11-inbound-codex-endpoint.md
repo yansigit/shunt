@@ -34,11 +34,13 @@ A new opt-in `[server.codex_endpoint]` table, mirroring the [M9](m9-admin-surfac
 ```toml
 [server.codex_endpoint]
 provider = "codex"   # default; the target chatgpt_oauth provider
+collaboration = false # opt in to the translated V2 collaboration bridge
 ```
 
 | Key | Default | Meaning |
 | :-- | :-- | :-- |
 | `provider` | `"codex"` | Which `chatgpt_oauth` provider's account pool serves inbound Responses requests. |
+| `collaboration` | `false` | Allow exact Anthropic routes to translate declared V2 collaboration tools and plaintext agent tasks. Native Responses routes remain opaque regardless of this flag. |
 
 **Absent ⇒ none of the routes are registered** — the default HTTP surface is unchanged. Present ⇒
 config validation requires the named provider to exist and use `auth = "chatgpt_oauth"`; otherwise
@@ -164,6 +166,21 @@ numbers, and one terminal event. `end_turn`, `stop_sequence`, and `tool_use` bec
 upstream stream errors, and EOF before `message_stop` become failed rather than false success.
 Usage input totals include ordinary, cache-read, and cache-creation tokens. Anthropic thinking
 signatures are neither relabeled as OpenAI encrypted state nor persisted.
+
+When `collaboration = true`, exact Anthropic routes additionally accept the V2
+`collaboration` namespace from top-level `tools` and `additional_tools`, plus plaintext
+`agent_message` task envelopes. Declared tools are flattened to a collision-checked private wire
+name and only authorized response calls are restored to `namespace = "collaboration"` with
+`encrypted_function_args = []`. `metadata.task_id` is carried as Anthropic `metadata.user_id`, and
+the JSON Schema annotation `encrypted: true` is removed only where it is schema metadata—not from
+properties or literal values named `encrypted`. The flag does not parse or rewrite native
+Responses traffic.
+
+This bridge is deliberately not a recovery service. A translated task containing only a
+structurally valid encrypted payload, or any translated `previous_response_id`/provider state,
+fails before credential resolution or network dispatch. shunt does not decrypt, cache, persist, or
+make a hidden billable request to recover that state; callers must supply plaintext history or use
+a native Responses route.
 
 ### Header passthrough
 
