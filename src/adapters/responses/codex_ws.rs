@@ -49,7 +49,9 @@ use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::{self, Message};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
-use super::codex_continuation::{build_transcript, StoredContinuation};
+use super::codex_continuation::{
+    build_transcript_with_limits, ContinuationLimits, StoredContinuation,
+};
 use crate::model::responses::ResponseEvent;
 
 /// Header the backend uses to hand back (and codex echoes back) the per-turn
@@ -926,9 +928,11 @@ async fn run_turn(
     record: RecordPlan,
     pooled: &mut bool,
 ) -> TurnEnd {
-    let mut response_id = None;
-    let mut output_items = Vec::new();
-    let mut turn_state = None;
+    // The previous candidate has already been copied into this turn's request.
+    // Clear it before reading new provider state so cancellation, failure, or an
+    // oversized replacement can never leave stale continuation reusable.
+    *conn.continuation.lock().unwrap() = None;
+    let mut continuation = ContinuationCapture::default();
     let mut deferred = VecDeque::new();
     let idle = tokio::time::sleep(IDLE_TIMEOUT);
     tokio::pin!(idle);
@@ -979,7 +983,7 @@ async fn run_turn(
                     evict(conn);
                     return TurnEnd::Dead;
                 }
-                capture_continuation(&event, &mut response_id, &mut output_items, &mut turn_state);
+                continuation.capture(&event);
                 let name = event.event.as_deref().unwrap_or("");
                 let is_terminal = TERMINAL_EVENTS.contains(&name);
                 let completed = name == REUSABLE_TERMINAL;
@@ -1003,23 +1007,9 @@ async fn run_turn(
                         return TurnEnd::Dead;
                     }
                     if completed {
-                        if let Some(response_id) = response_id {
-                            let stored = StoredContinuation {
-                                response_id,
-                                signature: record.signature,
-                                transcript: build_transcript(
-                                    record
-                                        .request
-                                        .as_deref()
-                                        .and_then(|request| request.get("input"))
-                                        .and_then(Value::as_array)
-                                        .map(Vec::as_slice)
-                                        .unwrap_or_default(),
-                                    &output_items,
-                                ),
-                                turn_state: turn_state
-                                    .or_else(|| conn.handshake_turn_state.clone()),
-                            };
+                        if let Some(stored) =
+                            continuation.into_stored(record, conn.handshake_turn_state.as_deref())
+                        {
                             *conn.continuation.lock().unwrap() = Some(Arc::new(stored));
                         }
                         *conn.last_used_at.lock().unwrap() = Instant::now();
@@ -1095,40 +1085,124 @@ async fn run_turn(
 /// event for continuation. The response id appears on `response.created`/
 /// `response.completed`; output items on `response.output_item.done`; the turn
 /// state token may ride on any event body.
-fn capture_continuation(
-    event: &ResponseEvent,
-    response_id: &mut Option<String>,
-    output_items: &mut Vec<Value>,
-    turn_state: &mut Option<String>,
-) {
-    // Only response-level events carry the response id; guard against picking up
-    // an item id from e.g. `response.output_item.done`.
-    let name = event.event.as_deref().unwrap_or("");
-    if matches!(
-        name,
-        "response.created" | "response.in_progress" | "response.completed" | "response.done"
-    ) {
-        if let Some(id) = event
+#[derive(Debug)]
+struct ContinuationCapture {
+    response_id: Option<String>,
+    output_items: Vec<Value>,
+    turn_state: Option<String>,
+    limits: ContinuationLimits,
+    reusable: bool,
+}
+
+impl Default for ContinuationCapture {
+    fn default() -> Self {
+        Self::with_limits(ContinuationLimits::default())
+    }
+}
+
+impl ContinuationCapture {
+    fn with_limits(limits: ContinuationLimits) -> Self {
+        Self {
+            response_id: None,
+            output_items: Vec::new(),
+            turn_state: None,
+            limits,
+            reusable: true,
+        }
+    }
+
+    fn discard(&mut self) {
+        self.response_id = None;
+        self.output_items.clear();
+        self.turn_state = None;
+        self.reusable = false;
+    }
+
+    fn capture(&mut self, event: &ResponseEvent) {
+        if !self.reusable {
+            return;
+        }
+        // Only response-level events carry the response id; guard against picking up
+        // an item id from e.g. `response.output_item.done`.
+        let name = event.event.as_deref().unwrap_or("");
+        if matches!(
+            name,
+            "response.created" | "response.in_progress" | "response.completed" | "response.done"
+        ) {
+            if let Some(id) = event
+                .data
+                .pointer("/response/id")
+                .or_else(|| event.data.get("id"))
+                .and_then(Value::as_str)
+            {
+                if id.len() > self.limits.response_id_bytes {
+                    self.discard();
+                    return;
+                }
+                self.response_id = Some(id.to_string());
+            }
+        }
+        if event.event.as_deref() == Some("response.output_item.done") {
+            if let Some(item) = event.data.get("item") {
+                let next_count = self.output_items.len().saturating_add(1);
+                let item_bytes = serde_json::to_vec(item)
+                    .map(|bytes| bytes.len())
+                    .unwrap_or(usize::MAX);
+                if next_count > self.limits.items || item_bytes > self.limits.transcript_bytes {
+                    self.discard();
+                    return;
+                }
+                self.output_items.push(item.clone());
+            }
+        }
+        if let Some(state) = event
             .data
-            .pointer("/response/id")
-            .or_else(|| event.data.get("id"))
+            .get("turn_state")
+            .or_else(|| event.data.pointer("/response/turn_state"))
             .and_then(Value::as_str)
         {
-            *response_id = Some(id.to_string());
+            if state.len() > self.limits.turn_state_bytes {
+                self.discard();
+                return;
+            }
+            self.turn_state = Some(state.to_string());
         }
     }
-    if event.event.as_deref() == Some("response.output_item.done") {
-        if let Some(item) = event.data.get("item") {
-            output_items.push(item.clone());
+
+    fn into_stored(
+        self,
+        record: RecordPlan,
+        handshake_turn_state: Option<&str>,
+    ) -> Option<StoredContinuation> {
+        if !self.reusable {
+            return None;
         }
-    }
-    if let Some(state) = event
-        .data
-        .get("turn_state")
-        .or_else(|| event.data.pointer("/response/turn_state"))
-        .and_then(Value::as_str)
-    {
-        *turn_state = Some(state.to_string());
+        let response_id = self.response_id?;
+        let turn_state = self
+            .turn_state
+            .or_else(|| handshake_turn_state.map(str::to_string));
+        if response_id.len() > self.limits.response_id_bytes
+            || turn_state
+                .as_deref()
+                .is_some_and(|state| state.len() > self.limits.turn_state_bytes)
+        {
+            return None;
+        }
+        let input = record
+            .request
+            .as_deref()
+            .and_then(|request| request.get("input"))
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let transcript =
+            build_transcript_with_limits(input, &self.output_items, self.limits).ok()?;
+        Some(StoredContinuation {
+            response_id,
+            signature: record.signature,
+            transcript,
+            turn_state,
+        })
     }
 }
 
@@ -2894,59 +2968,89 @@ mod tests {
     /// token from either the top level or `/response/turn_state`.
     #[test]
     fn capture_continuation_collects_id_items_and_turn_state() {
-        let mut id = None;
-        let mut items = Vec::new();
-        let mut turn_state = None;
+        let mut capture = ContinuationCapture::default();
 
-        capture_continuation(
+        capture.capture(
             &parse_event(r#"{"type":"response.created","response":{"id":"resp_9"}}"#).unwrap(),
-            &mut id,
-            &mut items,
-            &mut turn_state,
         );
-        assert_eq!(id.as_deref(), Some("resp_9"));
+        assert_eq!(capture.response_id.as_deref(), Some("resp_9"));
 
         // A response-level event with only a top-level `id` uses the fallback.
-        let mut id_top = None;
-        capture_continuation(
-            &parse_event(r#"{"type":"response.done","id":"resp_top"}"#).unwrap(),
-            &mut id_top,
-            &mut items,
-            &mut turn_state,
-        );
-        assert_eq!(id_top.as_deref(), Some("resp_top"));
+        let mut top = ContinuationCapture::default();
+        top.capture(&parse_event(r#"{"type":"response.done","id":"resp_top"}"#).unwrap());
+        assert_eq!(top.response_id.as_deref(), Some("resp_top"));
 
-        capture_continuation(
+        capture.capture(
             &parse_event(
                 r#"{"type":"response.output_item.done","item":{"type":"message","id":"m1"}}"#,
             )
             .unwrap(),
-            &mut id,
-            &mut items,
-            &mut turn_state,
         );
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0]["id"], "m1");
+        assert_eq!(capture.output_items.len(), 1);
+        assert_eq!(capture.output_items[0]["id"], "m1");
 
         // turn_state at the top level.
-        capture_continuation(
+        capture.capture(
             &parse_event(r#"{"type":"response.output_text.delta","turn_state":"ts-1"}"#).unwrap(),
-            &mut id,
-            &mut items,
-            &mut turn_state,
         );
-        assert_eq!(turn_state.as_deref(), Some("ts-1"));
+        assert_eq!(capture.turn_state.as_deref(), Some("ts-1"));
 
         // turn_state nested under /response.
-        let mut nested_state = None;
-        capture_continuation(
+        let mut nested = ContinuationCapture::default();
+        nested.capture(
             &parse_event(r#"{"type":"response.completed","response":{"turn_state":"ts-2"}}"#)
                 .unwrap(),
-            &mut id,
-            &mut items,
-            &mut nested_state,
         );
-        assert_eq!(nested_state.as_deref(), Some("ts-2"));
+        assert_eq!(nested.turn_state.as_deref(), Some("ts-2"));
+    }
+
+    #[test]
+    fn continuation_bounds_metadata_exact_and_plus_one() {
+        let limits = ContinuationLimits {
+            items: 4,
+            transcript_bytes: 128,
+            response_id_bytes: 4,
+            turn_state_bytes: 4,
+        };
+        let mut exact = ContinuationCapture::with_limits(limits);
+        exact.capture(&parse_event(r#"{"type":"response.created","id":"1234"}"#).unwrap());
+        exact.capture(
+            &parse_event(r#"{"type":"response.in_progress","turn_state":"abcd"}"#).unwrap(),
+        );
+        assert!(exact.reusable);
+
+        let mut response_over = ContinuationCapture::with_limits(limits);
+        response_over.capture(&parse_event(r#"{"type":"response.created","id":"12345"}"#).unwrap());
+        assert!(!response_over.reusable);
+
+        let mut state_over = ContinuationCapture::with_limits(limits);
+        state_over.capture(
+            &parse_event(r#"{"type":"response.in_progress","turn_state":"abcde"}"#).unwrap(),
+        );
+        assert!(!state_over.reusable);
+    }
+
+    #[test]
+    fn continuation_bounds_overflow_discards_candidate_atomically() {
+        let limits = ContinuationLimits {
+            items: 1,
+            transcript_bytes: 128,
+            response_id_bytes: 16,
+            turn_state_bytes: 16,
+        };
+        let mut capture = ContinuationCapture::with_limits(limits);
+        capture.capture(&parse_event(r#"{"type":"response.created","id":"resp"}"#).unwrap());
+        capture.capture(
+            &parse_event(r#"{"type":"response.output_item.done","item":{"type":"message"}}"#)
+                .unwrap(),
+        );
+        capture.capture(
+            &parse_event(r#"{"type":"response.output_item.done","item":{"type":"message"}}"#)
+                .unwrap(),
+        );
+        assert!(!capture.reusable);
+        assert!(capture.response_id.is_none());
+        assert!(capture.output_items.is_empty());
     }
 
     /// A rejected `previous_response_id` is detected from either the error `code` or

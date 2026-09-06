@@ -55,6 +55,37 @@
 
 use serde_json::{Map, Value};
 
+pub(crate) const MAX_CONTINUATION_ITEMS: usize = 10_000;
+pub(crate) const MAX_CONTINUATION_TRANSCRIPT_BYTES: usize = 32 * 1024 * 1024;
+pub(crate) const MAX_CONTINUATION_METADATA_BYTES: usize = 64 * 1024;
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ContinuationLimits {
+    pub items: usize,
+    pub transcript_bytes: usize,
+    pub response_id_bytes: usize,
+    pub turn_state_bytes: usize,
+}
+
+impl Default for ContinuationLimits {
+    fn default() -> Self {
+        Self {
+            items: MAX_CONTINUATION_ITEMS,
+            transcript_bytes: MAX_CONTINUATION_TRANSCRIPT_BYTES,
+            response_id_bytes: MAX_CONTINUATION_METADATA_BYTES,
+            turn_state_bytes: MAX_CONTINUATION_METADATA_BYTES,
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ContinuationError {
+    #[error("continuation {field} exceeded its retention limit")]
+    Limit { field: &'static str },
+    #[error("continuation transcript could not be serialized: {0}")]
+    Serialize(#[from] serde_json::Error),
+}
+
 /// Backend-only keys on an output item that shunt's reconstruction never carries.
 const ITEM_STRIP_KEYS: &[&str] = &["id", "phase", "status"];
 /// Backend-only keys on a content part (e.g. an `output_text` block).
@@ -138,12 +169,55 @@ pub fn decide_with_signature(
 
 /// Build the transcript to store after a turn: the request's full logical input
 /// (not the delta) followed by the backend's output items.
-pub fn build_transcript(request_input: &[Value], output_items: &[Value]) -> Vec<Value> {
-    request_input
+pub(crate) fn build_transcript(
+    request_input: &[Value],
+    output_items: &[Value],
+) -> Result<Vec<Value>, ContinuationError> {
+    build_transcript_with_limits(request_input, output_items, ContinuationLimits::default())
+}
+
+pub(crate) fn build_transcript_with_limits(
+    request_input: &[Value],
+    output_items: &[Value],
+    limits: ContinuationLimits,
+) -> Result<Vec<Value>, ContinuationError> {
+    let item_count =
+        request_input
+            .len()
+            .checked_add(output_items.len())
+            .ok_or(ContinuationError::Limit {
+                field: "item count",
+            })?;
+    if item_count > limits.items {
+        return Err(ContinuationError::Limit {
+            field: "item count",
+        });
+    }
+
+    // Account for the exact JSON-array representation without first building one
+    // potentially oversized serialized buffer. The crossing item is included in
+    // checked arithmetic and the candidate is returned only after every item fits.
+    let mut serialized_bytes = 2usize; // '[' + ']'
+    for (index, item) in request_input.iter().chain(output_items).enumerate() {
+        let item_bytes = serde_json::to_vec(item)?.len();
+        serialized_bytes = serialized_bytes
+            .checked_add(item_bytes)
+            .and_then(|total| total.checked_add(usize::from(index > 0)))
+            .ok_or(ContinuationError::Limit {
+                field: "transcript bytes",
+            })?;
+        if serialized_bytes > limits.transcript_bytes {
+            return Err(ContinuationError::Limit {
+                field: "transcript bytes",
+            });
+        }
+    }
+
+    Ok(request_input
         .iter()
         .cloned()
         .chain(output_items.iter().cloned())
-        .collect()
+        .collect())
 }
 
 /// A stable, key-sorted signature of the request's non-input fields, so a changed
@@ -442,7 +516,8 @@ mod tests {
             transcript: build_transcript(
                 &[user("run tests")],
                 &[backend_reasoning(), backend_function_call()],
-            ),
+            )
+            .unwrap(),
             turn_state: None,
         };
         // Turn 2: Claude Code echoes the reasoning + tool call (reconstructed) and
@@ -464,7 +539,7 @@ mod tests {
         let stored = StoredContinuation {
             response_id: "resp_1".to_string(),
             signature: signature(&body(vec![user("hi")])),
-            transcript: build_transcript(&[user("hi")], &[backend_assistant("hello")]),
+            transcript: build_transcript(&[user("hi")], &[backend_assistant("hello")]).unwrap(),
             turn_state: Some("ts_1".to_string()),
         };
         // Turn 2: echoes the assistant turn (reconstructed) and adds a new user turn.
@@ -483,7 +558,7 @@ mod tests {
         let stored = StoredContinuation {
             response_id: "resp_1".to_string(),
             signature: signature(&body(vec![user("hi")])),
-            transcript: build_transcript(&[user("hi")], &[backend_assistant("hello")]),
+            transcript: build_transcript(&[user("hi")], &[backend_assistant("hello")]).unwrap(),
             turn_state: None,
         };
         // Same input prefix, but the reasoning effort changed → fresh context.
@@ -501,7 +576,7 @@ mod tests {
         let stored = StoredContinuation {
             response_id: "resp_1".to_string(),
             signature: signature(&body(vec![user("hi")])),
-            transcript: build_transcript(&[user("hi")], &[backend_assistant("hello")]),
+            transcript: build_transcript(&[user("hi")], &[backend_assistant("hello")]).unwrap(),
             turn_state: None,
         };
         // The first user turn was edited (history rewrite / compaction) → the
@@ -519,7 +594,7 @@ mod tests {
         let stored = StoredContinuation {
             response_id: "resp_1".to_string(),
             signature: signature(&body(vec![user("hi")])),
-            transcript: build_transcript(&[user("hi")], &[]),
+            transcript: build_transcript(&[user("hi")], &[]).unwrap(),
             turn_state: None,
         };
         // Current input is exactly the stored transcript: nothing new to send.
@@ -532,7 +607,7 @@ mod tests {
         let stored = StoredContinuation {
             response_id: "resp_1".to_string(),
             signature: signature(&body(vec![user("hi")])),
-            transcript: build_transcript(&[user("hi"), user("there")], &[]),
+            transcript: build_transcript(&[user("hi"), user("there")], &[]).unwrap(),
             turn_state: None,
         };
         let current = body(vec![user("hi")]);
@@ -544,7 +619,7 @@ mod tests {
         let stored = StoredContinuation {
             response_id: "resp_1".to_string(),
             signature: signature(&body(vec![user("hi")])),
-            transcript: build_transcript(&[user("hi")], &[backend_assistant("hello")]),
+            transcript: build_transcript(&[user("hi")], &[backend_assistant("hello")]).unwrap(),
             turn_state: None,
         };
         let current = body(vec![
@@ -566,7 +641,7 @@ mod tests {
         let stored = StoredContinuation {
             response_id: "resp_1".to_string(),
             signature: signature(&body(vec![user("hi")])),
-            transcript: build_transcript(&[user("hi")], &[backend_assistant("hello")]),
+            transcript: build_transcript(&[user("hi")], &[backend_assistant("hello")]).unwrap(),
             turn_state: None,
         };
         let mut current = body(vec![
@@ -589,7 +664,7 @@ mod tests {
         let stored = StoredContinuation {
             response_id: "resp_1".to_string(),
             signature: signature(&body(vec![user("hi")])),
-            transcript: build_transcript(&[user("hi")], &[backend_assistant("hello")]),
+            transcript: build_transcript(&[user("hi")], &[backend_assistant("hello")]).unwrap(),
             turn_state: None,
         };
         let current = body(vec![
@@ -636,9 +711,38 @@ mod tests {
     fn continuation_bounds_reject_item_cap_plus_one() {
         let input = vec![json!(null); 10_001];
         let transcript = build_transcript(&input, &[]);
-        assert!(
-            transcript.len() <= 10_000,
-            "continuation construction must reject rather than retain cap-plus-one"
-        );
+        assert!(transcript.is_err());
+    }
+
+    #[test]
+    fn continuation_bounds_exact_and_plus_one_transcript_bytes() {
+        let limits = ContinuationLimits {
+            items: 1,
+            transcript_bytes: 6, // `[null]`
+            response_id_bytes: 1,
+            turn_state_bytes: 1,
+        };
+        assert!(build_transcript_with_limits(&[json!(null)], &[], limits).is_ok());
+        assert!(build_transcript_with_limits(
+            &[json!(null)],
+            &[],
+            ContinuationLimits {
+                transcript_bytes: 5,
+                ..limits
+            }
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn continuation_bounds_exact_and_plus_one_item_count() {
+        let limits = ContinuationLimits {
+            items: 2,
+            transcript_bytes: 64,
+            response_id_bytes: 1,
+            turn_state_bytes: 1,
+        };
+        assert!(build_transcript_with_limits(&[json!(1)], &[json!(2)], limits).is_ok());
+        assert!(build_transcript_with_limits(&[json!(1), json!(2)], &[json!(3)], limits).is_err());
     }
 }
