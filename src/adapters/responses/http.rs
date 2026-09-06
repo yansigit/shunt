@@ -230,6 +230,14 @@ pub(super) async fn json_response(
     upstream: reqwest::Response,
     relay: RelayOptions,
 ) -> Result<axum::response::Response, AdapterError> {
+    json_response_with_limit(upstream, relay, MAX_RESPONSES_JSON_RESPONSE_BYTES).await
+}
+
+async fn json_response_with_limit(
+    upstream: reqwest::Response,
+    relay: RelayOptions,
+    max_wire_bytes: usize,
+) -> Result<axum::response::Response, AdapterError> {
     let mut bytes = upstream.bytes_stream();
     let mut wire_bytes = 0usize;
     let mut parser = SseParser::default();
@@ -240,9 +248,9 @@ pub(super) async fn json_response(
         wire_bytes = wire_bytes
             .checked_add(chunk.len())
             .ok_or_else(|| own_error("upstream Responses body size overflow".to_string()))?;
-        if wire_bytes > MAX_RESPONSES_JSON_RESPONSE_BYTES {
+        if wire_bytes > max_wire_bytes {
             return Err(own_error(format!(
-                "upstream Responses body exceeded {MAX_RESPONSES_JSON_RESPONSE_BYTES} bytes"
+                "upstream Responses body exceeded {max_wire_bytes} bytes"
             )));
         }
         let events = parser.push(&chunk).map_err(protocol_adapter_error)?;
@@ -325,6 +333,7 @@ impl SseParser {
             ));
         }
         let mut events = Vec::new();
+        let mut frames_seen = 0usize;
         for &byte in chunk {
             self.buffer.push(byte);
             if let Some(delimiter_len) = terminal_delimiter_len(&self.buffer) {
@@ -335,18 +344,21 @@ impl SseParser {
                         self.max_event_bytes
                     )));
                 }
-                if events.len() >= self.max_events_per_feed {
+                if frames_seen >= self.max_events_per_feed {
                     return Err(self.fail(format!(
                         "upstream Responses SSE chunk exceeded {} event limit",
                         self.max_events_per_feed
                     )));
                 }
+                frames_seen += 1;
                 let frame = self.buffer[..frame_len].to_vec();
                 self.buffer.clear();
-                if let Some(event) = parse_sse_frame(&frame)? {
-                    events.push(event);
+                match parse_sse_frame(&frame) {
+                    Ok(Some(event)) => events.push(event),
+                    Ok(None) => {}
+                    Err(error) => return Err(self.fail(error.to_string())),
                 }
-            } else if self.buffer.len() > self.max_event_bytes.saturating_add(3) {
+            } else if retained_candidate_len(&self.buffer) > self.max_event_bytes {
                 return Err(self.fail(format!(
                     "upstream Responses SSE event exceeded {} bytes",
                     self.max_event_bytes
@@ -375,6 +387,17 @@ impl SseParser {
         let frame = std::mem::take(&mut self.buffer);
         parse_sse_frame(&frame)
     }
+}
+
+fn retained_candidate_len(buffer: &[u8]) -> usize {
+    const PREFIXES: &[&[u8]] = &[b"\r", b"\n", b"\r\n", b"\n\r", b"\r\n\r", b"\n\r\n"];
+    let delimiter_prefix = PREFIXES
+        .iter()
+        .filter(|prefix| buffer.ends_with(prefix))
+        .map(|prefix| prefix.len())
+        .max()
+        .unwrap_or(0);
+    buffer.len().saturating_sub(delimiter_prefix)
 }
 
 fn terminal_delimiter_len(buffer: &[u8]) -> Option<usize> {
@@ -697,5 +720,37 @@ mod tests {
         let events = parser.push(b"\r\n").unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].event.as_deref(), Some("response.completed"));
+    }
+
+    #[test]
+    fn responses_bounds_sse_event_exact_cap_is_accepted() {
+        let frame = b"data: {}";
+        let mut parser = SseParser::with_limits(frame.len(), 1);
+        let mut input = frame.to_vec();
+        input.extend_from_slice(b"\n\n");
+        assert_eq!(parser.push(&input).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn responses_bounds_sse_invalid_utf8_disposes_parser() {
+        let mut parser = SseParser::with_limits(64, 4);
+        assert!(parser.push(b"data: \xff\n\n").is_err());
+        assert!(parser.push(b"data: {}\n\n").is_err());
+    }
+
+    #[tokio::test]
+    async fn responses_bounds_json_collector_exact_and_plus_one() {
+        let sse = "event: response.completed\ndata: {}\n\n";
+        let exact = upstream_response(200, sse).await;
+        let response = json_response_with_limit(exact, relay_opts(), sse.len())
+            .await
+            .expect("exact wire limit should pass");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let oversized = upstream_response(200, sse).await;
+        let error = json_response_with_limit(oversized, relay_opts(), sse.len() - 1)
+            .await
+            .expect_err("exact limit plus one should fail");
+        assert_eq!(error.response.status(), StatusCode::BAD_GATEWAY);
     }
 }

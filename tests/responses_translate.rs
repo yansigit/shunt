@@ -133,6 +133,20 @@ fn responses_bounds_malformed_completed_tool_arguments_fail() {
     assert!(error.to_string().contains("tool arguments"));
 }
 
+#[test]
+fn responses_bounds_translated_text_exact_and_plus_one() {
+    let text_event = |delta: &str| shunt::model::responses::ResponseEvent {
+        event: Some("response.output_text.delta".to_string()),
+        data: json!({ "delta": delta }),
+    };
+    let mut exact = AnthropicSseMachine::new("gpt-5.2-codex", false, false).with_aggregate_limit(4);
+    assert!(exact.apply_checked(text_event("1234")).is_ok());
+
+    let mut oversized =
+        AnthropicSseMachine::new("gpt-5.2-codex", false, false).with_aggregate_limit(4);
+    assert!(oversized.apply_checked(text_event("12345")).is_err());
+}
+
 fn translate(input: Value) -> Value {
     let body = serde_json::to_vec(&input).unwrap();
     // provider "openai" is the stock Responses API (not the ChatGPT backend).

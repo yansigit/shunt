@@ -8,6 +8,8 @@ pub use crate::model::responses_request::{
     encode_reasoning_signature, translate_request, translate_request_value,
 };
 
+const MAX_RESPONSES_TRANSLATED_STATE_BYTES: usize = 32 * 1024 * 1024;
+
 #[derive(Debug, Clone)]
 pub struct ResponseEvent {
     pub event: Option<String>,
@@ -112,6 +114,8 @@ pub struct AnthropicSseMachine {
     /// ([`backend_error_status`]): `429` for an in-stream `rate_limit_exceeded`,
     /// else `502`.
     backend_error: Option<(StatusCode, Value)>,
+    aggregate_bytes: usize,
+    aggregate_limit: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -159,6 +163,8 @@ impl AnthropicSseMachine {
             web_search_indexes: HashMap::new(),
             tool_search_native,
             backend_error: None,
+            aggregate_bytes: 0,
+            aggregate_limit: MAX_RESPONSES_TRANSLATED_STATE_BYTES,
         }
     }
 
@@ -177,6 +183,13 @@ impl AnthropicSseMachine {
     #[must_use]
     pub fn without_content_accumulation(mut self) -> Self {
         self.accumulate_content = false;
+        self
+    }
+
+    #[must_use]
+    pub fn with_aggregate_limit(mut self, max_bytes: usize) -> Self {
+        assert!(max_bytes > 0, "aggregate limit must be positive");
+        self.aggregate_limit = max_bytes;
         self
     }
 
@@ -216,6 +229,19 @@ impl AnthropicSseMachine {
                 ));
             }
             return Ok(Vec::new());
+        }
+        self.reserve_retained_event(name, &event.data)?;
+        if name == "response.function_call_arguments.done" {
+            if let Some(tool) = &self.tool_buffer {
+                if !tool.json.is_empty()
+                    && !serde_json::from_str::<Value>(&tool.json)
+                        .is_ok_and(|value| value.is_object())
+                {
+                    return Err(self.protocol_failure(
+                        "upstream Responses tool arguments were not a valid JSON object",
+                    ));
+                }
+            }
         }
         let out = match name {
             "response.created" | "response.in_progress" => self.start(&event.data),
@@ -600,7 +626,7 @@ impl AnthropicSseMachine {
             .unwrap_or("")
             .to_string();
         self.saw_tool = true;
-        self.tool_buffer = self.accumulate_content.then(|| ToolBuffer {
+        self.tool_buffer = Some(ToolBuffer {
             id: id.clone(),
             name: name.clone(),
             json: String::new(),
@@ -768,10 +794,8 @@ impl AnthropicSseMachine {
 
     fn arguments_delta(&mut self, data: &Value) -> Vec<String> {
         let delta = data.get("delta").and_then(Value::as_str).unwrap_or("");
-        if self.accumulate_content {
-            if let Some(tool) = &mut self.tool_buffer {
-                tool.json.push_str(delta);
-            }
+        if let Some(tool) = &mut self.tool_buffer {
+            tool.json.push_str(delta);
         }
         vec![sse(
             "content_block_delta",
@@ -930,6 +954,67 @@ impl AnthropicSseMachine {
             .as_ref()
             .map(|block| block.index)
             .unwrap_or(self.index)
+    }
+
+    fn reserve_retained_event(
+        &mut self,
+        name: &str,
+        data: &Value,
+    ) -> Result<(), ResponsesProtocolError> {
+        let retained = match name {
+            "response.function_call_arguments.delta" => data
+                .get("delta")
+                .and_then(Value::as_str)
+                .map_or(0, str::len),
+            "response.output_text.delta" | "response.reasoning_summary_text.delta"
+                if self.accumulate_content =>
+            {
+                data.get("delta")
+                    .and_then(Value::as_str)
+                    .map_or(0, str::len)
+            }
+            "response.output_text.annotation.added" | "response.output_item.done"
+                if self.accumulate_content =>
+            {
+                serde_json::to_vec(data).map_or(0, |v| v.len())
+            }
+            "response.output_item.added" if self.accumulate_content => data
+                .get("item")
+                .unwrap_or(data)
+                .as_object()
+                .map(|item| {
+                    ["id", "call_id", "name"]
+                        .into_iter()
+                        .filter_map(|key| item.get(key).and_then(Value::as_str))
+                        .map(str::len)
+                        .sum()
+                })
+                .unwrap_or(0),
+            _ => 0,
+        };
+        let Some(next) = self.aggregate_bytes.checked_add(retained) else {
+            return Err(self.protocol_failure("upstream Responses translated state size overflow"));
+        };
+        if next > self.aggregate_limit {
+            return Err(self.protocol_failure(format!(
+                "upstream Responses translated state exceeded {} bytes",
+                self.aggregate_limit
+            )));
+        }
+        self.aggregate_bytes = next;
+        Ok(())
+    }
+
+    fn protocol_failure(&mut self, message: impl Into<String>) -> ResponsesProtocolError {
+        self.terminal = TerminalState::ProtocolFailed;
+        self.stopped = true;
+        self.content.clear();
+        self.text_buffer.clear();
+        self.text_citations.clear();
+        self.tool_buffer = None;
+        self.reasoning = None;
+        self.web_search_indexes.clear();
+        ResponsesProtocolError::new(message)
     }
 }
 
