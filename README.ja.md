@@ -39,7 +39,9 @@ brew services start shunt
 ```
 
 ログは `$(brew --prefix)/var/log/shunt.log` に出力されます。`brew services stop` は `SIGTERM` を送信し、
-shunt は処理中のリクエストを完了させてから終了します。Unix では、シャットダウンの開始時に Antigravity の
+shunt は新規受付を停止して実行中の HTTP/SSE/WebSocket を `[server] shutdown_timeout_seconds`
+（既定値 30、有効範囲 1–3600）までドレインした後、残りをキャンセルします。2 回目のシグナルは即時終了します。
+Unix では、シャットダウンの開始時に Antigravity の
 エージェントターンが終了させられるため、その分離されたプロセスグループがドレインを引き延ばすことはできません。
 その後に設定ファイルを編集しても再起動は不要です —
 自動的に[ホットリロード](docs/config-reload.md)されます。詳細: [サービスとして実行](docs/running.md#run-as-a-background-service-homebrew)。

@@ -25,8 +25,10 @@ brew install pleaseai/tap/shunt
 brew services start shunt
 ```
 
-Logs go to `$(brew --prefix)/var/log/shunt.log`. `brew services stop` sends `SIGTERM`, and shunt
-drains in-flight requests before exiting. On Unix, Antigravity agent turns are terminated when
+Logs go to `$(brew --prefix)/var/log/shunt.log`. `brew services stop` sends `SIGTERM`; shunt stops
+new admission and gives active HTTP/SSE/WebSocket work `[server] shutdown_timeout_seconds` (30
+seconds by default) to drain before cancelling the remainder. A second signal exits immediately.
+On Unix, Antigravity agent turns are terminated when
 shutdown starts so their isolated process groups cannot hold the drain open. Config changes don't need
 a restart — shunt [hot-reloads](https://github.com/pleaseai/shunt/blob/main/docs/config-reload.md)
 the file automatically. See [Running as a

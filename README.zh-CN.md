@@ -38,8 +38,10 @@ cargo install --git https://github.com/pleaseai/shunt
 brew services start shunt
 ```
 
-日志会写入 `$(brew --prefix)/var/log/shunt.log`。`brew services stop` 会发送 `SIGTERM`,
-shunt 会先处理完正在进行的请求再退出;在 Unix 上,关机开始时 Antigravity 的 agent 轮次会被终止,
+日志会写入 `$(brew --prefix)/var/log/shunt.log`。`brew services stop` 会发送 `SIGTERM`；
+shunt 会停止接收新请求，并让活动 HTTP/SSE/WebSocket 工作在 `[server] shutdown_timeout_seconds`
+（默认 30，有效范围 1–3600）内排空，随后取消剩余工作。第二次信号仍会立即退出。
+在 Unix 上,关机开始时 Antigravity 的 agent 轮次会被终止,
 因此它们各自独立的进程组无法拖住这次排空。之后修改配置文件不需要重启 ——
 会自动[热重载](docs/config-reload.md)。详见 [作为服务运行](docs/running.md#run-as-a-background-service-homebrew)。
 

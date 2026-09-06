@@ -38,9 +38,11 @@ New versions are distributed through Homebrew and prebuilt binaries (macOS/Linux
 brew services start shunt
 ```
 
-Logs go to `$(brew --prefix)/var/log/shunt.log`. `brew services stop` sends `SIGTERM`, and shunt
-drains in-flight requests before exiting; on Unix, Antigravity agent turns are terminated when
-shutdown starts so their isolated process groups cannot hold the drain open. Editing the config file
+Logs go to `$(brew --prefix)/var/log/shunt.log`. `brew services stop` sends `SIGTERM`; shunt stops
+new admission and gives active HTTP/SSE/WebSocket work `[server] shutdown_timeout_seconds` (default
+30, valid 1–3600) to drain before cancelling the remainder. A second signal still exits immediately.
+On Unix, Antigravity agent turns are terminated when shutdown starts so their isolated process groups
+cannot hold the drain open. Editing the config file
 afterwards doesn't need a restart — it [hot-reloads](docs/config-reload.md) automatically. Details:
 [Running as a service](docs/running.md#run-as-a-background-service-homebrew).
 
