@@ -1,6 +1,7 @@
 ---
 phase: 05-anthropic-translation
 status: validated
+nyquist_compliant: true
 wave_0_complete: true
 created: 2026-09-05
 ---
@@ -30,3 +31,8 @@ cargo test --all-features --workspace
 git diff --check
 test -z "$(git status --short -- wiki/)"
 ```
+
+## Validation Audit 2026-09-06
+
+All task rows have automated commands, all requirements have behavioral tests,
+and the full workspace gate passed. Gaps found: 0; escalated: 0.
