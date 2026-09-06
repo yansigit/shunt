@@ -25,7 +25,8 @@ use reqwest::StatusCode;
 use sha2::{Digest, Sha256};
 use shunt::{
     config::{
-        AccountConfig, CodexEndpointConfig, Config, InboundAuthConfig, ModelConfig, PoolConfig,
+        AccountConfig, AuthMode, CodexEndpointConfig, Config, InboundAuthConfig, ModelConfig,
+        PoolConfig,
     },
     server,
 };
@@ -508,6 +509,83 @@ async fn exact_native_route() {
     assert_eq!(response.text().await.unwrap(), upstream_body);
     upstream.verify().await;
     std::env::remove_var("SHUNT_TEST_INBOUND_EXACT");
+}
+
+#[tokio::test]
+async fn native_provider_auth() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let api_key = "native-openai-key";
+    std::env::set_var("SHUNT_TEST_NATIVE_OPENAI", api_key);
+    let upstream = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/responses"))
+        .and(BearerToken(api_key.to_string()))
+        .and(HeaderAbsent("cookie"))
+        .and(HeaderAbsent("x-shunt-token"))
+        .and(body_string(INBOUND_BODY))
+        .respond_with(ResponseTemplate::new(200).set_body_string("{\"native\":true}"))
+        .expect(1)
+        .mount(&upstream)
+        .await;
+
+    let mut config = test_config(&upstream.uri(), Vec::new());
+    let openai = config.providers.get_mut("openai").unwrap();
+    openai.base_url = upstream.uri();
+    openai.api_key_env = Some("SHUNT_TEST_NATIVE_OPENAI".to_string());
+    config.models = vec![ModelConfig {
+        id: "gpt-5.6-sol".into(),
+        display_name: None,
+        upstream_model: Some(BTreeMap::from([("openai".into(), "gpt-5.6-sol".into())])),
+    }];
+    let gateway = start_gateway_with(config).await;
+    let response = reqwest::Client::new()
+        .post(format!("{}/responses", gateway.base_url))
+        .header("content-type", "application/json")
+        .header("authorization", "Bearer client-secret")
+        .header("cookie", "session=client-cookie")
+        .header("x-shunt-token", "internal-token")
+        .body(INBOUND_BODY)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.text().await.unwrap(), "{\"native\":true}");
+    upstream.verify().await;
+    std::env::remove_var("SHUNT_TEST_NATIVE_OPENAI");
+}
+
+#[tokio::test]
+async fn unsupported_native_auth_no_network() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let upstream = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&upstream)
+        .await;
+    let mut config = test_config(&upstream.uri(), Vec::new());
+    let openai = config.providers.get_mut("openai").unwrap();
+    openai.base_url = upstream.uri();
+    openai.auth = AuthMode::Passthrough;
+    config.models = vec![ModelConfig {
+        id: "gpt-5.6-sol".into(),
+        display_name: None,
+        upstream_model: Some(BTreeMap::from([("openai".into(), "gpt-5.6-sol".into())])),
+    }];
+    let gateway = start_gateway_with(config).await;
+    let response = reqwest::Client::new()
+        .post(format!("{}/responses", gateway.base_url))
+        .header("content-type", "application/json")
+        .body(INBOUND_BODY)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    upstream.verify().await;
 }
 
 #[tokio::test]

@@ -11,7 +11,7 @@ use axum::{
 use crate::{
     adapters::AdapterError,
     auth::{self, resolve_credential, slots::ShuntCredentials, Credential},
-    config::AccountConfig,
+    config::{AccountConfig, ApiKeyHeader, AuthMode},
     routing::Route,
     server::AppState,
     upstream_timeout::SendError,
@@ -53,6 +53,33 @@ pub(crate) async fn forward_codex_inbound(
         .config
         .provider(&route.provider)
         .ok_or_else(|| own_error(format!("unknown provider {}", route.provider)))?;
+    // ChatGPT OAuth is the only Responses flavor with a provider-local account
+    // pool. Other native credential modes resolve through the normal credential
+    // API so their configured store/env and header flavor remain authoritative.
+    if provider.auth != AuthMode::ChatgptOauth {
+        if !matches!(provider.auth, AuthMode::ApiKey | AuthMode::XaiOauth) {
+            return Err(own_error(format!(
+                "native Responses provider '{}' uses unsupported auth mode {:?}",
+                route.provider, provider.auth
+            )));
+        }
+        let credential = resolve_credential(&state.config, &route, &state.http_client).await?;
+        if !matches!(
+            credential,
+            Credential::ApiKey { .. } | Credential::XaiOauth { .. }
+        ) {
+            return Err(own_error(format!(
+                "native Responses provider '{}' resolved an incompatible credential",
+                route.provider
+            )));
+        }
+        let upstream = passthrough_send(&state, &route, credential, &passthrough_headers, &body)
+            .await
+            .map_err(send_error)?;
+        let status = upstream.status();
+        return Ok((status, relay_passthrough(upstream)));
+    }
+
     let accounts = auth::shared::resolve_pool_accounts(
         "codex",
         &provider.accounts,
@@ -428,8 +455,11 @@ async fn passthrough_send(
         // A codex_endpoint provider is validated to be chatgpt_oauth, so only the
         // arm above runs in practice; the rest keep the credential swap defensive
         // without ever adding a synthetic client-identity header.
-        Credential::ApiKey { value, .. } => {
-            request = request.bearer_auth(value);
+        Credential::ApiKey { value, header } => {
+            request = match header {
+                ApiKeyHeader::Bearer => request.bearer_auth(value),
+                ApiKeyHeader::XApiKey => request.header("x-api-key", value),
+            };
         }
         Credential::XaiOauth { access_token }
         | Credential::ClaudeOauth { access_token, .. }
