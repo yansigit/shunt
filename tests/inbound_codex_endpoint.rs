@@ -11,6 +11,7 @@
 //! response is relayed unchanged, not wrapped in an Anthropic error envelope).
 
 use std::{
+    collections::BTreeMap,
     fs,
     io::ErrorKind,
     net::SocketAddr,
@@ -23,7 +24,9 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use reqwest::StatusCode;
 use sha2::{Digest, Sha256};
 use shunt::{
-    config::{AccountConfig, CodexEndpointConfig, Config, InboundAuthConfig, PoolConfig},
+    config::{
+        AccountConfig, CodexEndpointConfig, Config, InboundAuthConfig, ModelConfig, PoolConfig,
+    },
     server,
 };
 use tokio::task::JoinHandle;
@@ -470,6 +473,70 @@ async fn forwards_body_verbatim_and_injects_pool_credential() {
     upstream.verify().await;
 
     std::env::remove_var("SHUNT_TEST_INBOUND_A");
+}
+
+#[tokio::test]
+async fn exact_native_route() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let token = chatgpt_token(FAR_FUTURE_EXP, "acct-exact");
+    std::env::set_var("SHUNT_TEST_INBOUND_EXACT", &token);
+    let upstream_body = r#"{"id":"exact","object":"response"}"#;
+    let upstream = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/codex/responses"))
+        .and(BearerToken(token.clone()))
+        .and(body_string(INBOUND_BODY))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(upstream_body, "application/json"))
+        .expect(1)
+        .mount(&upstream)
+        .await;
+
+    let mut config = test_config(
+        &upstream.uri(),
+        vec![account("account-exact", "SHUNT_TEST_INBOUND_EXACT")],
+    );
+    config.models = vec![ModelConfig {
+        id: "gpt-5.6-sol".into(),
+        display_name: None,
+        upstream_model: Some(BTreeMap::from([("codex".into(), "gpt-5.6-sol".into())])),
+    }];
+    let gateway = start_gateway_with(config).await;
+    let response = post_responses(&gateway, "/responses", None, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.text().await.unwrap(), upstream_body);
+    upstream.verify().await;
+    std::env::remove_var("SHUNT_TEST_INBOUND_EXACT");
+}
+
+#[tokio::test]
+async fn pinned_fallback() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let token = chatgpt_token(FAR_FUTURE_EXP, "acct-pinned");
+    std::env::set_var("SHUNT_TEST_INBOUND_PINNED", &token);
+    let upstream = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/codex/responses"))
+        .and(BearerToken(token.clone()))
+        .and(body_string(INBOUND_BODY))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_raw("{\"id\":\"pinned\"}", "application/json"),
+        )
+        .expect(1)
+        .mount(&upstream)
+        .await;
+    let gateway = start_gateway_with(test_config(
+        &upstream.uri(),
+        vec![account("account-pinned", "SHUNT_TEST_INBOUND_PINNED")],
+    ))
+    .await;
+    let response = post_responses(&gateway, "/responses", None, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    upstream.verify().await;
+    std::env::remove_var("SHUNT_TEST_INBOUND_PINNED");
 }
 
 #[tokio::test]

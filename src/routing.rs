@@ -45,6 +45,16 @@ pub struct Route {
     pub service_tier: Option<String>,
 }
 
+/// The deliberately narrow policy used by the inbound native Responses
+/// endpoint.  Unlike the general resolver below this never considers prefix
+/// routes or ordered fallback chains.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NativeInboundDecision {
+    Pinned(Route),
+    Selected(Route),
+    Rejected(String),
+}
+
 #[derive(Debug, Deserialize)]
 struct RoutingView {
     model: String,
@@ -110,6 +120,89 @@ pub(crate) fn strip_context_window_hint(model: &str) -> &str {
         .strip_suffix("[1m]")
         .or_else(|| model.strip_suffix("[1M]"))
         .unwrap_or(model)
+}
+
+/// Resolve one native Responses turn from exact declarations only.  The
+/// caller's model is kept verbatim in `Route::model`; `[1m]` is normalized only
+/// for lookup and the upstream slug.  A missing/unusable model keeps the
+/// configured endpoint provider pinned for backwards compatibility.
+pub fn resolve_native_inbound(config: &Config, model: Option<&str>) -> NativeInboundDecision {
+    let pinned_provider = config
+        .server
+        .codex_endpoint
+        .as_ref()
+        .map(|endpoint| endpoint.provider.as_str())
+        .unwrap_or(&config.server.default_provider);
+    let Some(original_model) = model else {
+        return NativeInboundDecision::Pinned(route_for(
+            config,
+            pinned_provider,
+            "unknown",
+            "unknown",
+            None,
+            None,
+        ));
+    };
+    let lookup_model = strip_context_window_hint(original_model);
+    let mut matches = Vec::new();
+    for configured_model in &config.models {
+        if configured_model.id == lookup_model {
+            if let Some(upstream_models) = &configured_model.upstream_model {
+                if upstream_models.len() != 1 {
+                    return NativeInboundDecision::Rejected(format!(
+                        "native Responses model `{original_model}` maps to multiple providers"
+                    ));
+                }
+                let (provider, upstream_model) = upstream_models.iter().next().unwrap();
+                matches.push((provider.as_str(), upstream_model.as_str(), None, None));
+            }
+        }
+    }
+    for route in &config.routes {
+        if route.model == lookup_model {
+            matches.push((
+                route.provider.as_str(),
+                route.upstream_model.as_deref().unwrap_or(lookup_model),
+                route.effort.as_deref(),
+                route.service_tier.as_deref(),
+            ));
+        }
+    }
+    if matches.len() > 1 {
+        return NativeInboundDecision::Rejected(format!(
+            "native Responses model `{original_model}` has ambiguous exact mappings"
+        ));
+    }
+    let Some((provider, upstream_model, effort, service_tier)) = matches.into_iter().next() else {
+        return NativeInboundDecision::Pinned(route_for(
+            config,
+            pinned_provider,
+            original_model,
+            lookup_model,
+            None,
+            None,
+        ));
+    };
+    let route = route_for(
+        config,
+        provider,
+        original_model,
+        upstream_model,
+        effort.map(ToOwned::to_owned),
+        service_tier.map(ToOwned::to_owned),
+    );
+    if route.adapter != AdapterKind::Responses {
+        return NativeInboundDecision::Rejected(format!(
+            "native Responses model `{original_model}` selects a non-Responses provider `{provider}`"
+        ));
+    }
+    if route.upstream_model != lookup_model {
+        return NativeInboundDecision::Rejected(format!(
+            "native Responses model `{original_model}` requires model translation to `{}`",
+            route.upstream_model
+        ));
+    }
+    NativeInboundDecision::Selected(route)
 }
 
 pub fn resolve_model(config: &Config, model: &str) -> Route {
@@ -215,8 +308,8 @@ mod tests {
     use crate::config::{Config, ModelConfig, RouteConfig, RoutePrefixConfig};
 
     use super::{
-        resolve_model, resolve_model_chain, resolve_request, resolve_request_chain,
-        strip_context_window_hint, AdapterKind,
+        resolve_model, resolve_model_chain, resolve_native_inbound, resolve_request,
+        resolve_request_chain, strip_context_window_hint, AdapterKind, NativeInboundDecision,
     };
 
     fn mapped_model(id: &str, provider: &str, upstream_model: &str) -> ModelConfig {
@@ -662,5 +755,75 @@ mod tests {
         assert_eq!(route.provider, "codex");
         assert_eq!(route.adapter, AdapterKind::Responses);
         assert_eq!(route.effort.as_deref(), Some("high"));
+    }
+
+    #[test]
+    fn native_resolver_table_preserves_pinned_and_rejects_incompatible_exact_routes() {
+        let mut config = Config::default();
+        config.server.codex_endpoint = Some(crate::config::CodexEndpointConfig {
+            provider: "codex".into(),
+        });
+        config.models = vec![mapped_model("native", "codex", "native")];
+        config.routes = vec![RouteConfig {
+            model: "translated".into(),
+            provider: "codex".into(),
+            upstream_model: Some("different".into()),
+            effort: None,
+            service_tier: None,
+        }];
+        config.route_prefixes = vec![RoutePrefixConfig {
+            prefix: "native-".into(),
+            provider: "codex".into(),
+        }];
+
+        let cases = [
+            (Some("native"), "selected"),
+            (Some("native[1m]"), "selected"),
+            (Some("native-prefix"), "pinned"),
+            (Some("missing"), "pinned"),
+            (None, "pinned"),
+            (Some("translated"), "rejected"),
+        ];
+        for (model, expected) in cases {
+            let decision = resolve_native_inbound(&config, model);
+            let actual = match decision {
+                NativeInboundDecision::Pinned(route) => {
+                    assert_eq!(route.provider, "codex");
+                    "pinned"
+                }
+                NativeInboundDecision::Selected(route) => {
+                    assert_eq!(route.provider, "codex");
+                    assert_eq!(route.upstream_model, "native");
+                    "selected"
+                }
+                NativeInboundDecision::Rejected(_) => "rejected",
+            };
+            assert_eq!(actual, expected, "model={model:?}");
+        }
+    }
+
+    #[test]
+    fn native_resolver_rejects_ambiguous_and_non_responses_routes() {
+        let mut config = Config::default();
+        config.server.codex_endpoint = Some(crate::config::CodexEndpointConfig {
+            provider: "codex".into(),
+        });
+        config.models = vec![ModelConfig {
+            id: "ambiguous".into(),
+            display_name: None,
+            upstream_model: Some(BTreeMap::from([
+                ("codex".into(), "ambiguous".into()),
+                ("openai".into(), "ambiguous".into()),
+            ])),
+        }];
+        assert!(matches!(
+            resolve_native_inbound(&config, Some("ambiguous")),
+            NativeInboundDecision::Rejected(_)
+        ));
+        config.models = vec![mapped_model("anthropic", "anthropic", "anthropic")];
+        assert!(matches!(
+            resolve_native_inbound(&config, Some("anthropic")),
+            NativeInboundDecision::Rejected(_)
+        ));
     }
 }

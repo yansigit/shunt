@@ -30,7 +30,6 @@ use super::frame::{
 
 struct TurnContext {
     state: AppState,
-    provider: String,
     model: String,
     pool_key: Option<String>,
     headers: HeaderMap,
@@ -73,13 +72,12 @@ pub async fn get(
     let session_id = extract_session_id(&headers);
     let pool_key = pool_sticky_key(inbound_client.as_deref(), session_id);
 
-    ws.on_upgrade(move |socket| handle_socket(socket, state, provider, pool_key, headers))
+    ws.on_upgrade(move |socket| handle_socket(socket, state, pool_key, headers))
 }
 
 async fn handle_socket(
     socket: WebSocket,
     state: AppState,
-    provider: String,
     pool_key: Option<String>,
     handshake_headers: HeaderMap,
 ) {
@@ -164,7 +162,6 @@ async fn handle_socket(
                         turn_headers.remove(header::CONTENT_ENCODING);
 
                         let state_clone = state.clone();
-                        let provider_clone = provider.clone();
                         let pool_key_clone = pool_key.clone();
                         let out_tx_clone = out_tx.clone();
                         let gen_clone = current_generation.clone();
@@ -172,7 +169,6 @@ async fn handle_socket(
                         active_turn_task = Some(tokio::spawn(async move {
                             run_turn(TurnContext {
                                 state: state_clone,
-                                provider: provider_clone,
                                 model: turn_model,
                                 pool_key: pool_key_clone,
                                 headers: turn_headers,
@@ -196,7 +192,6 @@ async fn handle_socket(
 async fn run_turn(context: TurnContext) {
     let TurnContext {
         state,
-        provider,
         model,
         pool_key,
         headers,
@@ -208,8 +203,7 @@ async fn run_turn(context: TurnContext) {
     let is_current = || current_generation.load(Ordering::Relaxed) == turn_gen;
 
     let started_at = Instant::now();
-    let dispatch_res =
-        forward_turn(state, provider, model, pool_key, headers, body, started_at).await;
+    let dispatch_res = forward_turn(state, Some(model), pool_key, headers, body, started_at).await;
 
     if !is_current() {
         return;

@@ -23,7 +23,6 @@ use crate::{
     adapters::{responses, AdapterError},
     compression::BodyEncoding,
     error::ShuntError,
-    routing::{AdapterKind, Route},
     server::AppState,
 };
 
@@ -261,13 +260,15 @@ async fn forward(
             ),
         });
     };
-    let provider = codex_endpoint.provider.clone();
+    let pinned_provider = codex_endpoint.provider.clone();
 
-    let inbound_client = authenticate_inbound(state.inbound_auth.as_deref(), &headers, &provider)
-        .map_err(|err| ForwardError {
-        message: "inbound authentication failed".to_string(),
-        response: Box::new(err.into_response()),
-    })?;
+    let inbound_client =
+        authenticate_inbound(state.inbound_auth.as_deref(), &headers, &pinned_provider).map_err(
+            |err| ForwardError {
+                message: "inbound authentication failed".to_string(),
+                response: Box::new(err.into_response()),
+            },
+        )?;
 
     let max_request_bytes = state.config.server.limits.max_request_bytes;
     if crate::http_tuning::content_length_exceeds(&headers, max_request_bytes) {
@@ -289,11 +290,12 @@ async fn forward(
         })?;
 
     // Read the model for metrics/logging only; the body forwards verbatim.
-    let model = model_label(&headers, &body, max_request_bytes).await;
-    crate::observability::record_requested_model(&model);
+    let label = model_label(&headers, &body, max_request_bytes).await;
+    let model = (label != UNKNOWN_MODEL).then_some(label.clone());
+    crate::observability::record_requested_model(&label);
     let pool_key = pool_sticky_key(inbound_client.as_deref(), session_id);
 
-    forward_turn(state, provider, model, pool_key, headers, body, started_at).await
+    forward_turn(state, model, pool_key, headers, body, started_at).await
 }
 
 pub(crate) fn extract_session_id(headers: &HeaderMap) -> Option<String> {
@@ -336,21 +338,28 @@ pub(crate) fn authenticate_inbound(
 
 pub(crate) async fn forward_turn(
     state: AppState,
-    provider: String,
-    model: String,
+    model: Option<String>,
     pool_key: Option<String>,
     headers: HeaderMap,
     body: Bytes,
     started_at: Instant,
 ) -> Result<(StatusCode, axum::response::Response), ForwardError> {
-    let route = Route {
-        provider: provider.clone(),
-        adapter: AdapterKind::Responses,
-        model: model.clone(),
-        upstream_model: model.clone(),
-        effort: None,
-        service_tier: None,
+    let decision = crate::routing::resolve_native_inbound(&state.config, model.as_deref());
+    let route = match decision {
+        crate::routing::NativeInboundDecision::Pinned(route)
+        | crate::routing::NativeInboundDecision::Selected(route) => route,
+        crate::routing::NativeInboundDecision::Rejected(message) => {
+            return Err(ForwardError {
+                message: message.clone(),
+                response: Box::new(
+                    ShuntError::new(StatusCode::BAD_REQUEST, "invalid_request_error", message)
+                        .into_response(),
+                ),
+            });
+        }
     };
+    let provider = route.provider.clone();
+    let model = route.model.clone();
 
     let result = responses::forward_codex_inbound(state, route, pool_key, headers, body).await;
     let status_code = match &result {
