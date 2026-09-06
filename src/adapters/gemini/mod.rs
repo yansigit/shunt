@@ -1,6 +1,5 @@
 //! Gemini adapter implementation for Google Code Assist / Gemini endpoints.
 
-#[cfg(test)]
 mod sse;
 
 use axum::{
