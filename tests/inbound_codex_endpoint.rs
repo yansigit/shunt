@@ -618,7 +618,7 @@ async fn pinned_fallback() {
 }
 
 #[tokio::test]
-async fn forwards_a_zstd_compressed_body_verbatim() {
+async fn zstd_native_route() {
     // A Codex CLI client that already zstd-compressed its own request body (the
     // same shape `prepare_body` produces on the outbound Responses path) must
     // reach the upstream untouched: same `content-encoding: zstd` header, same
@@ -754,6 +754,51 @@ async fn sse_response_is_relayed_verbatim_without_translation() {
     upstream.verify().await;
 
     std::env::remove_var("SHUNT_TEST_INBOUND_SSE");
+}
+
+#[tokio::test]
+async fn no_mid_stream_hop() {
+    // A 200 response establishes the relay boundary as soon as the first SSE
+    // bytes are available. Later upstream failure-shaped events are still raw
+    // bytes; the gateway must never replay the request through another account.
+    if !can_bind_loopback() {
+        return;
+    }
+    let token_a = chatgpt_token(FAR_FUTURE_EXP, "acct-stream-a");
+    let token_b = chatgpt_token(FAR_FUTURE_EXP, "acct-stream-b");
+    std::env::set_var("SHUNT_TEST_INBOUND_STREAM_A", &token_a);
+    std::env::set_var("SHUNT_TEST_INBOUND_STREAM_B", &token_b);
+    let sse = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"first\"}\n\n".to_string()
+        + "data: {\"type\":\"response.failed\",\"error\":{\"message\":\"upstream failed\"}}\n\n";
+    let upstream = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/codex/responses"))
+        .and(BearerToken(token_a.clone()))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(sse.as_str(), "text/event-stream"))
+        .expect(1)
+        .mount(&upstream)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/codex/responses"))
+        .and(BearerToken(token_b.clone()))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&upstream)
+        .await;
+    let gateway = start_gateway_with(test_config(
+        &upstream.uri(),
+        vec![
+            account("account-stream-a", "SHUNT_TEST_INBOUND_STREAM_A"),
+            account("account-stream-b", "SHUNT_TEST_INBOUND_STREAM_B"),
+        ],
+    ))
+    .await;
+    let response = post_responses(&gateway, "/responses", None, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.text().await.unwrap(), sse);
+    upstream.verify().await;
+    std::env::remove_var("SHUNT_TEST_INBOUND_STREAM_A");
+    std::env::remove_var("SHUNT_TEST_INBOUND_STREAM_B");
 }
 
 #[tokio::test]
