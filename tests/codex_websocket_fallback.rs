@@ -508,8 +508,7 @@ async fn serve_http(mut socket: TcpStream) {
 /// first connection serves a tool turn, rejects the following delta request, and
 /// the second connection accepts the one full-input recovery. Every
 /// `response.create` body is retained structurally for exact assertions.
-async fn spawn_continuation_recovery_upstream(
-) -> (String, Arc<StdMutex<Vec<serde_json::Value>>>) {
+async fn spawn_continuation_recovery_upstream() -> (String, Arc<StdMutex<Vec<serde_json::Value>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let frames = Arc::new(StdMutex::new(Vec::new()));
@@ -721,7 +720,11 @@ async fn continuation_recovery_preserves_tool_pair_and_opaque_state_once() {
     assert!(recovered.text().await.unwrap().contains("recovered once"));
 
     let frames = frames.lock().unwrap();
-    assert_eq!(frames.len(), 3, "seed plus exactly two second-turn attempts");
+    assert_eq!(
+        frames.len(),
+        3,
+        "seed plus exactly two second-turn attempts"
+    );
     let delta = &frames[1];
     assert_eq!(delta["previous_response_id"], "resp_seed");
     assert_eq!(delta["input"].as_array().unwrap().len(), 1);
