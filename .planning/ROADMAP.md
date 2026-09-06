@@ -16,7 +16,7 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
 - [x] **Phase 5: Anthropic Translation** - Add a dedicated Responses-to-Anthropic vertical translation subsystem. (completed 2026-09-06)
 - [x] **Phase 6: Capability-Aware Fallback** - Exclude incompatible targets before heterogeneous dispatch. (completed 2026-09-06)
 - [x] **Phase 7: Collaboration Preservation** - Preserve opt-in routed collaboration and continuation semantics. (completed 2026-09-06)
-- [ ] **Phase 8: Bounded Shutdown** - Drain streaming transports to a deadline, then cancel safely.
+- [x] **Phase 8: Bounded Shutdown** - Drain streaming transports to a deadline, then cancel safely. (completed 2026-09-06)
 
 ## Phase Details
 
@@ -153,4 +153,4 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
 | 5. Anthropic Translation | 3/3 | Complete    | 2026-09-06 |
 | 6. Capability-Aware Fallback | 2/2 | Complete    | 2026-09-06 |
 | 7. Collaboration Preservation | 3/3 | Complete    | 2026-09-06 |
-| 8. Bounded Shutdown | 0/TBD | Not started | - |
+| 8. Bounded Shutdown | 3/3 | Complete    | 2026-09-06 |

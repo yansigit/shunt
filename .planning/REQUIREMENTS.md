@@ -47,7 +47,7 @@
 
 ### Operations
 
-- [ ] **OPS-01**: Graceful shutdown stops admission, drains active HTTP/SSE/WebSocket turns for a bounded deadline, then cancels remaining work and releases resources.
+- [x] **OPS-01**: Graceful shutdown stops admission, drains active HTTP/SSE/WebSocket turns for a bounded deadline, then cancels remaining work and releases resources.
 
 ## v2 Requirements
 
@@ -89,7 +89,7 @@
 | TRANS-03 | Phase 5 | Complete |
 | CAP-01 | Phase 6 | Complete |
 | COLLAB-01 | Phase 7 | Complete |
-| OPS-01 | Phase 8 | Pending |
+| OPS-01 | Phase 8 | Complete |
 
 **Coverage:**
 

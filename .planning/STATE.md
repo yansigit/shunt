@@ -1,19 +1,18 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 8
-current_phase_name: Bounded Shutdown
-status: ready_to_plan
-stopped_at: Phase 07 complete, ready to plan Phase 8
-last_updated: "2026-09-06T07:47:25.020Z"
+current_phase: 08
+status: completed
+stopped_at: Phase 08 complete — all phases complete
+last_updated: "2026-09-06T08:15:03.439Z"
 last_activity: 2026-09-06
-last_activity_desc: Phase 07 complete, transitioned to Phase 8
-state_head: efa5ee0388cfa2d4dc22b7f6bbc99ab5937847f8
+last_activity_desc: Phase 08 complete
+state_head: 5055e6ed78d153c0377a98d3fdafe91cfb57e868
 progress:
   total_phases: 8
-  completed_phases: 7
-  total_plans: 22
-  completed_plans: 22
-  percent: 88
+  completed_phases: 8
+  total_plans: 25
+  completed_plans: 25
+  percent: 100
 ---
 
 # Project State
@@ -23,22 +22,22 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-09-05 after Phase 4)
 
 **Core value:** Protocol-faithful, streaming-safe client behavior in a bounded, lean gateway.
-**Current focus:** Phase 8 — Bounded Shutdown
+**Current focus:** OpenCodex port milestone complete — ready for milestone audit
 
 ## Current Position
 
-Phase: 8 — Bounded Shutdown
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-09-06 — Phase 07 complete, transitioned to Phase 8
+Phase: 08
+Plan: Complete (3/3)
+Status: All phases complete
+Last activity: 2026-09-06 — Phase 08 complete
 
-Progress: [█████████░] 88%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 22
+- Total plans completed: 25
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -53,6 +52,7 @@ Progress: [█████████░] 88%
 | 05 | 3 | - | - |
 | 06 | 2 | - | - |
 | 07 | 3 | - | - |
+| 08 | 3 | - | - |
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
@@ -90,6 +90,9 @@ Progress: [█████████░] 88%
 - [Phase 07]: Collaboration translation is default-off and request-authorized; native Responses traffic remains opaque regardless of the flag.
 - [Phase 07]: Exact Anthropic routes bridge declared V2 collaboration tools and plaintext tasks, but ciphertext-only or provider continuation state fails before dispatch.
 - [Phase 07]: shunt performs no collaboration decryption, persistence, cache, or hidden billable recovery call.
+- [Phase 08]: The first signal stops admission and starts one validated process deadline, defaulting to 30 seconds with an inclusive 1..=3600 range.
+- [Phase 08]: Deadline expiry drops the Axum server future; normal Tokio runtime teardown cancels remaining HTTP, SSE, WebSocket, and background work and releases RAII-owned resources.
+- [Phase 08]: The existing second-signal immediate-exit escape hatch remains available, while timeout changes require restart because the coordinator captures the value at boot.
 
 ### Pending Todos
 
@@ -109,5 +112,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-09-06T03:30:00Z
-Stopped at: Phase 07 complete, ready to plan Phase 8
+Stopped at: Phase 08 complete — all phases complete
 Resume file: None

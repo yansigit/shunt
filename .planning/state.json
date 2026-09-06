@@ -41,13 +41,13 @@
     {
       "number": "8",
       "name": "Bounded Shutdown",
-      "status": "pending"
+      "status": "complete"
     }
   ],
   "next": {
-    "command": "/gsd:progress",
-    "label": "Show progress",
-    "reason": "Unsure of state — showing progress"
+    "command": "/gsd:new-milestone",
+    "label": "Start a new milestone",
+    "reason": "All phases complete — start a new milestone"
   },
-  "updated_at": "2026-09-06T07:47:25.040Z"
+  "updated_at": "2026-09-06T08:15:03.462Z"
 }
