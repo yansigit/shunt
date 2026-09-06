@@ -28,6 +28,8 @@ use crate::{
     server::AppState,
 };
 
+use self::sse::{Decoder as GeminiSseDecoder, Item as GeminiSseItem};
+
 pub struct GeminiAdapter;
 
 impl Adapter for GeminiAdapter {
@@ -97,27 +99,24 @@ fn set_thinking_level(inner_req: &mut Value, level: &str) {
     }
 }
 
-fn append_gemini_events(line: &[u8], machine: &mut GeminiSseMachine, output: &mut Vec<u8>) {
-    let Ok(line) = std::str::from_utf8(line) else {
-        return;
-    };
-    let line = line.trim();
-    let Some(json_str) = line.strip_prefix("data: ").map(str::trim) else {
-        return;
-    };
-    if json_str.is_empty() || json_str == "[DONE]" {
-        return;
-    }
-    if let Ok(parsed) = serde_json::from_str::<Value>(json_str) {
-        append_sse_events(machine.process_chunk(&parsed), output);
-    }
-}
-
 fn append_sse_events(events: Vec<crate::model::gemini::SseEvent>, output: &mut Vec<u8>) {
     for event in events {
         let formatted = format!("event: {}\ndata: {}\n\n", event.event, event.data);
         output.extend_from_slice(formatted.as_bytes());
     }
+}
+
+fn append_protocol_error(message: impl Into<String>, output: &mut Vec<u8>) {
+    append_sse_events(
+        vec![crate::model::gemini::SseEvent {
+            event: "error".to_string(),
+            data: serde_json::json!({
+                "type": "error",
+                "error": {"type": "api_error", "message": message.into()}
+            }),
+        }],
+        output,
+    );
 }
 
 async fn forward(
@@ -305,56 +304,91 @@ async fn forward(
 
     if is_streaming {
         let byte_stream = response.bytes_stream();
-        let machine = GeminiSseMachine::new(&route.model);
+        let machine = GeminiSseMachine::new_streaming(&route.model);
+        let decoder = GeminiSseDecoder::default();
 
         let sse_stream = futures_util::stream::unfold(
-            (byte_stream, Vec::<u8>::new(), machine, false),
-            |(mut bytes, mut line_buffer, mut machine, finished)| async move {
+            (byte_stream, decoder, machine, false),
+            |(mut bytes, mut decoder, mut machine, finished)| async move {
                 if finished {
                     return None;
                 }
                 loop {
-                    let mut sse_bytes = Vec::new();
-                    while let Some(pos) = line_buffer.iter().position(|byte| *byte == b'\n') {
-                        let line = line_buffer.drain(..=pos).collect::<Vec<_>>();
-                        append_gemini_events(&line[..line.len() - 1], &mut machine, &mut sse_bytes);
-                    }
-
-                    if !sse_bytes.is_empty() {
-                        return Some((
-                            Ok::<_, std::io::Error>(axum::body::Bytes::from(sse_bytes)),
-                            (bytes, line_buffer, machine, false),
-                        ));
-                    }
-
                     match bytes.next().await {
-                        Some(Ok(chunk)) => line_buffer.extend_from_slice(&chunk),
+                        Some(Ok(chunk)) => {
+                            let items = match decoder.push(&chunk) {
+                                Ok(items) => items,
+                                Err(error) => {
+                                    let mut output = Vec::new();
+                                    append_protocol_error(error, &mut output);
+                                    return Some((
+                                        Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(
+                                            output,
+                                        )),
+                                        (bytes, decoder, machine, true),
+                                    ));
+                                }
+                            };
+                            let mut output = Vec::new();
+                            let mut terminal = false;
+                            for item in items {
+                                let result = match item {
+                                    GeminiSseItem::Json(value) => {
+                                        machine.process_chunk_checked(&value)
+                                    }
+                                    GeminiSseItem::Done => machine.transport_close_checked(),
+                                };
+                                match result {
+                                    Ok(events) => {
+                                        terminal = events.iter().any(|event| {
+                                            event.event == "error" || event.event == "message_stop"
+                                        });
+                                        append_sse_events(events, &mut output);
+                                    }
+                                    Err(error) => {
+                                        append_protocol_error(error.to_string(), &mut output);
+                                        terminal = true;
+                                    }
+                                }
+                                if terminal {
+                                    break;
+                                }
+                            }
+                            if !output.is_empty() {
+                                return Some((
+                                    Ok(axum::body::Bytes::from(output)),
+                                    (bytes, decoder, machine, terminal),
+                                ));
+                            }
+                        }
                         Some(Err(error)) => {
+                            let mut output = Vec::new();
+                            append_protocol_error(
+                                format!("Gemini response stream failed: {error}"),
+                                &mut output,
+                            );
                             return Some((
-                                Err(std::io::Error::other(format!(
-                                    "Gemini response stream failed: {error}"
-                                ))),
-                                (bytes, line_buffer, machine, true),
+                                Ok(axum::body::Bytes::from(output)),
+                                (bytes, decoder, machine, true),
                             ));
                         }
                         None => {
-                            let mut terminal_bytes = Vec::new();
-                            if !line_buffer.is_empty() {
-                                append_gemini_events(
-                                    &line_buffer,
-                                    &mut machine,
-                                    &mut terminal_bytes,
-                                );
-                            }
-                            let mut events = Vec::new();
-                            machine.finish(&mut events);
-                            append_sse_events(events, &mut terminal_bytes);
-                            if terminal_bytes.is_empty() {
-                                return None;
+                            let result = decoder
+                                .finish()
+                                .map_err(|error| error.to_string())
+                                .and_then(|()| {
+                                    machine
+                                        .transport_close_checked()
+                                        .map_err(|error| error.to_string())
+                                });
+                            let mut output = Vec::new();
+                            match result {
+                                Ok(events) => append_sse_events(events, &mut output),
+                                Err(error) => append_protocol_error(error, &mut output),
                             }
                             return Some((
-                                Ok::<_, std::io::Error>(axum::body::Bytes::from(terminal_bytes)),
-                                (bytes, Vec::new(), machine, true),
+                                Ok(axum::body::Bytes::from(output)),
+                                (bytes, decoder, machine, true),
                             ));
                         }
                     }

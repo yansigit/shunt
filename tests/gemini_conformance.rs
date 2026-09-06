@@ -1,12 +1,17 @@
-use std::{io::ErrorKind, net::SocketAddr};
+use std::{convert::Infallible, io::ErrorKind, net::SocketAddr, sync::Arc};
 
+use axum::{body::Body, extract::State, routing::post, Router};
+use futures_util::{stream, StreamExt};
 use reqwest::StatusCode;
 use serde_json::json;
 use shunt::{
     config::{AuthMode, Config, RetryConfig, RouteConfig},
     server,
 };
-use tokio::task::JoinHandle;
+use tokio::{
+    sync::{mpsc, Notify},
+    task::JoinHandle,
+};
 use wiremock::{
     matchers::{method, path, query_param},
     Mock, MockServer, ResponseTemplate,
@@ -157,15 +162,72 @@ async fn gemini_streaming_framing_embedded_provider_error_is_terminal() {
     assert!(!body.contains("event: message_stop"), "{body}");
 }
 
+async fn held_gemini_stream(State(dropped): State<Arc<Notify>>) -> Body {
+    let (sender, receiver) = mpsc::channel::<Result<bytes::Bytes, Infallible>>(1);
+    sender
+        .send(Ok(bytes::Bytes::from_static(
+            b"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"early\"}]}}]}\n\n",
+        )))
+        .await
+        .unwrap();
+    tokio::spawn(async move {
+        sender.closed().await;
+        dropped.notify_one();
+    });
+    Body::from_stream(stream::unfold(receiver, |mut receiver| async move {
+        receiver.recv().await.map(|item| (item, receiver))
+    }))
+}
+
+#[tokio::test]
+async fn gemini_streaming_framing_delivers_early_and_drops_pending_upstream() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let dropped = Arc::new(Notify::new());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let app = Router::new()
+        .route(
+            "/v1beta/models/gemini-2.5-pro:streamGenerateContent",
+            post(held_gemini_stream),
+        )
+        .with_state(dropped.clone());
+    let upstream_task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let gateway = start_gateway(format!("http://{addr}")).await;
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .body(request(true))
+        .send()
+        .await
+        .unwrap();
+    let mut body = response.bytes_stream();
+    let first = tokio::time::timeout(std::time::Duration::from_secs(1), body.next())
+        .await
+        .expect("translated delta must arrive before upstream EOF")
+        .unwrap()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&first).contains("early"));
+    drop(body);
+    tokio::time::timeout(std::time::Duration::from_secs(1), dropped.notified())
+        .await
+        .expect("downstream drop must release the pending upstream body");
+    upstream_task.abort();
+}
+
 #[tokio::test]
 async fn gemini_streaming_framing_joins_multiline_data_before_json_decode() {
     if !can_bind_loopback() {
         return;
     }
-    let body = streaming_gateway_response(concat!(
-        "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"multi\"}]},\n",
-        "data: \"finishReason\":\"STOP\"}]}\n\n",
-    ).as_bytes()).await;
+    let body = streaming_gateway_response(
+        concat!(
+            "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"multi\"}]},\n",
+            "data: \"finishReason\":\"STOP\"}]}\n\n",
+        )
+        .as_bytes(),
+    )
+    .await;
     assert!(body.contains("multi"), "{body}");
     assert_eq!(body.matches("event: message_stop").count(), 1, "{body}");
     assert!(!body.contains("event: error"), "{body}");
@@ -176,10 +238,14 @@ async fn gemini_streaming_framing_late_data_invalidates_pending_success() {
     if !can_bind_loopback() {
         return;
     }
-    let body = streaming_gateway_response(concat!(
-        "data: {\"candidates\":[{\"finishReason\":\"STOP\"}]}\n\n",
-        "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"late\"}]}}]}\n\n",
-    ).as_bytes()).await;
+    let body = streaming_gateway_response(
+        concat!(
+            "data: {\"candidates\":[{\"finishReason\":\"STOP\"}]}\n\n",
+            "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"late\"}]}}]}\n\n",
+        )
+        .as_bytes(),
+    )
+    .await;
     assert_eq!(body.matches("event: error").count(), 1, "{body}");
     assert!(!body.contains("event: message_stop"), "{body}");
 }
