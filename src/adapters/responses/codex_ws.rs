@@ -967,11 +967,18 @@ async fn run_turn(
 
         match next {
             Some(Ok(Message::Text(text))) => {
-                let Some(event) = parse_event(&text) else {
-                    // Non-JSON or typeless frames carry no state the machine
-                    // understands; skip them rather than aborting the stream.
-                    tracing::debug!(frame = %text, "skipping unparseable codex ws frame");
-                    continue;
+                let event = match parse_event(&text) {
+                    Ok(event) => event,
+                    Err(error) => {
+                        let _ = events
+                            .send(Err(CodexWsError::transport(format!(
+                                "malformed codex websocket event: {error}"
+                            ))))
+                            .await;
+                        *conn.continuation.lock().unwrap() = None;
+                        evict(conn);
+                        return TurnEnd::Dead;
+                    }
                 };
                 // A rejected `previous_response_id` is not forwarded to the client;
                 // it is signalled so the caller can retry with the full input.
@@ -1235,11 +1242,36 @@ fn is_previous_response_missing(data: &Value) -> bool {
 /// Parse a websocket text frame into a [`ResponseEvent`]. The Responses events
 /// carry their SSE `event:` name in the JSON `type` field, so the machine can be
 /// driven from it exactly as from the HTTP SSE stream.
-fn parse_event(text: &str) -> Option<ResponseEvent> {
-    let data: Value = serde_json::from_str(text).ok()?;
-    let event = data.get("type").and_then(Value::as_str).map(str::to_string);
-    event.as_ref()?; // typeless frames are not Responses events
-    Some(ResponseEvent { event, data })
+#[derive(Debug)]
+enum ParseEventError {
+    InvalidJson,
+    InvalidEnvelope,
+}
+
+impl std::fmt::Display for ParseEventError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::InvalidJson => "invalid JSON",
+            Self::InvalidEnvelope => "missing non-empty string type",
+        })
+    }
+}
+
+fn parse_event(text: &str) -> Result<ResponseEvent, ParseEventError> {
+    let data: Value = serde_json::from_str(text).map_err(|_| ParseEventError::InvalidJson)?;
+    if !data.is_object() {
+        return Err(ParseEventError::InvalidEnvelope);
+    }
+    let event = data
+        .get("type")
+        .and_then(Value::as_str)
+        .filter(|event| !event.is_empty())
+        .ok_or(ParseEventError::InvalidEnvelope)?
+        .to_string();
+    Ok(ResponseEvent {
+        event: Some(event),
+        data,
+    })
 }
 
 /// Map a tungstenite handshake failure to a [`CodexWsError`], extracting the HTTP
@@ -1349,8 +1381,17 @@ mod tests {
 
     #[test]
     fn parse_event_rejects_typeless_and_non_json() {
-        assert!(parse_event(r#"{"no_type":1}"#).is_none());
-        assert!(parse_event("not json").is_none());
+        assert!(parse_event(r#"{"no_type":1}"#).is_err());
+        assert!(parse_event("not json").is_err());
+        assert!(parse_event(r#"{"type":""}"#).is_err());
+        assert!(parse_event(r#"["response.completed"]"#).is_err());
+    }
+
+    #[test]
+    fn parse_event_accepts_well_formed_unknown_types() {
+        let event = parse_event(r#"{"type":"response.future_event","value":1}"#).unwrap();
+        assert_eq!(event.event.as_deref(), Some("response.future_event"));
+        assert_eq!(event.data["value"], 1);
     }
 
     #[test]
@@ -3168,6 +3209,52 @@ mod tests {
             "a binary frame surfaces a transport error"
         );
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn malformed_websocket_event_prevents_later_clean_completion() {
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async_with_config(
+                socket,
+                Some(WebSocketConfig::default()),
+            )
+            .await
+            .unwrap();
+            let Some(Ok(Message::Text(_))) = ws.next().await else {
+                panic!("expected a client frame");
+            };
+            ws.send(Message::Text("not json".to_string().into()))
+                .await
+                .unwrap();
+            let _ = ws
+                .send(Message::Text(
+                    r#"{"type":"response.completed","response":{}}"#
+                        .to_string()
+                        .into(),
+                ))
+                .await;
+        });
+
+        let body = serde_json::json!({"model": "m", "input": []});
+        let frame = response_create_frame(&body);
+        let mut events = open_simple(
+            &format!("ws://{addr}/codex/responses"),
+            HeaderMap::new(),
+            &frame,
+            None,
+        )
+        .await
+        .expect("websocket should connect");
+
+        let first = events.recv().await.expect("one protocol error").unwrap_err();
+        assert!(first.message.contains("malformed codex websocket event"));
+        assert!(events.recv().await.is_none());
+        server.await.unwrap();
     }
 
     /// An abrupt stream end (socket dropped) before a terminal event surfaces a
