@@ -145,7 +145,14 @@ impl GeminiSseMachine {
     /// [`Self::process_chunk_checked`] so protocol failures remain typed.
     pub fn process_chunk(&mut self, chunk: &Value) -> Vec<SseEvent> {
         match self.process_chunk_checked(chunk) {
-            Ok(events) => events,
+            Ok(mut events) => {
+                if self.terminal == TerminalState::SuccessPending {
+                    if let Ok(terminal) = self.transport_close_checked() {
+                        events.extend(terminal);
+                    }
+                }
+                events
+            }
             Err(error) => vec![protocol_error_event(error.to_string())],
         }
     }
@@ -660,6 +667,12 @@ impl GeminiSseMachine {
     }
 
     pub fn finish(&mut self, events: &mut Vec<SseEvent>) {
+        if matches!(
+            self.terminal,
+            TerminalState::SuccessEmitted | TerminalState::ProviderFailed
+        ) {
+            return;
+        }
         match self.transport_close_checked() {
             Ok(terminal) => events.extend(terminal),
             Err(error) if self.terminal == TerminalState::ProtocolFailed => {
@@ -889,7 +902,7 @@ mod tests {
             }
         });
 
-        let events1 = machine.process_chunk(&chunk1);
+        let events1 = machine.process_chunk_checked(&chunk1).unwrap();
         assert_eq!(events1[0].event, "message_start");
         assert_eq!(events1[1].event, "content_block_start");
         assert_eq!(events1[2].event, "content_block_delta");
@@ -909,7 +922,7 @@ mod tests {
             }
         });
 
-        let mut events2 = machine.process_chunk(&chunk2);
+        let mut events2 = machine.process_chunk_checked(&chunk2).unwrap();
         events2.extend(machine.transport_close_checked().unwrap());
         assert_eq!(events2[0].event, "content_block_delta");
         assert_eq!(events2[0].data["delta"]["text"], "world!");
@@ -939,7 +952,7 @@ mod tests {
             }]
         });
 
-        let mut events = machine.process_chunk(&chunk);
+        let mut events = machine.process_chunk_checked(&chunk).unwrap();
         events.extend(machine.transport_close_checked().unwrap());
         assert_eq!(events[0].event, "message_start");
         assert_eq!(events[1].event, "content_block_start");

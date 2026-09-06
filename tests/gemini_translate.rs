@@ -80,7 +80,7 @@ fn test_gemini_sse_machine_text_and_finish() {
         }
     });
 
-    let mut events = machine.process_chunk(&chunk);
+    let mut events = machine.process_chunk_checked(&chunk).unwrap();
     events.extend(machine.transport_close_checked().unwrap());
     assert_eq!(events[0].event, "message_start");
     assert_eq!(events[0].data["message"]["model"], "gemini-3-flash-preview");
@@ -165,7 +165,7 @@ fn test_gemini_3_thought_signature_survives_tool_round_trip() {
         }]
     });
 
-    let events = machine.process_chunk(&chunk);
+    let events = machine.process_chunk_checked(&chunk).unwrap();
     assert_eq!(events[1].event, "content_block_start");
     assert_eq!(events[1].data["content_block"]["type"], "tool_use");
     assert_eq!(events[1].data["index"], 0);
@@ -351,7 +351,7 @@ fn test_gemini_sse_machine_non_streaming_accumulation() {
             }
         }]
     });
-    let _ = machine.process_chunk(&chunk1);
+    let _ = machine.process_chunk_checked(&chunk1).unwrap();
 
     // Chunk 2: text part 2 + tool_use
     let chunk2 = json!({
@@ -371,7 +371,7 @@ fn test_gemini_sse_machine_non_streaming_accumulation() {
             "finishReason": "STOP"
         }]
     });
-    let _ = machine.process_chunk(&chunk2);
+    let _ = machine.process_chunk_checked(&chunk2).unwrap();
     machine.transport_close_checked().unwrap();
 
     let final_json = machine.final_json();
