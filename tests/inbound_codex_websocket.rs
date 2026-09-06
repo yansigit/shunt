@@ -19,7 +19,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use futures_util::{SinkExt, StreamExt};
 use shunt::{
     config::{AccountConfig, CodexEndpointConfig, Config, InboundAuthConfig, RouteConfig},
-    server,
+    reload, server,
 };
 use tokio::sync::{mpsc, Notify};
 use tokio_tungstenite::{connect_async, tungstenite::Message, WebSocketStream};
@@ -437,6 +437,82 @@ async fn native_route_matches_http_and_websocket_provider_selection() {
         .iter()
         .all(|request| request["model"] == "native-ws-model"));
     cleanup(&account_env, &client_env);
+    std::env::remove_var(api_env);
+}
+
+#[tokio::test]
+async fn hot_reload_snapshot_routes_each_websocket_turn_once() {
+    let _env = ENV_LOCK.lock().await;
+    let reply = |marker: &'static str| Reply::Static {
+        status: StatusCode::OK,
+        content_type: "text/event-stream",
+        body: format!("data: {{\"type\":\"response.completed\",\"marker\":\"{marker}\"}}\n\n"),
+        headers: Vec::new(),
+    };
+    let (upstream_a, state_a) = start_upstream(vec![reply("A")]).await;
+    let (upstream_b, state_b) = start_upstream(vec![reply("B")]).await;
+
+    let account_env = "SHUNT_TEST_INBOUND_WS_ACCOUNT_RELOAD";
+    let client_env = "SHUNT_TEST_INBOUND_WS_CLIENT_RELOAD";
+    let api_env = "SHUNT_TEST_INBOUND_WS_API_RELOAD";
+    std::env::set_var(account_env, access_token("account-1"));
+    std::env::set_var(client_env, "client:gateway-secret");
+    std::env::set_var(api_env, "native-api-key");
+
+    let mut config = Config::default();
+    config.providers.get_mut("codex").unwrap().base_url = format!("http://{}", upstream_a.address);
+    let openai = config.providers.get_mut("openai").unwrap();
+    openai.base_url = format!("http://{}", upstream_a.address);
+    openai.api_key_env = Some(api_env.to_string());
+    config.server.codex_endpoint = Some(CodexEndpointConfig {
+        provider: "codex".to_string(),
+    });
+    config.server.auth = Some(InboundAuthConfig {
+        header: "x-shunt-token".to_string(),
+        tokens_env: client_env.to_string(),
+    });
+    config.routes.push(RouteConfig {
+        model: "reload-ws-model".to_string(),
+        provider: "openai".to_string(),
+        upstream_model: None,
+        effort: None,
+        service_tier: None,
+    });
+    let (router, shared, _) = server::build_router(config.clone()).unwrap();
+    let gateway = start_server(router).await;
+    let mut socket = connect(&gateway, "/v1/responses").await;
+
+    send_create_model(&mut socket, "reload-ws-model", "first").await;
+    assert_eq!(next_json(&mut socket).await["marker"], "A");
+    assert_eq!(state_a.requests.lock().unwrap().len(), 1);
+    assert!(state_b.requests.lock().unwrap().is_empty());
+
+    config.providers.get_mut("openai").unwrap().base_url = format!("http://{}", upstream_b.address);
+    let dir = std::env::temp_dir().join(format!(
+        "shunt-inbound-ws-reload-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("shunt.toml");
+    let mut reloaded_toml = toml::to_string(&config).unwrap();
+    // Empty `upstreams` serializes as an explicit declaration, which conflicts
+    // with the legacy `[providers.*]` form when Config::load validates reloads.
+    reloaded_toml = reloaded_toml.replace("upstreams = []\n", "");
+    std::fs::write(&path, reloaded_toml).unwrap();
+    reload::reload(&shared, Some(&path)).expect("reload native route config");
+
+    send_create_model(&mut socket, "reload-ws-model", "second").await;
+    assert_eq!(next_json(&mut socket).await["marker"], "B");
+    assert_eq!(state_a.requests.lock().unwrap().len(), 1);
+    assert_eq!(state_b.requests.lock().unwrap().len(), 1);
+
+    std::fs::remove_dir_all(dir).ok();
+    std::env::remove_var(account_env);
+    std::env::remove_var(client_env);
     std::env::remove_var(api_env);
 }
 
