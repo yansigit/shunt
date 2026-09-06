@@ -220,14 +220,14 @@ async fn count_tokens_is_not_retried() {
 }
 
 #[tokio::test]
-async fn success_is_never_retried() {
+async fn redispatch_gate_same_provider_commitment() {
     if !can_bind_loopback() {
         return;
     }
     let upstream = MockServer::start().await;
-    // A 2xx is committed the moment its body starts relaying, so it must be hit
-    // exactly once — the structural guarantee that a retry never happens
-    // mid-stream.
+    // A 2xx is committed the moment its body is handed downstream, so it must
+    // be hit exactly once. The same-provider retry driver has already returned
+    // at that point and cannot re-enter its pre-response attempt loop.
     Mock::given(method("POST"))
         .and(path("/v1/messages"))
         .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"ok":true}"#))

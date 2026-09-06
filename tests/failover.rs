@@ -751,7 +751,7 @@ async fn responses_raw_404_advances_despite_client_facing_502_mapping() {
 }
 
 #[tokio::test]
-async fn responses_post_2xx_backend_error_stops_without_replaying_turn() {
+async fn redispatch_gate_responses_in_body_error_stops_without_replaying_turn() {
     if !can_bind_loopback() {
         return;
     }
@@ -855,7 +855,7 @@ async fn responses_post_2xx_rate_limit_event_returns_429_without_replaying_turn(
 }
 
 #[tokio::test]
-async fn anthropic_truncated_200_body_stops_without_replaying_turn() {
+async fn redispatch_gate_client_visible_truncated_body_stops_without_replaying_turn() {
     if !can_bind_loopback() {
         return;
     }
@@ -916,6 +916,58 @@ async fn responses_truncated_200_body_stops_without_replaying_turn() {
     assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
     assert_gateway_headers(&response, "responses", "gpt-test");
     assert_eq!(first_hits.load(Ordering::SeqCst), 1);
+    skipped.verify().await;
+}
+
+#[tokio::test]
+async fn redispatch_gate_replay_unsafe_tool_event_stops_without_replaying_turn() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let responses = MockServer::start().await;
+    let skipped = MockServer::start().await;
+    let accepted_tool_turn = concat!(
+        "event: response.created\n",
+        "data: {\"response\":{\"id\":\"resp_tool\"}}\n\n",
+        "event: response.output_item.added\n",
+        "data: {\"item\":{\"type\":\"function_call\",\"call_id\":\"call_boundary\",\"name\":\"inspect\"}}\n\n",
+        "event: response.function_call_arguments.delta\n",
+        "data: {\"delta\":\"{\\\"path\\\":\\\"Cargo.toml\\\"}\"}\n\n",
+        "event: response.failed\n",
+        "data: {\"type\":\"response.failed\",\"response\":{\"error\":{\"code\":\"server_error\",\"message\":\"tool turn failed after acceptance\"}}}\n\n",
+    );
+    Mock::given(method("POST"))
+        .and(path("/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(accepted_tool_turn))
+        .expect(1)
+        .mount(&responses)
+        .await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("must not replay tool"))
+        .expect(0)
+        .mount(&skipped)
+        .await;
+    let config = chain_config(
+        vec![
+            upstream(
+                "responses",
+                responses.uri(),
+                ProviderKind::Responses,
+                UpstreamAuth::Shorthand(AuthMode::Passthrough),
+            ),
+            passthrough("skipped", skipped.uri()),
+        ],
+        &[("responses", "gpt-test"), ("skipped", "claude-test")],
+    );
+    let gateway = start_gateway(config).await;
+
+    let response = post(&gateway).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    assert_gateway_headers(&response, "responses", "gpt-test");
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["error"]["message"], "tool turn failed after acceptance");
+    responses.verify().await;
     skipped.verify().await;
 }
 
