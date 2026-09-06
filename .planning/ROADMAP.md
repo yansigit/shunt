@@ -56,7 +56,7 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
 - [x] 02-02-PLAN.md
 - [x] 02-03-PLAN.md
 - [x] 02-04-PLAN.md
-- [ ] 02-05-PLAN.md
+- [x] 02-05-PLAN.md
 
 ### Phase 3: Quota-Aware Resilience
 
@@ -140,7 +140,7 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Inbound Responses WebSocket | 4/4 | Complete    | 2026-09-05 |
-| 2. Native Responses Routing | 4/5 | In Progress|  |
+| 2. Native Responses Routing | 5/5 | In Progress|  |
 | 3. Quota-Aware Resilience | 0/TBD | Not started | - |
 | 4. Native Compaction | 0/TBD | Not started | - |
 | 5. Anthropic Translation | 0/TBD | Not started | - |

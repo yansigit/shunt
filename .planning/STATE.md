@@ -28,7 +28,7 @@ See: `.planning/PROJECT.md` (updated 2026-09-05)
 ## Current Position
 
 Phase: 02 (Native Responses Routing) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-09-06 — Phase 02 plan 04 execution completed
 
@@ -58,6 +58,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P01 | 25 | 2 tasks | 4 files |
 | Phase 02 P03 | 12 | 2 tasks | 2 files |
 | Phase 02 P04 | 6 | 2 tasks | 8 files |
+| Phase 2 P5 | 13 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,7 @@ Progress: [░░░░░░░░░░] 0%
 - Phase 1 changes only the opt-in inbound Responses transport; HTTP stays stable.
 - Phase 2 provider-semantics work requires explicit user approval.
 - [Phase 02]: WebSocket live turns refresh the runtime snapshot at turn start so each turn keeps one immutable native route while later turns observe reloads.
+- [Phase 02]: All maintained locales state exact compatible native selection, pinned fallback, pre-dispatch rejection, and no post-output hop consistently.
 
 ### Pending Todos
 
@@ -85,6 +87,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-06T01:42:00Z
-Stopped at: Completed 02-04-PLAN.md
+Last session: 2026-09-06T01:49:41.199Z
+Stopped at: Completed 02-05-PLAN.md
 Resume file: None
