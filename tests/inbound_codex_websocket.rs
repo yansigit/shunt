@@ -51,6 +51,11 @@ enum Reply {
         body: String,
         headers: Vec<(&'static str, &'static str)>,
     },
+    StaticBytes {
+        status: StatusCode,
+        content_type: &'static str,
+        body: Vec<u8>,
+    },
     Held {
         initial: String,
         started: Arc<Notify>,
@@ -82,6 +87,17 @@ async fn upstream_response(State(state): State<UpstreamState>, body: Bytes) -> R
                     HeaderValue::from_static(value),
                 );
             }
+            response
+        }
+        Reply::StaticBytes {
+            status,
+            content_type,
+            body,
+        } => {
+            let mut response = (status, body).into_response();
+            response
+                .headers_mut()
+                .insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
             response
         }
         Reply::Held {
@@ -362,6 +378,34 @@ async fn premature_done_and_malformed_sse_become_protocol_errors() {
     assert_eq!(
         malformed["error"]["message"],
         "Invalid JSON payload in upstream SSE frame"
+    );
+    cleanup(&account_env, &client_env);
+}
+
+#[tokio::test]
+async fn invalid_utf8_sse_becomes_an_immediate_protocol_error() {
+    let _env = ENV_LOCK.lock().await;
+    let mut body = b"data: \xff\n\n".to_vec();
+    body.extend_from_slice(
+        b"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"ignored\"}}\n\n",
+    );
+    let (upstream, _) = start_upstream(vec![Reply::StaticBytes {
+        status: StatusCode::OK,
+        content_type: "text/event-stream",
+        body,
+    }])
+    .await;
+    let (gateway, account_env, client_env) = start_gateway(&upstream, "INVALID_UTF8").await;
+    let mut socket = connect(&gateway, "/v1/responses").await;
+
+    send_create(&mut socket, "invalid-utf8").await;
+    let error = next_json(&mut socket).await;
+    assert_eq!(error["type"], "error");
+    assert_eq!(error["status"], 502);
+    assert_eq!(error["error"]["code"], "websocket_protocol_error");
+    assert_eq!(
+        error["error"]["message"],
+        "Invalid UTF-8 in upstream SSE frame"
     );
     cleanup(&account_env, &client_env);
 }

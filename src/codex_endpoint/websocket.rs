@@ -322,7 +322,20 @@ async fn run_turn(context: TurnContext) {
             }
             let s = match std::str::from_utf8(&frame_bytes) {
                 Ok(s) => s,
-                Err(_) => continue,
+                Err(_) => {
+                    let err_frame = build_ws_error_frame(
+                        502,
+                        "protocol_error",
+                        "websocket_protocol_error",
+                        "Invalid UTF-8 in upstream SSE frame",
+                        None,
+                    );
+                    let _ = out_tx
+                        .send((turn_gen, Message::Text(err_frame.into())))
+                        .await;
+                    terminal_seen = true;
+                    break;
+                }
             };
             let payload = match parse_sse_block(s) {
                 Some(p) => p,
@@ -364,14 +377,28 @@ async fn run_turn(context: TurnContext) {
 
     if !terminal_seen && is_current() {
         if let Ok(Some(tail)) = framer.finish() {
-            if let Ok(s) = std::str::from_utf8(&tail) {
-                if let Some(payload) = parse_sse_block(s) {
-                    if payload != "[DONE]" {
-                        if let Some(p_type) = parse_payload_type(&payload) {
-                            let _ = out_tx.send((turn_gen, Message::Text(payload.into()))).await;
-                            if terminal_status_from_type(&p_type).is_some() {
-                                terminal_seen = true;
-                            }
+            let s = match std::str::from_utf8(&tail) {
+                Ok(s) => s,
+                Err(_) => {
+                    let err_frame = build_ws_error_frame(
+                        502,
+                        "protocol_error",
+                        "websocket_protocol_error",
+                        "Invalid UTF-8 in upstream SSE frame",
+                        None,
+                    );
+                    let _ = out_tx
+                        .send((turn_gen, Message::Text(err_frame.into())))
+                        .await;
+                    return;
+                }
+            };
+            if let Some(payload) = parse_sse_block(s) {
+                if payload != "[DONE]" {
+                    if let Some(p_type) = parse_payload_type(&payload) {
+                        let _ = out_tx.send((turn_gen, Message::Text(payload.into()))).await;
+                        if terminal_status_from_type(&p_type).is_some() {
+                            terminal_seen = true;
                         }
                     }
                 }
