@@ -400,3 +400,75 @@ fn test_gemini_sse_machine_non_streaming_accumulation() {
     assert_eq!(content[1]["name"], "read_file");
     assert_eq!(content[1]["input"]["path"], "main.rs");
 }
+
+fn semantic_fixture() -> serde_json::Value {
+    json!({
+        "candidates": [{
+            "content": {
+                "role": "model",
+                "parts": [
+                    {"thought": true, "text": "consider "},
+                    {"text": "answer "},
+                    {
+                        "functionCall": {
+                            "name": "read_file",
+                            "args": {"path": "main.rs"}
+                        },
+                        "thoughtSignature": "authentic-signature"
+                    }
+                ]
+            },
+            "finishReason": "STOP"
+        }],
+        "usageMetadata": {
+            "promptTokenCount": 11,
+            "candidatesTokenCount": 7
+        }
+    })
+}
+
+#[test]
+fn semantic_parity_direct_and_wrapped_stream_and_unary() {
+    let direct = semantic_fixture();
+    let wrapped = json!({"response": direct.clone()});
+
+    let mut direct_stream = GeminiSseMachine::new("gemini-3.1-pro-preview");
+    let mut wrapped_stream = GeminiSseMachine::new("gemini-3.1-pro-preview");
+    let direct_events = direct_stream.process_chunk(&direct);
+    let wrapped_events = wrapped_stream.process_chunk(&wrapped);
+
+    let direct_kinds: Vec<_> = direct_events.iter().map(|event| event.event.as_str()).collect();
+    let wrapped_kinds: Vec<_> = wrapped_events.iter().map(|event| event.event.as_str()).collect();
+    assert_eq!(direct_kinds, wrapped_kinds);
+    assert_ne!(direct_kinds.last(), Some(&"message_stop"));
+    assert_eq!(
+        direct_kinds.iter().filter(|kind| **kind == "message_stop").count(),
+        0
+    );
+    let ordered_deltas: Vec<_> = direct_events
+        .iter()
+        .filter(|event| event.event == "content_block_delta")
+        .map(|event| event.data["delta"]["type"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ordered_deltas,
+        ["thinking_delta", "text_delta", "input_json_delta"]
+    );
+}
+
+#[test]
+fn semantic_parity_provider_error_never_becomes_success() {
+    let mut machine = GeminiSseMachine::new("gemini-3.1-pro-preview");
+    let events = machine.process_chunk(&json!({
+            "response": {"error": {
+                "status": "RESOURCE_EXHAUSTED",
+                "message": "quota exhausted"
+            }}
+        }));
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event, "error");
+    let mut after_error = Vec::new();
+    machine.finish(&mut after_error);
+    assert!(after_error.is_empty(), "provider error must be terminal");
+}
