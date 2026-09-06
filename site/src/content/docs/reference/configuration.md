@@ -293,6 +293,8 @@ Presence of this table enables an inbound OpenAI Responses passthrough so the **
 
 Registers `POST /backend-api/codex/responses`, `POST /responses`, and `POST /v1/responses` — all served by the named provider's account pool. When `[server.auth]` is configured they require a valid client token (like the other injected-credential routes); with no `[server.auth]` they are **open** to anyone who can reach them while still injecting the operator's Codex credential, so gate them on anything beyond loopback. Unlike `/v1/messages`, the request is not translated to or from Anthropic Messages; it is relayed to and from the upstream verbatim.
 
+The same opt-in registers `GET /models` and `GET /backend-api/codex/models`, which return the valid Codex fallback `{"models":[]}` after the normal model-discovery auth gate. It also enables Codex negotiation on the shared `GET /v1/models`: when `client_version` is present in the query, that field takes precedence over Anthropic-like headers and selects the Codex empty shape. Without `client_version`, the existing Anthropic discovery response is unchanged. shunt intentionally does not synthesize incomplete Codex `ModelInfo` rows.
+
 Inbound native routing is exact-only: a unique `[models.upstream_model]` or legacy `[[routes]]`
 declaration may select one compatible `kind = "responses"` upstream without rewriting the model or
 body. Prefix-only, non-exact, and unmatched models use the pinned `provider` above. Exact

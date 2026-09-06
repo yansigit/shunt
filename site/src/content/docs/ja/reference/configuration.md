@@ -187,6 +187,8 @@ headers = { "x-api-key" = "..." }
 
 このテーブルは、Codex CLI が shunt を `base_url` として使うためのインバウンド OpenAI Responses パススルーを有効にします。唯一の厳密一致 `[models.upstream_model]` または `[[routes]]` だけが、互換性のある `kind = "responses"` プロバイダーを選択して固定プロバイダーを上書きできます。プレフィックスのみ、非厳密、未一致のモデルは固定された `[server.codex_endpoint].provider` へフォールバックし、曖昧、変換/非 Responses、モデル書き換えの宣言はディスパッチ前に拒否されます。本文は変更せず、出力開始後のプロバイダー移行はありません。
 
+同じオプトインで `GET /models` と `GET /backend-api/codex/models` も登録され、通常のモデル検出認証ゲートの後に有効な Codex フォールバック `{"models":[]}` を返します。共有の `GET /v1/models` でも、`client_version` クエリがある場合は Anthropic 風のヘッダーより優先して Codex の空形式を選択します。`client_version` がなければ、既存の Anthropic 検出レスポンスは変わりません。shunt は不完全な Codex `ModelInfo` 行を生成しません。
+
 `provider = "codex"` は既定の `chatgpt_oauth` プロバイダーを選びます。`collaboration = false` が既定値で、`true` にすると厳密一致の Anthropic ルートが宣言済み V2 collaboration ツールと平文 agent task を橋渡しします。ネイティブ Responses ルートは不透明なままです。暗号文だけの task と provider 継続状態は引き続き送信前に失敗し、shunt は復号・キャッシュ・永続化・課金リカバリー呼び出しを行いません。
 
 ## `[server.usage]`（オプション）

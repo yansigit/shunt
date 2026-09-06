@@ -36,6 +36,8 @@ description: shunt 作为 Claude Code LLM 网关所提供的端点。
 | `GET` (WebSocket), `POST` | `/backend-api/codex/responses` | 入站 Codex CLI 传输 —— 镜像真实 ChatGPT 后端路径 |
 | `GET` (WebSocket), `POST` | `/responses` | 入站 Codex CLI 传输 —— 裸 `base_url` 形式 |
 | `GET` (WebSocket), `POST` | `/v1/responses` | 入站 Codex CLI 传输 —— 带 `/v1` 后缀的 `base_url` 形式 |
+| `GET` | `/models` | Codex CLI 模型目录回退 —— 返回 `{"models":[]}` |
+| `GET` | `/backend-api/codex/models` | Codex CLI 模型目录回退 —— ChatGPT 式基础路径 |
 | `POST` | `/backend-api/codex/analytics-events/events` | Codex CLI 分析 sink —— 接收后丢弃，仅记录净化后的事件名称计数器 |
 | `POST` | `/codex/analytics-events/events` | Codex CLI 分析 sink —— 根路径式 `chatgpt_base_url` 形式 |
 | `GET` | `/usage` | 面向客户端的净化池用量 —— 返回共享账户池按窗口的剩余余量和重置时间,绝不返回账户身份或容量 |
@@ -46,7 +48,7 @@ spend-limit 路由仅在启动时配置了 [`[server.spend]`](/zh-cn/reference/c
 
 `GET /managed/settings` 与 `POST /v1/{metrics,logs,traces}` 遥测接收路由仅在启动时启用了 `[server.gateway]` 的情况下存在,二者要求相同的网关 bearer JWT。接收路由接受托管 Claude Code 客户端 export 的 OTLP/HTTP 载荷([`[server.gateway.telemetry]`](/zh-cn/reference/configuration/) 将这些 exporter 指向网关),并把请求字节原样中继到所有 opt-in 该 signal 的目标。入站的 `content-type` 与 `content-encoding` 会被保留,目标配置的 headers 应用在其上(配置的键会替换转发值,而不是重复该 header)。客户端的 `Authorization` 头永远不会被转发,中继也不跟随重定向。目标按 signal opt-in(`metrics` 默认开启,`logs`/`traces` 默认关闭),没有任何目标 opt-in 的 signal 会被接收后丢弃。中继是分离执行的,因此无论目标状态如何,响应始终是立即的 `200`,成功 body 依照 OTLP/HTTP 镜像请求协议(`application/json` 得到 `{}`,其余得到空的 `application/x-protobuf` body)。超过 32 MiB 入站上限的 body 返回 `413`。
 
-入站 Codex Responses 和分析路由仅在配置了 [`[server.codex_endpoint]`](/zh-cn/reference/configuration/) 时存在。Responses 路由提供原始 OpenAI Responses HTTP/SSE 和已认证的 WebSocket 升级。两个分析路由采用相同的入站认证策略，不转发或保留客户端 payload，并在认证后对无效 JSON 或超大正文也返回 `200 {}`。只有净化后的事件名称会记录到 `shunt.codex_client_events`；未配置指标 sink 时，它们是纯丢弃 sink。
+入站 Codex Responses、模型目录和分析路由仅在配置了 [`[server.codex_endpoint]`](/zh-cn/reference/configuration/) 时存在。Responses 路由提供原始 OpenAI Responses HTTP/SSE 和已认证的 WebSocket 升级。两个 Codex 专用模型路径返回 `{"models":[]}`;共用 `/v1/models` 仅在查询包含 `client_version` 时返回该形状,否则保持 Anthropic 契约。所有目录变体都使用常规模型发现认证门。两个分析路由采用相同的入站认证策略，不转发或保留客户端 payload，并在认证后对无效 JSON 或超大正文也返回 `200 {}`。只有净化后的事件名称会记录到 `shunt.codex_client_events`;未配置指标 sink 时,它们是纯丢弃 sink。
 
 `/usage` 路由仅在配置 [`[server.usage]`](/zh-cn/reference/configuration/#serverusage可选) 时存在,且同样要求 [`[server.auth]`](/zh-cn/guides/shared-gateway/)。它使用与 `GET /v1/messages` 相同的客户端 token 进行认证,返回共享账户池按窗口的剩余余量、重置时间和 `ok`/`degraded`/`exhausted` 状态。它不会暴露账户身份、数量、优先级、`disabled`、阈值或账户级数值。只有在没有任何未禁用账户报告某个窗口时,该窗口才是 `null`。Codex 响应中的 `x-codex-*` 头部和可选的 `wham/usage` 轮询会填充已观测的 5 小时和共享每周窗口。Codex 没有 Fable 范围(`7d_oi`)的信号,但混合提供方池中的其他提供方可以提供聚合 Fable 值。
 
