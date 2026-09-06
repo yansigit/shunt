@@ -826,4 +826,56 @@ mod tests {
             NativeInboundDecision::Rejected(_)
         ));
     }
+
+    #[test]
+    fn native_resolver_rejects_duplicate_exact_legacy_declarations() {
+        let mut config = Config::default();
+        config.server.codex_endpoint = Some(crate::config::CodexEndpointConfig {
+            provider: "codex".into(),
+        });
+        config.routes = vec![
+            RouteConfig {
+                model: "duplicate".into(),
+                provider: "codex".into(),
+                upstream_model: Some("duplicate".into()),
+                effort: None,
+                service_tier: None,
+            },
+            RouteConfig {
+                model: "duplicate".into(),
+                provider: "codex".into(),
+                upstream_model: Some("duplicate".into()),
+                effort: None,
+                service_tier: None,
+            },
+        ];
+        assert!(matches!(
+            resolve_native_inbound(&config, Some("duplicate")),
+            NativeInboundDecision::Rejected(_)
+        ));
+    }
+
+    #[test]
+    fn native_resolver_keeps_exact_route_fields_without_rewriting_body_model() {
+        let mut config = Config::default();
+        config.server.codex_endpoint = Some(crate::config::CodexEndpointConfig {
+            provider: "codex".into(),
+        });
+        config.routes = vec![RouteConfig {
+            model: "gpt-5.6-sol".into(),
+            provider: "codex".into(),
+            upstream_model: None,
+            effort: Some("high".into()),
+            service_tier: Some("priority".into()),
+        }];
+        let NativeInboundDecision::Selected(route) =
+            resolve_native_inbound(&config, Some("gpt-5.6-sol[1m]"))
+        else {
+            panic!("expected exact native route");
+        };
+        assert_eq!(route.model, "gpt-5.6-sol[1m]");
+        assert_eq!(route.upstream_model, "gpt-5.6-sol");
+        assert_eq!(route.effort.as_deref(), Some("high"));
+        assert_eq!(route.service_tier.as_deref(), Some("priority"));
+    }
 }
