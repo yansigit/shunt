@@ -394,9 +394,7 @@ impl SseParser {
                 self.max_event_bytes
             )));
         }
-        Err(self.fail(
-            "upstream Responses SSE ended with an unterminated event frame",
-        ))
+        Err(self.fail("upstream Responses SSE ended with an unterminated event frame"))
     }
 }
 
@@ -657,9 +655,10 @@ mod tests {
             .as_bytes())))
             .await
             .unwrap();
-        let body = reqwest::Body::wrap_stream(stream::unfold(receiver, |mut receiver| async move {
-            receiver.recv().await.map(|item| (item, receiver))
-        }));
+        let body =
+            reqwest::Body::wrap_stream(stream::unfold(receiver, |mut receiver| async move {
+                receiver.recv().await.map(|item| (item, receiver))
+            }));
         let upstream = reqwest::Response::from(
             axum::http::Response::builder()
                 .status(StatusCode::OK)

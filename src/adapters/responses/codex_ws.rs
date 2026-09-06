@@ -3175,7 +3175,10 @@ mod tests {
         }
         assert!(capture.reusable);
         assert_eq!(capture.output_items_bytes, 5);
-        assert_eq!(capture.output_items, vec![serde_json::json!(1), serde_json::json!(2)]);
+        assert_eq!(
+            capture.output_items,
+            vec![serde_json::json!(1), serde_json::json!(2)]
+        );
 
         capture.capture(&ResponseEvent {
             event: Some("response.output_item.done".to_string()),
@@ -3288,9 +3291,7 @@ mod tests {
                 .unwrap();
             let _ = ws
                 .send(Message::Text(
-                    r#"{"type":"response.completed","response":{}}"#
-                        .to_string()
-                        .into(),
+                    r#"{"type":"response.completed","response":{}}"#.to_string().into(),
                 ))
                 .await;
         });
@@ -3306,7 +3307,11 @@ mod tests {
         .await
         .expect("websocket should connect");
 
-        let first = events.recv().await.expect("one protocol error").unwrap_err();
+        let first = events
+            .recv()
+            .await
+            .expect("one protocol error")
+            .unwrap_err();
         assert!(first.message.contains("malformed codex websocket event"));
         assert!(events.recv().await.is_none());
         server.await.unwrap();
