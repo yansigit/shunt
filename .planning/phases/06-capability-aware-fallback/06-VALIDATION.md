@@ -1,6 +1,7 @@
 ---
 phase: 06-capability-aware-fallback
 status: validated
+nyquist_compliant: true
 wave_0_complete: true
 created: 2026-09-06
 ---
@@ -29,3 +30,8 @@ cargo test --all-features --workspace
 git diff --check
 test -z "$(git status --short -- wiki/)"
 ```
+
+## Validation Audit 2026-09-06
+
+All task rows have automated commands, CAP-01 has unit and integration coverage,
+and the full workspace gate passed. Gaps found: 0; escalated: 0.
