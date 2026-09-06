@@ -977,12 +977,10 @@ impl AnthropicSseMachine {
                     .and_then(Value::as_str)
                     .map_or(0, str::len)
             }
-            "response.output_text.annotation.added" | "response.output_item.done"
-                if self.accumulate_content =>
-            {
+            "response.output_text.annotation.added" | "response.output_item.done" => {
                 serde_json::to_vec(data).map_or(0, |v| v.len())
             }
-            "response.output_item.added" if self.accumulate_content => data
+            "response.output_item.added" => data
                 .get("item")
                 .unwrap_or(data)
                 .as_object()

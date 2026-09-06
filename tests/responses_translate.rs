@@ -147,6 +147,20 @@ fn responses_bounds_translated_text_exact_and_plus_one() {
     assert!(oversized.apply_checked(text_event("12345")).is_err());
 }
 
+#[test]
+fn responses_bounds_streaming_metadata_uses_the_aggregate_limit() {
+    let mut machine = AnthropicSseMachine::new("gpt-5.2-codex", false, false)
+        .without_content_accumulation()
+        .with_aggregate_limit(8);
+    let error = machine
+        .apply_checked(shunt::model::responses::ResponseEvent {
+            event: Some("response.output_item.done".to_string()),
+            data: json!({"item": {"type": "web_search_call", "id": "search_1", "results": []}}),
+        })
+        .unwrap_err();
+    assert!(error.to_string().contains("translated state exceeded"));
+}
+
 fn translate(input: Value) -> Value {
     let body = serde_json::to_vec(&input).unwrap();
     // provider "openai" is the stock Responses API (not the ChatGPT backend).
