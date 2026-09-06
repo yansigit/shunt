@@ -15,6 +15,7 @@ use crate::{
     config::{AuthMode, CountTokens, ProviderKind},
     count_tokens,
     error::ShuntError,
+    retry::Commitment,
     routing::{self, AdapterKind},
     server::AppState,
 };
@@ -117,6 +118,7 @@ pub(super) async fn forward(
         .then(|| provider_origin(&state, &first_route.provider))
         .flatten();
     let mut remembered: Option<RememberedFailure> = None;
+    let mut commitment = Commitment::default();
     for (index, route) in routes.into_iter().enumerate() {
         crate::metrics::record_failover(&route.provider, "attempted");
         let attempt_headers = headers_for_route(
@@ -161,7 +163,9 @@ pub(super) async fn forward(
         match result {
             Ok((status, mut response)) => {
                 stamp_gateway_headers(&mut response, &provider, &requested_model, &upstream_model);
-                if !is_advance_status(status) {
+                if !is_advance_status(status) || !commitment.may_redispatch() {
+                    commitment.mark_client_visible();
+                    debug_assert!(!commitment.may_redispatch());
                     finish(&provider, status);
                     return Ok(observe_response(
                         status, response, provider, model, started_at,
@@ -190,7 +194,7 @@ pub(super) async fn forward(
                 stamp_gateway_headers(&mut response, &provider, &requested_model, &upstream_model);
                 match failure {
                     Some(AdapterFailure::UpstreamStatus(raw_status))
-                        if is_advance_status(raw_status) =>
+                        if is_advance_status(raw_status) && commitment.may_redispatch() =>
                     {
                         tracing::warn!(
                             provider = %provider,
@@ -207,7 +211,7 @@ pub(super) async fn forward(
                             model,
                         );
                     }
-                    Some(AdapterFailure::BeforeHeaders) => {
+                    Some(AdapterFailure::BeforeHeaders) if commitment.may_redispatch() => {
                         tracing::warn!(
                             provider = %provider,
                             model = %model,
@@ -216,6 +220,8 @@ pub(super) async fn forward(
                         );
                     }
                     _ => {
+                        commitment.mark_client_visible();
+                        debug_assert!(!commitment.may_redispatch());
                         finish(&provider, response.status());
                         return Err(ForwardError { message, response });
                     }
@@ -232,6 +238,8 @@ pub(super) async fn forward(
     if let Some(failure) = remembered {
         return match failure.response {
             FinalResponse::Relayed(response) => {
+                commitment.mark_client_visible();
+                debug_assert!(!commitment.may_redispatch());
                 let status = response.status();
                 finish(&failure.provider, status);
                 Ok(observe_response(
@@ -243,6 +251,8 @@ pub(super) async fn forward(
                 ))
             }
             FinalResponse::MappedError { message, response } => {
+                commitment.mark_client_visible();
+                debug_assert!(!commitment.may_redispatch());
                 finish(&failure.provider, response.status());
                 Err(ForwardError { message, response })
             }

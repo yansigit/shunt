@@ -480,12 +480,12 @@ async fn serve_ws(socket: TcpStream, drop: WsDrop) {
         ],
     };
     for event in events {
-            // Surface a send failure loudly rather than swallowing it: a dropped
-            // event would silently break the "partial over websocket" assertions
-            // and make the AfterFirstEvent tests non-deterministic.
-            ws.send(Message::Text((*event).to_string().into()))
-                .await
-                .expect("mock upstream should stream the event before dropping");
+        // Surface a send failure loudly rather than swallowing it: a dropped
+        // event would silently break the "partial over websocket" assertions
+        // and make the AfterFirstEvent tests non-deterministic.
+        ws.send(Message::Text((*event).to_string().into()))
+            .await
+            .expect("mock upstream should stream the event before dropping");
     }
     // Dropping `ws` closes the socket before a terminal event.
 }

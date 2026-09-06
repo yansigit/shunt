@@ -966,7 +966,10 @@ async fn redispatch_gate_replay_unsafe_tool_event_stops_without_replaying_turn()
     assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
     assert_gateway_headers(&response, "responses", "gpt-test");
     let body: Value = response.json().await.unwrap();
-    assert_eq!(body["error"]["message"], "tool turn failed after acceptance");
+    assert_eq!(
+        body["error"]["message"],
+        "tool turn failed after acceptance"
+    );
     responses.verify().await;
     skipped.verify().await;
 }
