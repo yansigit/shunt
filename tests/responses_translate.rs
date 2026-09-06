@@ -1396,11 +1396,10 @@ fn message_start_seeds_input_token_estimate() {
 }
 
 #[test]
-fn truncated_stream_falls_back_to_input_token_estimate() {
-    // A stream cut off before response.completed never runs read_usage, so the
-    // real input total is still 0. Without a fallback the terminal message_delta
-    // would report input_tokens:0 and undo the estimate message_start already
-    // showed. Assert the seeded estimate carries through instead.
+fn truncated_stream_never_synthesizes_terminal_usage() {
+    // A stream cut off before response.completed has no authoritative usage or
+    // success terminal. The opening estimate may already be client-visible, but
+    // EOF must not manufacture a message_delta/message_stop from it.
     let fixture = concat!(
         "event: response.created\n",
         "data: {\"response\":{\"id\":\"resp_1\"}}\n\n",
@@ -1417,16 +1416,10 @@ fn truncated_stream_falls_back_to_input_token_estimate() {
         .into_iter()
         .flat_map(|event| machine.apply(event))
         .collect::<String>();
-    // finish() flushes the terminal message_delta/message_stop the truncated
-    // upstream never sent.
     emitted.push_str(&machine.finish().join(""));
-
-    let delta_usage = event_usage(&emitted, "message_delta");
-    assert_eq!(
-        delta_usage["input_tokens"],
-        json!(4321),
-        "truncated stream should fall back to the estimate, got: {emitted}"
-    );
+    assert_eq!(event_usage(&emitted, "message_start")["input_tokens"], 4321);
+    assert_eq!(event_usage(&emitted, "message_delta"), Value::Null);
+    assert!(!emitted.contains("event: message_stop"));
 }
 
 #[test]
