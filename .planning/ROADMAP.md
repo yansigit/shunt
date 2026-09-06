@@ -52,7 +52,7 @@ Full phase goals, requirements, success criteria, and plan references are kept i
   3. A retry/failover test demonstrates that redispatch is possible only before client-visible output or replay-unsafe tool activity, while paired tools and authentic continuation metadata survive a safe replay.
   4. Credential tests prove provider-kind and destination binding, inbound credential stripping, diagnostic redaction, response-lifetime ownership, and no secret-bearing fixtures.
 
-**Plans**: TBD
+**Plans**: 4 plans
 
 - [x] 09-01-PLAN.md
 - [x] 09-02-PLAN.md
@@ -71,7 +71,14 @@ Full phase goals, requirements, success criteria, and plan references are kept i
   3. Malformed, oversized, invalid-UTF-8, or prematurely terminated events fail as protocol errors without silent loss or synthesized success.
   4. Generation retries occur only for proven replay-safe pre-commit failures and never after output or replay-unsafe tool activity.
 
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+- [ ] 10-01-PLAN.md — Checked Gemini semantic state and authentic tool/signature round trip
+- [ ] 10-02-PLAN.md — Bounded byte SSE and unary transport integration
+- [ ] 10-03-PLAN.md — Immutable identity, non-idempotent retry, parity, and cancellation
+- [ ] 10-04-PLAN.md — English engineering, configuration, and troubleshooting contract
+- [ ] 10-05-PLAN.md — Maintained locale parity, deterministic scope checks, and final release gates
 
 ### Phase 11: Antigravity Protocol and Credential Hardening
 
