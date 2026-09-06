@@ -164,7 +164,13 @@ pub(super) fn stream_response(
                     let mut data = String::new();
                     for event in events {
                         match machine.apply_checked(event) {
-                            Ok(frames) => data.extend(frames),
+                            Ok(frames) => {
+                                data.extend(frames);
+                                if machine.has_backend_error() {
+                                    finished = true;
+                                    break;
+                                }
+                            }
                             Err(error) => {
                                 data.push_str(&protocol_error_sse(&error));
                                 finished = true;
@@ -619,6 +625,66 @@ mod tests {
             "clean completion must not carry the marker, got: {body}"
         );
         assert!(body.contains("event: message_stop"));
+    }
+
+    #[tokio::test]
+    async fn streaming_provider_failure_emits_one_terminal_error() {
+        let sse = concat!(
+            "event: response.failed\n",
+            "data: {\"response\":{\"error\":{\"code\":\"server_error\",\"message\":\"failed\"}}}\n\n",
+        );
+        let upstream = upstream_response(200, sse).await;
+        let response = stream_response(
+            upstream,
+            relay_opts(),
+            0,
+            std::time::Duration::from_secs(30),
+        );
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = std::str::from_utf8(&bytes).unwrap();
+        assert_eq!(body.matches("event: error").count(), 1);
+        assert!(!body.contains("event: message_stop"));
+    }
+
+    #[tokio::test]
+    async fn streaming_provider_failure_drops_a_pending_upstream_body() {
+        let (sender, receiver) = tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(1);
+        sender
+            .send(Ok(Bytes::from_static(concat!(
+                "event: response.failed\n",
+                "data: {\"response\":{\"error\":{\"code\":\"server_error\",\"message\":\"failed\"}}}\n\n",
+            )
+            .as_bytes())))
+            .await
+            .unwrap();
+        let body = reqwest::Body::wrap_stream(stream::unfold(receiver, |mut receiver| async move {
+            receiver.recv().await.map(|item| (item, receiver))
+        }));
+        let upstream = reqwest::Response::from(
+            axum::http::Response::builder()
+                .status(StatusCode::OK)
+                .body(body)
+                .unwrap(),
+        );
+        let response = stream_response(
+            upstream,
+            relay_opts(),
+            0,
+            std::time::Duration::from_secs(30),
+        );
+        let bytes = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            to_bytes(response.into_body(), usize::MAX),
+        )
+        .await
+        .expect("provider failure must finish without waiting for upstream EOF")
+        .unwrap();
+        let body = std::str::from_utf8(&bytes).unwrap();
+        assert_eq!(body.matches("event: error").count(), 1);
+        assert!(!body.contains("event: message_stop"));
+        tokio::time::timeout(std::time::Duration::from_secs(1), sender.closed())
+            .await
+            .expect("finishing the response must drop the pending upstream body");
     }
 
     /// A multi-byte code point split across two transport chunks must survive
