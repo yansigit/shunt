@@ -29,7 +29,7 @@ covered_files:
   - src/retry.rs
   - tests/codex_multi_account.rs
   - tests/inbound_codex_endpoint.rs
-covered_digest: "v1:sha256:9d4175aa6bbb896eb2abf409ba726fe444b3eeee0d635630dc66c12e06c85d58"
+covered_digest: "v1:sha256:62194856bb86d261e5b589f0d0b68f520a25bf3933ddfc141800d35bdf48d482"
 behavior_unverified: 0
 overrides_applied: 0
 decision_coverage:

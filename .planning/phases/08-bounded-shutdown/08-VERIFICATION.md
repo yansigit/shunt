@@ -37,7 +37,7 @@ covered_files:
   - src/reload.rs
   - src/shutdown.rs
 requirements: [OPS-01]
-covered_digest: v1:sha256:ef141e458aff28af8fe888e2028c096380e44ca2f0f2e088b44e94382fb51d72
+covered_digest: v1:sha256:1ea84abf0d41ef095ab2f9be04bc1b1f4367ec344c171410c873219cb05bdd2c
 behavior_unverified: 0
 overrides_applied: 0
 ---
@@ -78,7 +78,7 @@ signal still exits immediately.
 
 ## Fingerprint
 
-`v1:sha256:ef141e458aff28af8fe888e2028c096380e44ca2f0f2e088b44e94382fb51d72`
+`v1:sha256:1ea84abf0d41ef095ab2f9be04bc1b1f4367ec344c171410c873219cb05bdd2c`
 
 The fingerprint covers all Phase 8 plans, summaries, context, research,
 validation, review/security artifacts, implementation files, examples, and

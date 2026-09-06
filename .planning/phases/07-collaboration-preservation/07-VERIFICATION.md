@@ -40,7 +40,7 @@ covered_files:
   - tests/inbound_anthropic_translation.rs
   - tests/inbound_codex_endpoint.rs
   - tests/inbound_codex_websocket.rs
-covered_digest: "v1:sha256:aeecded27f625a6173dbbf2c74b52cf702eec9d768ba8c4f802d09b33c8a1105"
+covered_digest: "v1:sha256:29cad9bb087f7e72ac21a1449f59c4a0fdb6145744c2cdc309652b6f88419cc4"
 behavior_unverified: 0
 overrides_applied: 0
 requirements: [COLLAB-01]

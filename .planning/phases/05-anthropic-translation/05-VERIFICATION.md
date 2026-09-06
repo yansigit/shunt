@@ -32,7 +32,7 @@ covered_files:
   - tests/inbound_anthropic_translation.rs
   - tests/inbound_codex_endpoint.rs
   - tests/inbound_codex_websocket.rs
-covered_digest: "v1:sha256:f6762f71508f588c21de67f309a9f89dedc9d9d3d3077798b2abdec98d2dc57d"
+covered_digest: "v1:sha256:e8d2fe4f4196d8d9cfc90de75a3ee78cfd8407735c08b5129bb4e532226f79c0"
 behavior_unverified: 0
 overrides_applied: 0
 requirements: [TRANS-01, TRANS-02, TRANS-03]

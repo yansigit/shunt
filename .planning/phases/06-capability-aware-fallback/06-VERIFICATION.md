@@ -27,7 +27,7 @@ covered_files:
   - src/proxy/capability.rs
   - src/proxy/failover.rs
   - tests/failover.rs
-covered_digest: "v1:sha256:fda2f7cd4dc9dfe2ef724bfb10f81438b2bab7be04515797877e1bc2e1840ee3"
+covered_digest: "v1:sha256:2cab6546f1f3ab8e253f4d50ba73080e53a7777460d8ebf690ac25a584ce40cf"
 behavior_unverified: 0
 overrides_applied: 0
 requirements: [CAP-01]

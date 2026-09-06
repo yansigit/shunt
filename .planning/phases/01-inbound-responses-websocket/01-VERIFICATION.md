@@ -12,6 +12,7 @@ covered_files:
   - .planning/phases/01-inbound-responses-websocket/01-03-SUMMARY.md
   - .planning/phases/01-inbound-responses-websocket/01-04-PLAN.md
   - .planning/phases/01-inbound-responses-websocket/01-04-SUMMARY.md
+  - .planning/phases/01-inbound-responses-websocket/01-VALIDATION.md
   - Cargo.lock
   - Cargo.toml
   - README.ja.md
@@ -32,7 +33,7 @@ covered_files:
   - src/codex_endpoint/websocket.rs
   - src/server.rs
   - tests/inbound_codex_websocket.rs
-covered_digest: "v1:sha256:631c2305d56f251cca7a627847b580411a68175cdbd6120b5e658051511ee0ef"
+covered_digest: "v1:sha256:ac1b72eb9afc14f78ef7ab115825f96b8037b8dc998c4ee549e44033f50a21c7"
 behavior_unverified: 0
 ---
 

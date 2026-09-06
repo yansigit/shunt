@@ -37,7 +37,7 @@ covered_files:
   - site/src/content/docs/reference/configuration.md
   - site/src/content/docs/guides/inbound-codex-endpoint.md
   - site/src/content/docs/guides/configuration.mdx
-covered_digest: "v1:sha256:7aad452e73408621aff8291e84491d750d2a74398a27d5c7f214dcd1b5ade42d"
+covered_digest: "v1:sha256:973a5065f8564a5264862c23c5f85e81dd244b52deece661261e595a2eff55f8"
 behavior_unverified: 0
 overrides_applied: 0
 decision_coverage:

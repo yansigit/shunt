@@ -30,7 +30,7 @@ covered_files:
   - src/config.rs
   - src/server.rs
   - tests/inbound_codex_endpoint.rs
-covered_digest: "v1:sha256:6ad91834f08b599cb132f605f4b9319fe70265dd0e443fa3b98c4fdd548d2af2"
+covered_digest: "v1:sha256:df0ca01d19e2e62b0068e1f77dd09f36bb4d26a094552c9162d476661890be56"
 behavior_unverified: 0
 overrides_applied: 0
 decision_coverage:
