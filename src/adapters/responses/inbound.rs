@@ -481,6 +481,29 @@ async fn passthrough_send(
     passthrough_headers: &HeaderMap,
     body: &Bytes,
 ) -> Result<reqwest::Response, SendError<reqwest::Error>> {
+    let request = passthrough_request(
+        state,
+        route,
+        operation,
+        credential,
+        passthrough_headers,
+        body,
+    );
+    crate::upstream_timeout::wait(
+        state.config.server.timeouts.upstream_ttfb_ms,
+        request.send(),
+    )
+    .await
+}
+
+fn passthrough_request(
+    state: &AppState,
+    route: &Route,
+    operation: InboundOperation,
+    credential: Credential,
+    passthrough_headers: &HeaderMap,
+    body: &Bytes,
+) -> reqwest::RequestBuilder {
     let url = match operation {
         InboundOperation::Responses => responses_url(&state.config, &route.provider),
         InboundOperation::Compact => responses_compact_url(&state.config, &route.provider),
@@ -522,11 +545,7 @@ async fn passthrough_send(
         | Credential::AntigravityOauth { .. }
         | Credential::Passthrough => {}
     }
-    crate::upstream_timeout::wait(
-        state.config.server.timeouts.upstream_ttfb_ms,
-        request.body(body.clone()).send(),
-    )
-    .await
+    request.body(body.clone())
 }
 
 fn send_error(error: SendError<reqwest::Error>) -> AdapterError {
@@ -563,7 +582,10 @@ mod tests {
     use wiremock::matchers::method;
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use crate::{config::Config, routing::AdapterKind};
+    use crate::{
+        config::{ApiKeyHeader, Config},
+        routing::AdapterKind,
+    };
 
     use super::*;
 
@@ -576,6 +598,48 @@ mod tests {
             effort: None,
             service_tier: None,
         }
+    }
+
+    #[test]
+    fn canonical_openai_legacy_compact_request_preserves_body_bytes() {
+        let config = Config::default();
+        assert!(config.supports_native_responses_compact("openai"));
+        let state = AppState::new(config, reqwest::Client::new()).unwrap();
+        let route = Route {
+            provider: "openai".to_string(),
+            adapter: AdapterKind::Responses,
+            model: "gpt-5.4".to_string(),
+            upstream_model: "gpt-5.4".to_string(),
+            effort: None,
+            service_tier: None,
+        };
+        let raw = Bytes::from_static(
+            br#"{ "model": "gpt-5.4", "input": [{"type":"context_compaction","encrypted_content":"opaque"}] }"#,
+        );
+
+        let request = passthrough_request(
+            &state,
+            &route,
+            InboundOperation::Compact,
+            Credential::ApiKey {
+                value: "openai-key".to_string(),
+                header: ApiKeyHeader::Bearer,
+            },
+            &HeaderMap::new(),
+            &raw,
+        )
+        .build()
+        .expect("canonical compact request should build");
+
+        assert_eq!(
+            request.url().as_str(),
+            "https://api.openai.com/v1/responses/compact"
+        );
+        assert_eq!(request.headers()["authorization"], "Bearer openai-key");
+        assert_eq!(
+            request.body().and_then(reqwest::Body::as_bytes),
+            Some(raw.as_ref())
+        );
     }
 
     #[tokio::test]

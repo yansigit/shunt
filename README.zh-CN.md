@@ -163,7 +163,7 @@ xAI 可能按订阅层级限制 OAuth 访问 —— 如果 `grok` 返回 403,请
 
 对于入站账号池，单独的 `429` 表示临时限流。只有当有界响应正文包含精确的结构化硬配额证据（`usage_limit_exceeded` 或 `insufficient_quota`）时，账号才会在有限且内部有上限的冷却期内被抑制；格式错误、含义不明确、超大或中止的正文仍视为未验证。有效的 `Retry-After` 秒数（包括小数并安全向上取整）和 HTTP 日期会在有限上限内生效。候选账号耗尽时，最终上游状态、正文以及安全的 `Retry-After` 元数据仍会原样提供。账号轮换只在输出开始前可进行；无关的路由级故障转移行为保持不变。
 
-同一可选界面还会注册仅限 HTTP 的 `POST /v1/responses/compact`。它通过相同的认证、请求限制、原生路由判定和账号池，将正文与不透明的延续状态逐字节转发到已验证的原生 compact 后端（ChatGPT/Codex 或官方 OpenAI API）。不受支持、存在歧义、需要转换或格式错误的目标会在网络分发前被拒绝。shunt 不会解密延续状态、合成摘要或存储请求历史。
+同一可选界面还会注册旧版、仅限 HTTP 的 `POST /v1/responses/compact`。正文与不透明的延续状态只会逐字节转发到官方 OpenAI API 密钥后端。由于 ChatGPT/Codex 后端已不再提供这一独立端点，ChatGPT OAuth 目标会在解析凭据或网络分发前于本地失败。当前 Codex 的远程 compaction V2 改为在普通 Responses 流末尾发送 `compaction_trigger`，原生路由会继续原样透传。不受支持、存在歧义、需要转换或格式错误的目标也会在网络分发前被拒绝。shunt 不会解密延续状态、合成摘要或存储请求历史。
 
 **有界的上游重试。** 提供方单凭据路径上的瞬时上游故障会以指数退避加随机抖动重试,且发生在任何字节抵达客户端之前(绝不在流式传输中途重试)。连接层的传输错误(连接被重置/被拒绝、超时)总是重试 —— 在它们发生时上游尚未接受任何内容。瞬时的响应*状态码*(`429`/`502`/`503`/`504`/`529`,即 Anthropic 的 "Overloaded")只在幂等的 Cursor 路径上重试;非幂等的 Anthropic Messages 和单凭据 Responses POST 会立即把它暴露出来,因为收到响应意味着上游可能已经接受了一次会计费的生成(issue #126)。其他 `4xx` 永不重试。它遵循 `Retry-After`(delta-seconds 和 HTTP-date 两种形式),对 `count_tokens` 不生效,并可在 `[providers.<name>.retry]` 下按提供方配置(默认开启,取值保守;设置 `max_retries = 0` 可禁用)。`claude_oauth`/`chatgpt_oauth` 账号池则改用它们自己的账号轮换故障转移。请参阅[配置参考](https://shunt.dev/reference/configuration/#providersnameretry)。
 

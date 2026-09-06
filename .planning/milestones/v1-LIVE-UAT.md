@@ -36,7 +36,7 @@ stopped.
 | Native WebSocket warmup | PASS | All three paths returned local `response.created` then `response.completed`, empty ids |
 | Native WebSocket live inference | PASS | Ordered frames and exact marker, one terminal |
 | Explicit WebSocket `generate:true` | FIXED/PASS | Initially relayed the WS-only flag and received upstream 400. Shunt now strips it; focused tests and rebuilt live binary returned 200/event completion. |
-| Real Codex CLI through Shunt | PASS WITH FINDING | Codex 0.152.0 executed a shell read and completed the final response through `/v1/responses` |
+| Real Codex CLI through Shunt | PASS | Codex 0.152.0 executed a shell read and completed the final response through `/v1/responses`; the catalog-envelope mismatch found during that run is fixed |
 | Actual spawned subagent through Shunt | PASS | Parent spawned exactly one child, waited, and received the child's independent nonce result |
 | Real-client context/tool load | PASS | 81,996 input tokens (47,104 cached), 410 output tokens, 106 reasoning tokens across the client tool/subagent loop |
 | Client disconnect | PASS | Client timed out after two SSE events and before terminal; `/health` stayed 200; immediate follow-up returned exact marker |
@@ -46,17 +46,21 @@ stopped.
 | Idle graceful shutdown | PASS | SIGINT completed the drain and exited 0 |
 | Active-stream shutdown deadline | PASS | After five seconds Shunt cancelled the remaining stream and exited 0; the client received partial events and no false terminal |
 
-## Findings and unavailable live paths
+## Resolved findings and unavailable live paths
 
-1. **Open: Codex model-discovery schema mismatch.** Codex CLI 0.152.0 repeatedly
-   requested Shunt's model catalog and expected a top-level `models` field,
-   while Shunt's Claude gateway discovery endpoint returned the documented
-   OpenAI-style `data` list. Inference, tool execution, and subagent execution
-   still completed, but the client logged the mismatch on each refresh.
-2. **Provider/environment limitation: native compact.** A real
-   `POST /v1/responses/compact` reached the ChatGPT edge and returned its 404.
-   Local routing/body/auth preservation remains covered by the deterministic
-   inbound endpoint tests; no live compact success is claimed.
+1. **Resolved: Codex model-discovery schema mismatch.** Codex CLI 0.152.0
+   expected a top-level `models` field while Shunt returned the Anthropic
+   `data` list. Codex-marked `/v1/models` requests and the two Codex-only model
+   paths now return the valid fallback `{"models":[]}` after the existing auth
+   gate; unmarked `/v1/models` requests retain the Anthropic shape.
+2. **Resolved: stale ChatGPT legacy-compact capability.** A live
+   `POST /v1/responses/compact` proved that the ChatGPT edge no longer serves
+   the separate endpoint. Shunt now rejects ChatGPT OAuth targets locally
+   before credential resolution or network dispatch while retaining the
+   canonical OpenAI API-key endpoint. Current Codex compaction V2 remains
+   byte-faithful through normal `/responses` traffic with a trailing
+   `compaction_trigger`; deterministic coverage pins its request and terminal
+   output events. No live legacy-compact success on ChatGPT is claimed.
 3. **Not run live: Responses-to-Anthropic translation and its collaboration
    namespace bridge.** This host had no Anthropic credential. The full JSON,
    SSE, WebSocket, encrypted-task rejection, collaboration-name restoration,
@@ -83,5 +87,6 @@ stopped.
 Live inference is a go for the configured Codex provider across Messages,
 native Responses SSE, inbound WebSocket, complex tool loops, a real Codex CLI,
 one actual spawned subagent, and 50k-token explicit context. The model-catalog
-schema mismatch remains a non-fatal compatibility issue and live remote
-compaction is unavailable on the tested ChatGPT endpoint.
+schema mismatch is fixed. Legacy remote compact is deliberately unavailable on
+the tested ChatGPT endpoint; current Codex compaction V2 continues through the
+normal byte-faithful Responses path.

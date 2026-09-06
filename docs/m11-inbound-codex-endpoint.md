@@ -77,14 +77,17 @@ query field, `/v1/models` preserves the existing Anthropic discovery response un
 three variants pass the existing model-discovery authentication gate first, and the Codex-only
 paths remain absent when `[server.codex_endpoint]` was not enabled at boot.
 
-`POST /v1/responses/compact` is the HTTP-only remote-compaction surface. It requires a valid,
-non-empty string `model`, applies the same inbound authentication and request limits, and forwards
-the original request bytes through the same native route and account-pool machinery. Only the
-ChatGPT/Codex backend and the canonical official OpenAI API are treated as verified native compact
-destinations; unsupported, ambiguous, translated, or non-Responses routes return an OpenAI-shaped
-`400` before credential resolution or network dispatch. shunt treats `input`,
-`previous_response_id`, and encrypted continuation fields as opaque: it neither decrypts nor
-rewrites them and stores no request history or compacted summary.
+`POST /v1/responses/compact` is the legacy HTTP-only remote-compaction surface. It requires a
+valid, non-empty string `model`, applies the same inbound authentication and request limits, and
+forwards the original request bytes only when the native route selects the canonical official
+OpenAI API-key backend. The ChatGPT/Codex backend no longer serves this separate endpoint, so
+ChatGPT OAuth routes return an OpenAI-shaped `400` before credential resolution or network
+dispatch; unsupported, ambiguous, translated, or other non-Responses routes fail at the same
+boundary. Current Codex remote compaction V2 instead appends a `compaction_trigger` item to a
+normal Responses request. Native ChatGPT routes pass that request and its streamed compaction
+output through byte-for-byte. shunt treats `input`, `previous_response_id`, and encrypted
+continuation fields as opaque: it neither decrypts nor rewrites them and stores no request history
+or compacted summary.
 
 ### WebSocket transport
 

@@ -3889,14 +3889,12 @@ impl Config {
             .unwrap_or(false)
     }
 
-    /// Whether the provider is a verified native `POST /responses/compact`
-    /// destination. The endpoint is not part of the generic Responses wire:
-    /// only the ChatGPT/Codex backend and the canonical OpenAI API are known to
-    /// implement it, so arbitrary compatible gateways fail closed.
+    /// Whether the provider is a verified native legacy
+    /// `POST /responses/compact` destination. The current ChatGPT/Codex backend
+    /// uses compaction V2 through the normal Responses stream instead; only the
+    /// canonical OpenAI API is known to retain this separate HTTP endpoint, so
+    /// ChatGPT OAuth and arbitrary compatible gateways fail closed.
     pub fn supports_native_responses_compact(&self, provider: &str) -> bool {
-        if self.is_chatgpt_backend(provider) {
-            return true;
-        }
         let Some(provider) = self.provider(provider) else {
             return false;
         };
@@ -7473,7 +7471,7 @@ id = "claude-sonnet-5"
     #[test]
     fn native_compact_support_is_limited_to_verified_openai_destinations() {
         let mut config = Config::default();
-        assert!(config.supports_native_responses_compact("codex"));
+        assert!(!config.supports_native_responses_compact("codex"));
         assert!(config.supports_native_responses_compact("openai"));
         assert!(!config.supports_native_responses_compact("xai"));
 
