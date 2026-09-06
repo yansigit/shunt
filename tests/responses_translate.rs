@@ -96,6 +96,43 @@ fn responses_terminal_unknown_well_formed_event_remains_compatible() {
         .contains("message_stop"));
 }
 
+#[test]
+fn responses_bounds_aggregate_text_plus_one_is_rejected() {
+    let delta = "x".repeat(32 * 1024 * 1024 + 1);
+    let mut machine = AnthropicSseMachine::new("gpt-5.2-codex", false, false);
+    let error = machine
+        .apply_checked(shunt::model::responses::ResponseEvent {
+            event: Some("response.output_text.delta".to_string()),
+            data: json!({ "delta": delta }),
+        })
+        .unwrap_err();
+    assert!(error.to_string().contains("translated state exceeded"));
+}
+
+#[test]
+fn responses_bounds_malformed_completed_tool_arguments_fail() {
+    let mut machine = AnthropicSseMachine::new("gpt-5.2-codex", false, false);
+    machine
+        .apply_checked(shunt::model::responses::ResponseEvent {
+            event: Some("response.output_item.added".to_string()),
+            data: json!({"item": {"type": "function_call", "call_id": "call_1", "name": "run"}}),
+        })
+        .unwrap();
+    machine
+        .apply_checked(shunt::model::responses::ResponseEvent {
+            event: Some("response.function_call_arguments.delta".to_string()),
+            data: json!({"delta": "{not-json"}),
+        })
+        .unwrap();
+    let error = machine
+        .apply_checked(shunt::model::responses::ResponseEvent {
+            event: Some("response.function_call_arguments.done".to_string()),
+            data: json!({}),
+        })
+        .unwrap_err();
+    assert!(error.to_string().contains("tool arguments"));
+}
+
 fn translate(input: Value) -> Value {
     let body = serde_json::to_vec(&input).unwrap();
     // provider "openai" is the stock Responses API (not the ChatGPT backend).

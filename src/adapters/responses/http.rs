@@ -663,4 +663,39 @@ mod tests {
         assert_eq!(events[0].data["n"], 1);
         assert_eq!(events[1].data["n"], 2);
     }
+
+    #[test]
+    fn responses_bounds_sse_residual_plus_one_disposes_immediately() {
+        let mut parser = SseParser::with_limits(8, 16);
+        assert!(parser.push(b"12345678").unwrap().is_empty());
+        let error = parser.push(b"9").unwrap_err();
+        assert!(error.to_string().contains("exceeded 8 bytes"));
+        assert!(parser.push(b"data: {}\n\n").is_err());
+    }
+
+    #[test]
+    fn responses_bounds_counts_every_completed_frame_per_feed() {
+        let mut parser = SseParser::with_limits(64, 2);
+        let error = parser.push(b": one\n\n: two\n\n: three\n\n").unwrap_err();
+        assert!(error.to_string().contains("exceeded 2 event limit"));
+    }
+
+    #[test]
+    fn responses_bounds_malformed_json_disposes_parser() {
+        let mut parser = SseParser::with_limits(64, 4);
+        assert!(parser.push(b"data: not-json\n\n").is_err());
+        assert!(parser.push(b"data: {}\n\n").is_err());
+    }
+
+    #[test]
+    fn responses_bounds_split_crlf_is_incremental() {
+        let mut parser = SseParser::with_limits(64, 4);
+        assert!(parser
+            .push(b"event: response.completed\r\ndata: {}\r\n")
+            .unwrap()
+            .is_empty());
+        let events = parser.push(b"\r\n").unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event.as_deref(), Some("response.completed"));
+    }
 }
