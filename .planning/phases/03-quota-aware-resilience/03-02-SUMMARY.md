@@ -19,6 +19,7 @@ inspection overflows or terminates with a read error.
 ## Commits
 
 - `a384fdc` feat(resilience): bound retry-after and quota evidence
+- `6f632b7` fix(resilience): reject padded overlong retry headers
 
 ## Verification
 
