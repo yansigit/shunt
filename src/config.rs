@@ -7399,6 +7399,22 @@ id = "claude-sonnet-5"
     }
 
     #[test]
+    fn native_compact_support_is_limited_to_verified_openai_destinations() {
+        let mut config = Config::default();
+        assert!(config.supports_native_responses_compact("codex"));
+        assert!(config.supports_native_responses_compact("openai"));
+        assert!(!config.supports_native_responses_compact("xai"));
+
+        config.providers.get_mut("openai").unwrap().base_url =
+            "https://api.openai.com.evil.test/v1".to_string();
+        assert!(!config.supports_native_responses_compact("openai"));
+
+        config.providers.get_mut("openai").unwrap().base_url =
+            "https://api.openai.com/v1/proxy".to_string();
+        assert!(!config.supports_native_responses_compact("openai"));
+    }
+
+    #[test]
     fn native_tool_search_defaults_on_and_gates_on_flavor_and_model() {
         let config = Config::default();
         // Auto (`tool_search` unset) resolves to native for these two built-in
