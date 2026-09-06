@@ -404,10 +404,8 @@ impl AnthropicSseMachine {
             return Vec::new();
         }
         self.started = true;
-        if let Some(id) = data.pointer("/response/id").or_else(|| data.get("id")) {
-            if let Some(id) = id.as_str() {
-                self.id = id.to_string();
-            }
+        if let Some(id) = response_id(data) {
+            self.id = id.to_string();
         }
         vec![
             sse(
@@ -1015,6 +1013,9 @@ impl AnthropicSseMachine {
         data: &Value,
     ) -> Result<(), ResponsesProtocolError> {
         let retained = match name {
+            "response.created" | "response.in_progress" if !self.started => {
+                response_id(data).map_or(0, str::len)
+            }
             "response.function_call_arguments.delta" => data
                 .get("delta")
                 .and_then(Value::as_str)
@@ -1067,6 +1068,12 @@ impl AnthropicSseMachine {
         self.web_search_indexes.clear();
         ResponsesProtocolError::new(message)
     }
+}
+
+fn response_id(data: &Value) -> Option<&str> {
+    data.pointer("/response/id")
+        .or_else(|| data.get("id"))
+        .and_then(Value::as_str)
 }
 
 fn is_success_terminal_event(name: &str) -> bool {

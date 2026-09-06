@@ -235,6 +235,63 @@ fn responses_bounds_translated_text_exact_and_plus_one() {
 }
 
 #[test]
+fn responses_bounds_provider_response_id_exact_and_plus_one() {
+    for name in ["response.created", "response.in_progress"] {
+        let start_event = |id: &str| shunt::model::responses::ResponseEvent {
+            event: Some(name.to_string()),
+            data: json!({"response": {"id": id}}),
+        };
+        let mut exact =
+            AnthropicSseMachine::new("gpt-5.2-codex", false, false).with_aggregate_limit(4);
+        assert!(exact.apply_checked(start_event("1234")).is_ok(), "{name}");
+
+        let mut oversized =
+            AnthropicSseMachine::new("gpt-5.2-codex", false, false).with_aggregate_limit(4);
+        let error = oversized.apply_checked(start_event("12345")).unwrap_err();
+        assert!(error.to_string().contains("translated state exceeded"));
+    }
+}
+
+#[test]
+fn responses_bounds_response_id_combines_with_other_retained_state() {
+    let mut machine =
+        AnthropicSseMachine::new("gpt-5.2-codex", false, false).with_aggregate_limit(8);
+    machine
+        .apply_checked(shunt::model::responses::ResponseEvent {
+            event: Some("response.created".to_string()),
+            data: json!({"id": "1234"}),
+        })
+        .unwrap();
+    machine
+        .apply_checked(shunt::model::responses::ResponseEvent {
+            event: Some("response.output_text.delta".to_string()),
+            data: json!({"delta": "5678"}),
+        })
+        .unwrap();
+    let error = machine
+        .apply_checked(shunt::model::responses::ResponseEvent {
+            event: Some("response.output_text.delta".to_string()),
+            data: json!({"delta": "9"}),
+        })
+        .unwrap_err();
+    assert!(error.to_string().contains("translated state exceeded"));
+}
+
+#[test]
+fn responses_bounds_ignored_duplicate_start_shell_is_not_double_charged() {
+    let mut machine =
+        AnthropicSseMachine::new("gpt-5.2-codex", false, false).with_aggregate_limit(4);
+    for name in ["response.created", "response.in_progress"] {
+        machine
+            .apply_checked(shunt::model::responses::ResponseEvent {
+                event: Some(name.to_string()),
+                data: json!({"response": {"id": "1234"}}),
+            })
+            .unwrap();
+    }
+}
+
+#[test]
 fn responses_bounds_streaming_metadata_uses_the_aggregate_limit() {
     let mut machine = AnthropicSseMachine::new("gpt-5.2-codex", false, false)
         .without_content_accumulation()
