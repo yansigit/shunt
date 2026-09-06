@@ -432,18 +432,29 @@ fn semantic_parity_direct_and_wrapped_stream_and_unary() {
     let direct = semantic_fixture();
     let wrapped = json!({"response": direct.clone()});
 
-    let mut direct_stream = GeminiSseMachine::new("gemini-3.1-pro-preview");
-    let mut wrapped_stream = GeminiSseMachine::new("gemini-3.1-pro-preview");
-    let direct_events = direct_stream.process_chunk(&direct);
-    let wrapped_events = wrapped_stream.process_chunk(&wrapped);
+    let mut direct_stream = GeminiSseMachine::new_streaming("gemini-3.1-pro-preview");
+    let mut wrapped_stream = GeminiSseMachine::new_streaming("gemini-3.1-pro-preview");
+    let mut direct_events = direct_stream.process_chunk_checked(&direct).unwrap();
+    let mut wrapped_events = wrapped_stream.process_chunk_checked(&wrapped).unwrap();
+    direct_events.extend(direct_stream.transport_close_checked().unwrap());
+    wrapped_events.extend(wrapped_stream.transport_close_checked().unwrap());
 
-    let direct_kinds: Vec<_> = direct_events.iter().map(|event| event.event.as_str()).collect();
-    let wrapped_kinds: Vec<_> = wrapped_events.iter().map(|event| event.event.as_str()).collect();
+    let direct_kinds: Vec<_> = direct_events
+        .iter()
+        .map(|event| event.event.as_str())
+        .collect();
+    let wrapped_kinds: Vec<_> = wrapped_events
+        .iter()
+        .map(|event| event.event.as_str())
+        .collect();
     assert_eq!(direct_kinds, wrapped_kinds);
-    assert_ne!(direct_kinds.last(), Some(&"message_stop"));
+    assert_eq!(direct_kinds.last(), Some(&"message_stop"));
     assert_eq!(
-        direct_kinds.iter().filter(|kind| **kind == "message_stop").count(),
-        0
+        direct_kinds
+            .iter()
+            .filter(|kind| **kind == "message_stop")
+            .count(),
+        1
     );
     let ordered_deltas: Vec<_> = direct_events
         .iter()
@@ -454,21 +465,33 @@ fn semantic_parity_direct_and_wrapped_stream_and_unary() {
         ordered_deltas,
         ["thinking_delta", "text_delta", "input_json_delta"]
     );
+
+    let mut unary = GeminiSseMachine::new("gemini-3.1-pro-preview");
+    unary.process_chunk_checked(&wrapped).unwrap();
+    unary.transport_close_checked().unwrap();
+    let final_json = unary.final_json_checked().unwrap();
+    assert_eq!(final_json["usage"]["input_tokens"], 11);
+    assert_eq!(final_json["usage"]["output_tokens"], 7);
+    assert_eq!(final_json["stop_reason"], "tool_use");
+    assert_eq!(final_json["content"][0]["type"], "thinking");
+    assert_eq!(final_json["content"][1]["type"], "text");
+    assert_eq!(final_json["content"][2]["type"], "tool_use");
 }
 
 #[test]
 fn semantic_parity_provider_error_never_becomes_success() {
     let mut machine = GeminiSseMachine::new("gemini-3.1-pro-preview");
-    let events = machine.process_chunk(&json!({
+    let events = machine
+        .process_chunk_checked(&json!({
             "response": {"error": {
                 "status": "RESOURCE_EXHAUSTED",
                 "message": "quota exhausted"
             }}
-        }));
+        }))
+        .unwrap();
 
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].event, "error");
-    let mut after_error = Vec::new();
-    machine.finish(&mut after_error);
-    assert!(after_error.is_empty(), "provider error must be terminal");
+    assert!(machine.transport_close_checked().is_err());
+    assert!(machine.final_json_checked().is_err());
 }
