@@ -5,6 +5,7 @@
 use std::{path::PathBuf, time::Duration};
 
 use axum::http::{HeaderValue, StatusCode};
+use futures_util::StreamExt;
 
 use crate::{
     accounts::{self, FailoverAction, ReprobeReservation},
@@ -755,6 +756,7 @@ pub(super) async fn classify_retry(
 }
 
 const QUOTA_BODY_LIMIT: usize = 65_536;
+const QUOTA_BODY_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Buffer only bounded quota candidates before classification, rebuilding the
 /// response so the final pool failure can still relay its original body.
@@ -774,20 +776,30 @@ async fn inspect_quota_response(
     let headers = response.headers().clone();
     let mut body = Vec::new();
     let mut stream = response;
+    let deadline = tokio::time::Instant::now() + QUOTA_BODY_TIMEOUT;
     loop {
-        let chunk = match stream.chunk().await {
-            Ok(Some(chunk)) => chunk,
-            Ok(None) => break,
+        let chunk = match tokio::time::timeout_at(deadline, stream.chunk()).await {
             Err(_) => {
                 return (
-                    rebuild_buffered_response(status, &headers, body),
+                    rebuild_streaming_response(status, &headers, body, stream),
                     accounts::QuotaDecision::Transient,
                 );
             }
+            Ok(result) => match result {
+                Ok(Some(chunk)) => chunk,
+                Ok(None) => break,
+                Err(_) => {
+                    return (
+                        rebuild_buffered_response(status, &headers, body),
+                        accounts::QuotaDecision::Transient,
+                    );
+                }
+            },
         };
         if body.len().saturating_add(chunk.len()) > QUOTA_BODY_LIMIT {
+            body.extend_from_slice(&chunk);
             return (
-                rebuild_buffered_response(status, &headers, body),
+                rebuild_streaming_response(status, &headers, body, stream),
                 accounts::QuotaDecision::Transient,
             );
         }
@@ -796,6 +808,24 @@ async fn inspect_quota_response(
     let decision = accounts::classify_quota_response(status, &body);
     let rebuilt = rebuild_buffered_response(status, &headers, body);
     (rebuilt, decision)
+}
+
+fn rebuild_streaming_response(
+    status: StatusCode,
+    headers: &reqwest::header::HeaderMap,
+    prefix: Vec<u8>,
+    remainder: reqwest::Response,
+) -> reqwest::Response {
+    let prefix =
+        futures_util::stream::once(
+            async move { Ok::<_, reqwest::Error>(bytes::Bytes::from(prefix)) },
+        );
+    let body = reqwest::Body::wrap_stream(prefix.chain(remainder.bytes_stream()));
+    let mut builder = axum::http::Response::builder().status(status);
+    for (name, value) in headers {
+        builder = builder.header(name, value);
+    }
+    reqwest::Response::from(builder.body(body).expect("valid streaming response"))
 }
 
 fn rebuild_buffered_response(
@@ -827,6 +857,48 @@ mod tests {
         config::{Config, PoolConfig},
         routing::{AdapterKind, Route},
     };
+
+    fn response_with_stream<S>(stream: S) -> reqwest::Response
+    where
+        S: futures_util::Stream<Item = Result<bytes::Bytes, std::io::Error>>
+            + Send
+            + Sync
+            + 'static,
+    {
+        reqwest::Response::from(
+            axum::http::Response::builder()
+                .status(StatusCode::TOO_MANY_REQUESTS)
+                .body(reqwest::Body::wrap_stream(stream))
+                .unwrap(),
+        )
+    }
+
+    #[tokio::test]
+    async fn oversized_quota_body_fails_closed_without_truncating_relay() {
+        let first = bytes::Bytes::from(vec![b'a'; QUOTA_BODY_LIMIT]);
+        let second = bytes::Bytes::from_static(b"tail");
+        let response = response_with_stream(futures_util::stream::iter([
+            Ok::<_, std::io::Error>(first),
+            Ok(second),
+        ]));
+
+        let (response, decision) = inspect_quota_response(response).await;
+        assert_eq!(decision, accounts::QuotaDecision::Transient);
+        assert_eq!(response.bytes().await.unwrap().len(), QUOTA_BODY_LIMIT + 4);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn slow_quota_body_times_out_without_truncating_relay() {
+        let stream = futures_util::stream::once(async {
+            tokio::time::sleep(QUOTA_BODY_TIMEOUT + Duration::from_secs(1)).await;
+            Ok::<_, std::io::Error>(bytes::Bytes::from_static(b"late"))
+        });
+        let response = response_with_stream(stream);
+
+        let (response, decision) = inspect_quota_response(response).await;
+        assert_eq!(decision, accounts::QuotaDecision::Transient);
+        assert_eq!(&response.bytes().await.unwrap()[..], b"late");
+    }
 
     #[test]
     fn websocket_gate_controls_reprobe_selection_and_stamp() {
