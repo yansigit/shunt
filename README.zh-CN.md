@@ -129,6 +129,8 @@ codex-fallback = "gpt-5.6-sol"
 
 该链先尝试 `anthropic-primary`，再尝试 `codex-fallback`。`auth` 接受 mode 字符串或映射；`claude_oauth` 与 `chatgpt_oauth` 映射可用 `account = "name"` 或 `accounts = [...]` 缩小凭据范围。旧式 `[providers.<name>]` 仍受支持，并会成为按名称排序的隐式上游。不要在配置文件中同时声明两种形式；混用 `[[upstreams]]` 与 `[providers.*]` 会导致配置错误。有关 preset、失败类别和迁移细节，请参阅[配置参考](https://shunt.dev/reference/configuration/)。
 
+对于异构上游链，shunt 始终保留已配置的 primary，仅移除无法保留所需工具、图像、结构化输出或显式 reasoning effort 的后续候选。筛选发生在认证、凭据查找和网络 I/O 之前。若模型名以 `[1m]` 结尾，由于缺少可信的逐目标上下文窗口元数据，只保留 primary。该行为无需新增配置键；详见 [`docs/upstreams-failover.md`](docs/upstreams-failover.md#capability-aware-fallback)。
+
 **内置:**
 
 | 名称 | 类型 | 认证 | 后端 |

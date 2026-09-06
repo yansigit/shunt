@@ -133,6 +133,14 @@ codex-fallback = "gpt-5.6-sol"
 
 This chain tries `anthropic-primary` and then `codex-fallback`. `auth` accepts either a mode string or a map; `claude_oauth` and `chatgpt_oauth` maps can narrow credentials with `account = "name"` or `accounts = [...]`. Legacy `[providers.<name>]` remains supported and becomes implicit name-sorted upstreams. Do not declare both forms: mixing `[[upstreams]]` with `[providers.*]` is a configuration error. See the [configuration reference](https://shunt.dev/reference/configuration/) for presets, failure classes, and migration details.
 
+For heterogeneous chains, shunt keeps the configured primary unchanged and
+removes only later candidates that cannot preserve required tools, images,
+structured output, or explicit reasoning effort. This happens before
+authentication, credential lookup, or network I/O. A model ending in `[1m]`
+keeps only the primary because shunt has no trustworthy per-target context
+window metadata. The gate is automatic and adds no configuration keys; see
+[`docs/upstreams-failover.md`](docs/upstreams-failover.md#capability-aware-fallback).
+
 **Built in:**
 
 | Name | Kind | Auth | Backend |

@@ -12,6 +12,20 @@ description: 内置的提供方,以及如何用一个 TOML 表添加任意兼容
 - **`kind = "antigravity"`** —— 通过 HTTP 连接 Google Antigravity 后端。
 - **`kind = "antigravity_cli"`** —— **已废弃**;调用本地的 Antigravity `agy` CLI。
 
+## 感知能力的故障转移链
+
+模型映射到多个上游时，shunt 始终保留已配置的 primary。在认证、凭据查找和网络 I/O 之前，它仅移除无法保留 Messages 请求所需工具、base64/URL 图像、结构化输出或显式 reasoning effort 的后续候选。畸形或未知结构仍交由所选适配器正常验证。该行为无需新增配置键。
+
+| 要求 | Anthropic | Responses | Gemini / Antigravity | Cursor | Antigravity CLI |
+|------|-----------|-----------|------------------------|--------|-----------------|
+| 工具 | 支持 | 支持 | 支持 | 支持 | 不支持 |
+| Base64 图像 | 支持 | 支持 | 支持 | 支持 | 不支持 |
+| URL 图像 | 支持 | 支持 | 不支持 | 不支持 | 不支持 |
+| 结构化输出 | 支持 | 不支持 | 不支持 | 不支持 | 不支持 |
+| 显式 effort | 支持 | 支持 | 不支持 | 不支持 | 不支持 |
+
+请求模型以 `[1m]` 或 `[1M]` 结尾时，由于没有可信的逐目标上下文窗口信息，只保留 primary。每次排除都会记录 provider/model/reason 警告及固定的 `shunt.failover{state=capability_excluded}` 指标状态。
+
 ## 内置提供方
 
 | 名称 | 类型 | 认证 | 后端 |

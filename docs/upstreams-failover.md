@@ -158,6 +158,34 @@ Response headers on every proxied response (success or final failure):
 `x-gateway-upstream` (upstream name), `x-gateway-model` (client-requested id),
 `x-gateway-upstream-model` (mapped upstream id).
 
+### Capability-aware fallback
+
+After resolving an ordered chain, shunt preserves the first (primary) route
+unconditionally and filters only later candidates that cannot faithfully carry
+requirements visible in the Anthropic Messages request. Filtering happens
+before chain-aware inbound authentication, credential lookup, request mutation,
+or network dispatch. It is internal behavior and has no configuration keys.
+
+The gate recognizes a non-empty `tools` array, base64 and URL images in message
+or nested tool-result content, non-null `output_config.format`, string
+`output_config.effort`, and a trailing `[1m]` / `[1M]` model hint. Unknown or
+malformed shapes are ignored by this gate and remain the selected adapter's
+validation responsibility.
+
+| Requirement | Anthropic | Responses | Gemini / Antigravity | Cursor | Antigravity CLI |
+|-------------|-----------|-----------|------------------------|--------|-----------------|
+| Tools | yes | yes | yes | yes | no |
+| Base64 images | yes | yes | yes | yes | no |
+| URL images | yes | yes | no | no | no |
+| Structured output | yes | no | no | no | no |
+| Explicit effort | yes | yes | no | no | no |
+
+For `[1m]`, every fallback is excluded because shunt does not maintain trusted
+context-window metadata per target; the primary still runs normally. Each
+exclusion emits a warning with provider, model, and bounded reasons, plus
+`shunt.failover{state=capability_excluded}`. Request content never becomes a
+metric label.
+
 Cross-cutting:
 
 - **Inbound auth gating**: inbound auth remains optional exactly as today. When

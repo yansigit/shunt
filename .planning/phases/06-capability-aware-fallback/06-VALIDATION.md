@@ -1,7 +1,7 @@
 ---
 phase: 06-capability-aware-fallback
-status: draft
-wave_0_complete: false
+status: validated
+wave_0_complete: true
 created: 2026-09-06
 ---
 
@@ -9,12 +9,12 @@ created: 2026-09-06
 
 | Task | Requirement | Test seam | Status |
 |------|-------------|-----------|--------|
-| 06-01-01 | CAP-01 | Pure requirement extraction matrix | pending |
-| 06-01-02 | CAP-01 | Pure adapter eligibility matrix | pending |
-| 06-01-03 | CAP-01 | Ordered-chain pre-auth/pre-network filtering integration | pending |
-| 06-02-01 | CAP-01 | Metrics/log and native/no-feature regression | pending |
-| 06-02-02 | CAP-01 | English and maintained locale documentation | pending |
-| 06-02-03 | CAP-01 | fmt, Clippy, full workspace, diff/wiki guards | pending |
+| 06-01-01 | CAP-01 | Pure requirement extraction matrix | passed |
+| 06-01-02 | CAP-01 | Pure adapter eligibility matrix | passed |
+| 06-01-03 | CAP-01 | Ordered-chain pre-auth/pre-network filtering integration | passed |
+| 06-02-01 | CAP-01 | Metrics/log and native/no-feature regression | passed |
+| 06-02-02 | CAP-01 | English and maintained locale documentation | passed |
+| 06-02-03 | CAP-01 | fmt, Clippy, full workspace, diff/wiki guards | passed |
 
 ## Final commands
 

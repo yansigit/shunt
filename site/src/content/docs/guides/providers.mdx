@@ -12,6 +12,28 @@ Providers are a **name → config map**. Anthropic-compatible and Responses-comp
 - **`kind = "antigravity"`** — the Google Antigravity backend over HTTP.
 - **`kind = "antigravity_cli"`** — **deprecated**; invokes the local Antigravity `agy` CLI.
 
+## Capability-aware fallback chains
+
+For a model mapped to several upstreams, shunt always keeps the configured
+primary. Before authentication, credential lookup, or network I/O, it removes
+only later candidates that cannot preserve requirements detected in the
+Messages request: tools, base64 or URL images, structured output, and explicit
+reasoning effort. Malformed or unknown shapes are left to the selected adapter's
+normal validation. This behavior is automatic and has no configuration keys.
+
+| Requirement | Anthropic | Responses | Gemini / Antigravity | Cursor | Antigravity CLI |
+|-------------|-----------|-----------|------------------------|--------|-----------------|
+| Tools | yes | yes | yes | yes | no |
+| Base64 images | yes | yes | yes | yes | no |
+| URL images | yes | yes | no | no | no |
+| Structured output | yes | no | no | no | no |
+| Explicit effort | yes | yes | no | no | no |
+
+A requested model ending in `[1m]` or `[1M]` keeps only the primary because
+shunt has no trustworthy context-window metadata for each fallback. Exclusions
+produce a provider/model/reason warning and the fixed
+`shunt.failover{state=capability_excluded}` metric state.
+
 ## Built-in providers
 
 | Name | Kind | Auth | Backend |

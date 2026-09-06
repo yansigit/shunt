@@ -131,6 +131,8 @@ codex-fallback = "gpt-5.6-sol"
 
 이 체인은 `anthropic-primary`를 먼저 시도한 다음 `codex-fallback`을 시도합니다. `auth`는 mode 문자열 또는 맵을 받으며, `claude_oauth`와 `chatgpt_oauth` 맵은 `account = "name"` 또는 `accounts = [...]`로 자격 증명 범위를 좁힐 수 있습니다. 레거시 `[providers.<name>]`는 계속 지원되며 이름순의 암시적 업스트림이 됩니다. 구성 파일에서 두 형식을 함께 선언하지 마세요. `[[upstreams]]`와 `[providers.*]`를 혼합하면 구성 오류입니다. preset, 실패 클래스, 마이그레이션 세부 사항은 [구성 레퍼런스](https://shunt.dev/reference/configuration/)를 참고하세요.
 
+서로 다른 종류의 업스트림으로 구성된 체인에서도 shunt는 설정된 primary를 그대로 유지하고, 필요한 도구·이미지·구조화 출력·명시적 reasoning effort를 보존할 수 없는 후속 후보만 제거합니다. 이 필터링은 인증, 자격 증명 조회, 네트워크 I/O 전에 수행됩니다. 모델 이름이 `[1m]`으로 끝나면 대상별 컨텍스트 창 메타데이터를 신뢰할 수 없으므로 primary만 유지합니다. 별도 구성 키는 없습니다. 자세한 내용은 [`docs/upstreams-failover.md`](docs/upstreams-failover.md#capability-aware-fallback)를 참고하세요.
+
 **기본 내장:**
 
 | 이름 | 종류 | 인증 | 백엔드 |
