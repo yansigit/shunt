@@ -69,6 +69,8 @@ provider = "openai"
 3. `[[route_prefixes]]` 프리픽스 일치.
 4. `server.default_provider` — 기본값은 `anthropic`이므로, 일치하지 않는 모델은 변경 없이 Anthropic으로 흘러갑니다.
 
+인바운드 Codex Responses 엔드포인트는 더 엄격한 네이티브 정책을 적용합니다. 고유한 정확한 `[models.upstream_model]` 또는 `[[routes]]` 선언만 하나의 `kind = "responses"` 프로바이더를 선택해 고정된 `[server.codex_endpoint].provider`를 재정의할 수 있습니다. 프리픽스 전용, 비정확 일치 및 불일치 모델은 고정된 프로바이더로 폴백합니다. 정확하지만 모호하거나, 변환 전용/비-Responses이거나, 모델을 다시 쓰는 선언은 디스패치 전에 거부됩니다. 네이티브 HTTP/WS 본문은 불투명하게 유지되고 자격 증명은 프로바이더별로 필터링되며 출력 시작 후에는 다른 프로바이더로 이동하지 않습니다.
+
 라우트는 전달되는 모델 id(`upstream_model`)와 추론 노력(`effort`)을 모델별로 오버라이드할 수 있습니다.
 
 ## 부분 오버라이드

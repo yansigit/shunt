@@ -182,6 +182,10 @@ headers = { "x-api-key" = "..." }
 
 默认情况下,`/device` 忽略 forwarding header 并按 socket peer 做 rate limit。只有在 shunt 仅能通过会删除 client 所提供 forwarding header 并设置自身值的 trusted reverse proxy 访问时,才设置 `trust_forwarded_for = true`。不要在直接暴露的 gateway 上启用。
 
+## `[server.codex_endpoint]`(可选)
+
+此表启用入站 OpenAI Responses 透传，让 Codex CLI 将 shunt 作为 `base_url`。只有唯一的精确 `[models.upstream_model]` 或 `[[routes]]` 才能选择兼容的 `kind = "responses"` 提供方并覆盖固定提供方。仅前缀、非精确和无匹配模型回退到固定的 `[server.codex_endpoint].provider`;存在歧义、需要转换/非 Responses 或改写模型的声明会在分发前拒绝。正文保持不变，输出开始后不会切换提供方。
+
 ## `[server.usage]`(可选)
 
 存在此表会注册面向客户端的 `GET /usage`,返回共享账户池配额状态的**净化聚合**视图,使非管理员客户端无需管理界面也能预判限流([端点详情](/zh-cn/reference/endpoints/))。没有此表时,该路由不会注册。

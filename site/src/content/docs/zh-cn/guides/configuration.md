@@ -69,6 +69,8 @@ provider = "openai"
 3. `[[route_prefixes]]` 前缀匹配。
 4. `server.default_provider` —— 默认为 `anthropic`,因此无匹配的模型会原样透传给 Anthropic。
 
+入站 Codex Responses 端点采用更严格的原生策略。只有唯一的精确 `[models.upstream_model]` 或 `[[routes]]` 声明，才可以选择一个兼容的 `kind = "responses"` 提供方并覆盖固定的 `[server.codex_endpoint].provider`。仅前缀、非精确和无匹配模型都会回退到固定提供方。精确但存在歧义、需要转换/非 Responses，或会改写模型的声明，会在分发前拒绝。原生 HTTP/WS 载荷保持不透明，凭据按提供方过滤，输出开始后不会切换或重放到其他提供方。
+
 一条路由可以按模型覆盖转发的模型 id(`upstream_model`)和推理力度(`effort`)。
 
 ## 部分覆盖

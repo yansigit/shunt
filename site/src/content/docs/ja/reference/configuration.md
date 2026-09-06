@@ -182,6 +182,10 @@ headers = { "x-api-key" = "..." }
 
 デフォルトでは `/device` は forwarding header を無視し、socket peer を rate limit します。shunt が、client 提供の forwarding header を削除して自分の値を設定する trusted reverse proxy からのみ到達可能な場合に限り、`trust_forwarded_for = true` を設定してください。直接公開された gateway では有効化しないでください。
 
+## `[server.codex_endpoint]`（オプション）
+
+このテーブルは、Codex CLI が shunt を `base_url` として使うためのインバウンド OpenAI Responses パススルーを有効にします。唯一の厳密一致 `[models.upstream_model]` または `[[routes]]` だけが、互換性のある `kind = "responses"` プロバイダーを選択して固定プロバイダーを上書きできます。プレフィックスのみ、非厳密、未一致のモデルは固定された `[server.codex_endpoint].provider` へフォールバックし、曖昧、変換/非 Responses、モデル書き換えの宣言はディスパッチ前に拒否されます。本文は変更せず、出力開始後のプロバイダー移行はありません。
+
 ## `[server.usage]`（オプション）
 
 このテーブルの存在により、共有アカウントプールのクォータ状態をサニタイズして集約した `GET /usage` が登録されます。管理サーフェスを使わずに、クライアントがスロットリングを予測するためのエンドポイントです（[エンドポイントの詳細](/ja/reference/endpoints/)）。テーブルがなければ、ルートは登録されません。

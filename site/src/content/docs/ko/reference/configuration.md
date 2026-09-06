@@ -193,6 +193,8 @@ headers = { "x-api-key" = "..." }
 
 `POST /backend-api/codex/responses`, `POST /responses`, `POST /v1/responses`를 등록하며, 모두 지정한 provider의 account pool이 처리합니다. `[server.auth]`가 있으면 다른 server-side credential route처럼 유효한 client token을 요구합니다. `[server.auth]`가 없으면 operator의 Codex credential을 주입하면서도 접근 가능한 누구에게나 **open** 상태이므로 loopback 외 환경에서는 반드시 보호하세요. `/v1/messages`와 달리 request는 Anthropic Messages로 변환하거나 그 반대로 변환하지 않고 upstream과 verbatim relay합니다.
 
+정확한 `[models.upstream_model]` 또는 `[[routes]]`가 단 하나의 `kind = "responses"` 프로바이더를 선택할 때만 인바운드 네이티브 라우팅이 고정 프로바이더를 재정의합니다. 프리픽스 전용·비정확·불일치 모델은 고정된 `[server.codex_endpoint].provider`로 폴백하고, 정확하지만 모호하거나 변환/비-Responses 또는 모델 재작성 선언은 디스패치 전에 거부됩니다. 본문은 변경 없이 전달되며 출력 후 프로바이더 이동은 없습니다.
+
 ## `[server.usage]` (선택)
 
 이 테이블은 공유 계정 풀의 쿼터 상태를 정제해 집계한 클라이언트용 `GET /usage`를 등록하므로, 관리자 화면 없이도 클라이언트가 스로틀링을 예상할 수 있습니다([엔드포인트 상세](/ko/reference/endpoints/)). 테이블이 없으면 라우트도 등록되지 않습니다.

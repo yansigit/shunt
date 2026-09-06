@@ -69,6 +69,8 @@ provider = "openai"
 3. `[[route_prefixes]]` のプレフィックスマッチ。
 4. `server.default_provider` — デフォルトは `anthropic` なので、マッチしないモデルは変更なしで Anthropic へフォールスルーします。
 
+インバウンド Codex Responses エンドポイントには、より厳格なネイティブポリシーが適用されます。一意な厳密一致の `[models.upstream_model]` または `[[routes]]` 宣言だけが、`kind = "responses"` の互換プロバイダー 1 つを選択して固定された `[server.codex_endpoint].provider` を上書きできます。プレフィックスのみ、非厳密一致、未一致のモデルは固定プロバイダーへフォールバックします。厳密一致でも曖昧、変換専用/非 Responses、またはモデルを書き換える宣言はディスパッチ前に拒否されます。ネイティブ HTTP/WS のペイロードは不透明なまま、資格情報はプロバイダー単位でフィルタリングされ、出力開始後に別プロバイダーへ移行することはありません。
+
 ルートは、転送されるモデル id（`upstream_model`）と推論エフォート（`effort`）をモデルごとにオーバーライドできます。
 
 ## 部分的なオーバーライド
