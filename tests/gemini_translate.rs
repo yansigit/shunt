@@ -495,3 +495,64 @@ fn semantic_parity_provider_error_never_becomes_success() {
     assert!(machine.transport_close_checked().is_err());
     assert!(machine.final_json_checked().is_err());
 }
+
+#[test]
+fn gemini_semantic_strictness_rejects_ambiguous_and_incomplete() {
+    let invalid = [
+        json!([]),
+        json!({"response": "not-an-object"}),
+        json!({"candidates": [{}, {}]}),
+        json!({"candidates": [{"content": {"parts": "not-an-array"}}]}),
+        json!({"candidates": [{"finishReason": "MALFORMED_FUNCTION_CALL"}]}),
+        json!({"usageMetadata": {"promptTokenCount": -1}}),
+        json!({"usageMetadata": {"totalTokenCount": "seven"}}),
+    ];
+    for value in invalid {
+        let mut machine = GeminiSseMachine::new("gemini-3.1-pro-preview");
+        assert!(
+            machine.process_chunk_checked(&value).is_err(),
+            "accepted invalid semantic shape: {value}"
+        );
+        assert!(machine.process_chunk_checked(&semantic_fixture()).is_err());
+    }
+
+    let mut no_finish = GeminiSseMachine::new("gemini-3.1-pro-preview");
+    no_finish
+        .process_chunk_checked(&json!({"usageMetadata": {"promptTokenCount": 1}}))
+        .unwrap();
+    assert!(no_finish.transport_close_checked().is_err());
+
+    let mut duplicate = GeminiSseMachine::new("gemini-3.1-pro-preview");
+    duplicate.process_chunk_checked(&semantic_fixture()).unwrap();
+    assert!(duplicate.process_chunk_checked(&semantic_fixture()).is_err());
+
+    let metadata_parts = vec![json!({"citationMetadata": {}}); 4_096];
+    let mut bounded = GeminiSseMachine::new("gemini-2.5-pro");
+    bounded
+        .process_chunk_checked(&json!({
+            "candidates": [{"content": {"role": "model", "parts": metadata_parts}}]
+        }))
+        .unwrap();
+    assert!(bounded
+        .process_chunk_checked(&json!({
+            "candidates": [{"content": {"role": "model", "parts": [{}]}}]
+        }))
+        .is_err());
+}
+
+#[test]
+fn gemini_semantic_strictness_accepts_signature_cap_and_rejects_cap_plus_one() {
+    for (size, accepted) in [(64 * 1024, true), (64 * 1024 + 1, false)] {
+        let mut machine = GeminiSseMachine::new("gemini-3.1-pro-preview");
+        let result = machine.process_chunk_checked(&json!({
+            "candidates": [{
+                "content": {"role": "model", "parts": [{
+                    "functionCall": {"name": "bounded", "args": {}},
+                    "thoughtSignature": "s".repeat(size)
+                }]},
+                "finishReason": "STOP"
+            }]
+        }));
+        assert_eq!(result.is_ok(), accepted, "signature size {size}");
+    }
+}
