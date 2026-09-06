@@ -32,7 +32,7 @@ covered_files:
   - src/codex_endpoint/websocket.rs
   - src/server.rs
   - tests/inbound_codex_websocket.rs
-covered_digest: "v1:sha256:12a12da7f7d30d259e7e30ca880ea4b6f0113c0fb5d3b6cabf8bc1b4027b5d69"
+covered_digest: "v1:sha256:631c2305d56f251cca7a627847b580411a68175cdbd6120b5e658051511ee0ef"
 behavior_unverified: 0
 ---
 
