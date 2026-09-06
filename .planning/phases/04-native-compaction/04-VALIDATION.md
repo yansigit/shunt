@@ -1,9 +1,9 @@
 ---
 phase: "04"
 slug: native-compaction
-status: draft
+status: validated
 nyquist_compliant: true
-wave_0_complete: false
+wave_0_complete: true
 created: "2026-09-05"
 ---
 
@@ -11,10 +11,10 @@ created: "2026-09-05"
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Automated Command | Status |
 |---------|------|------|-------------|------------|-------------------|--------|
-| 04-01-01 | 04-01 | 1 | COMP-01 | T-04-01-01, T-04-01-02 | `cargo test routing:: --lib && cargo test --test inbound_codex_endpoint compact_` | pending |
-| 04-01-02 | 04-01 | 1 | COMP-01 | T-04-01-03, T-04-01-04 | `cargo test --test inbound_codex_endpoint && cargo test --test codex_multi_account` | pending |
-| 04-02-01 | 04-02 | 2 | COMP-01 | T-04-02-01 | `git diff --check && test -z "$(git status --short -- wiki/)"` | pending |
-| 04-02-02 | 04-02 | 2 | COMP-01 | T-04-02-02 | `cargo fmt --all --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test --all-features --workspace` | pending |
+| 04-01-01 | 04-01 | 1 | COMP-01 | T-04-01-01, T-04-01-02 | `cargo test routing:: --lib && cargo test --test inbound_codex_endpoint compact_` | complete |
+| 04-01-02 | 04-01 | 1 | COMP-01 | T-04-01-03, T-04-01-04 | `cargo test --test inbound_codex_endpoint && cargo test --test codex_multi_account` | complete |
+| 04-02-01 | 04-02 | 2 | COMP-01 | T-04-02-01 | `git diff --check && test -z "$(git status --short -- wiki/)"` | complete |
+| 04-02-02 | 04-02 | 2 | COMP-01 | T-04-02-02 | `cargo fmt --all --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test --all-features --workspace` | complete |
 
 ## Wave 0 Requirements
 
@@ -27,4 +27,4 @@ created: "2026-09-05"
 
 All four rows must be complete; focused compact/ordinary ingress and multi-account tests, formatting, strict Clippy, the full workspace, diff checks, and the empty wiki guard must pass.
 
-**Approval:** pending execution evidence.
+**Approval:** validated 2026-09-05 after focused and full repository gates passed.

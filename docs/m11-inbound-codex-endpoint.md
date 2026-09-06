@@ -53,12 +53,22 @@ When opted in, shunt registers three routes, all mapping to one passthrough hand
 | `GET` (WebSocket), `POST` | `/backend-api/codex/responses` |
 | `GET` (WebSocket), `POST` | `/responses` |
 | `GET` (WebSocket), `POST` | `/v1/responses` |
+| `POST` | `/v1/responses/compact` |
 
 Three Responses paths exist because the Codex CLI always appends `/responses` to whatever `base_url` it is
 pointed at: a base ending in `/backend-api/codex` produces `/backend-api/codex/responses` (the
 literal path the real ChatGPT backend uses), a base ending in `/v1` produces `/v1/responses`, and
 a bare base produces `/responses`. Registering all three lets an operator use either CLI setup
 style (§ "Codex CLI setup" below) without shunt needing to know which one a given client chose.
+
+`POST /v1/responses/compact` is the HTTP-only remote-compaction surface. It requires a valid,
+non-empty string `model`, applies the same inbound authentication and request limits, and forwards
+the original request bytes through the same native route and account-pool machinery. Only the
+ChatGPT/Codex backend and the canonical official OpenAI API are treated as verified native compact
+destinations; unsupported, ambiguous, translated, or non-Responses routes return an OpenAI-shaped
+`400` before credential resolution or network dispatch. shunt treats `input`,
+`previous_response_id`, and encrypted continuation fields as opaque: it neither decrypts nor
+rewrites them and stores no request history or compacted summary.
 
 ### WebSocket transport
 

@@ -109,6 +109,7 @@ name = "main"
 - **精确原生模型路由。**唯一的精确 `[models.upstream_model]` 或 `[[routes]]` 声明可以选择一个兼容的 `kind = "responses"` 提供方,并原样转发模型与正文。仅前缀、非精确和无匹配模型回退到固定的 `[server.codex_endpoint].provider`;精确但有歧义、需要转换/非 Responses,或会改写模型的声明,会在发出上游请求前拒绝。
 - **耗尽时逐字中继。**如果所有池化账户都已尝试过,并且至少收到过一个上游响应,shunt 会原样中继最后那个响应,而不是把它重新塑形成 Anthropic 风格的错误 —— 因为 Responses 客户端期待的是它从真实 ChatGPT 后端会得到的原始形态。
 - **配额感知轮换是有界的。** 单纯的 `429` 属于临时限流。只有当有界的响应体包含精确的结构化硬配额证据（`usage_limit_exceeded` 或 `insufficient_quota`）时，shunt 才会将账号抑制有限且内部有上限的冷却时间；格式错误、有歧义、超大或中断的响应体保持未验证状态。有效的 `Retry-After` 秒数（包括小数并安全向上取整）和 HTTP 日期值在有限上限内生效。候选账号耗尽时，最终的上游状态、响应体和安全的 `Retry-After` 元数据保持可见。账号轮换仅在输出开始前有效；无关的路由级故障转移行为保持不变。
+- **原生 compaction 保持不透明。** 仅限 HTTP 的 `POST /v1/responses/compact` 使用相同的认证、请求限制、原生路由判定和账号池，将正文与延续状态逐字节转发到已验证的 ChatGPT/Codex 或官方 OpenAI compact 端点。格式错误、存在歧义、需要转换或不受支持的目标会在网络分发前被拒绝。shunt 不会解密延续状态、合成摘要或存储请求历史。
 - **网关自身的错误使用 OpenAI 形态。**当失败源自 shunt 自己时 —— 客户端 token 错误或缺失(`401`)、账户池不可用且没有任何上游响应(`502`)、请求体过大,或端点未配置 —— shunt 会以 OpenAI Responses 的错误形态(`{"error":{"message":…,"type":…,"code":null}}`)返回,并保持相同的状态码,这样 Codex CLI 就能走它自己的错误解析路径,而不是 Anthropic 的 `{"type":"error",…}` 信封。被中继的*上游*错误(来自后端的 429/4xx/5xx)仍然逐字透传。
 - **两种入站传输。** HTTP `POST` 保持字节忠实;WebSocket `GET` 增加有界事件传输,且不依赖提供方的 outbound `websocket = true` 设置。
 - **共享分发边界。** HTTP 和 WebSocket 使用同一个精确解析器与按提供方的凭据过滤。输出开始后不会切换或重放到其他提供方;只有输出前允许账户轮换。
