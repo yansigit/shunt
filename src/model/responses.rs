@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use crate::model::responses_request::TOOL_SEARCH_NAME;
 pub use crate::model::responses_request::{
     encode_reasoning_signature, translate_request, translate_request_value,
+    try_translate_request_value,
 };
 
 const MAX_RESPONSES_TRANSLATED_STATE_BYTES: usize = 32 * 1024 * 1024;

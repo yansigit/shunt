@@ -122,10 +122,20 @@ pub fn translate_request(
     tool_search_native: bool,
 ) -> Result<Value, ResponsesRequestError> {
     let request: Value = serde_json::from_slice(body)?;
-    translate_request_value(&request, route, flavor, tool_search_native)
+    try_translate_request_value(&request, route, flavor, tool_search_native)
 }
 
 pub fn translate_request_value(
+    request: &Value,
+    route: &Route,
+    flavor: ResponsesFlavor,
+    tool_search_native: bool,
+) -> Value {
+    try_translate_request_value(request, route, flavor, tool_search_native)
+        .expect("translate_request_value requires validated Anthropic request history")
+}
+
+pub fn try_translate_request_value(
     request: &Value,
     route: &Route,
     flavor: ResponsesFlavor,

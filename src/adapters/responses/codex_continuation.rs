@@ -261,17 +261,15 @@ fn validate_retained_item(item: &Value) -> Result<(), ContinuationError> {
             if item
                 .get("encrypted_content")
                 .and_then(Value::as_str)
-                .is_some_and(|value| !value.is_empty()) =>
-        {
-            if !item
-                .get("id")
-                .and_then(Value::as_str)
                 .is_some_and(|value| !value.is_empty())
-            {
-                return Err(ContinuationError::Invalid {
-                    field: "reasoning identity",
-                });
-            }
+                && !item
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| !value.is_empty()) =>
+        {
+            return Err(ContinuationError::Invalid {
+                field: "reasoning identity",
+            });
         }
         _ => {}
     }

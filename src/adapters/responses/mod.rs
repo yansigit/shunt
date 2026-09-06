@@ -26,7 +26,7 @@ use crate::{
     adapters::{Adapter, AdapterError, AdapterFuture},
     auth::{self, resolve_credential, Credential},
     config::{AuthMode, CountTokens},
-    model::responses::translate_request_value,
+    model::responses::try_translate_request_value,
     request::RequestBody,
     routing::Route,
     server::AppState,
@@ -138,7 +138,7 @@ async fn forward(
         tool_search_native,
     };
     let upstream_body = Arc::new(
-        translate_request_value(request_json, &route, flavor, tool_search_native).map_err(
+        try_translate_request_value(request_json, &route, flavor, tool_search_native).map_err(
             |error| AdapterError {
                 message: error.to_string(),
                 response: Box::new(

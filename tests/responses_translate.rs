@@ -278,7 +278,7 @@ fn parsed_value_entry_point_matches_byte_wrapper_across_flavors() {
 
     for flavor in [ResponsesFlavor::OpenAi, ResponsesFlavor::Chatgpt] {
         assert_eq!(
-            translate_request_value(&request, &route, flavor, false).unwrap(),
+            translate_request_value(&request, &route, flavor, false),
             translate_request(&body, &route, flavor, false).unwrap(),
             "parsed and byte entry points diverged for {flavor:?}"
         );
