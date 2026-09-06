@@ -79,6 +79,7 @@ struct CheckedChunk {
     finish_reason: Option<String>,
     provider_error: Option<Value>,
     retained_bytes: usize,
+    part_count: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -104,6 +105,7 @@ pub struct GeminiSseMachine {
     accumulate_content: bool,
     content: Vec<Value>,
     retained_bytes: usize,
+    part_count: usize,
 }
 
 impl GeminiSseMachine {
@@ -123,6 +125,7 @@ impl GeminiSseMachine {
             accumulate_content: true,
             content: Vec::new(),
             retained_bytes: 0,
+            part_count: 0,
         }
     }
 
@@ -184,6 +187,10 @@ impl GeminiSseMachine {
                 self.terminal = TerminalState::ProtocolFailed;
                 GeminiSemanticError::protocol("Gemini retained semantic state exceeds limit")
             })?;
+        self.part_count = self
+            .part_count
+            .checked_add(checked.part_count)
+            .expect("candidate part count was prevalidated");
 
         if let Some(tokens) = checked.input_tokens {
             self.input_tokens = tokens;
@@ -252,6 +259,7 @@ impl GeminiSseMachine {
                 finish_reason: None,
                 provider_error: Some(Value::Object(error.clone())),
                 retained_bytes: 0,
+                part_count: 0,
             });
         }
 
@@ -302,8 +310,10 @@ impl GeminiSseMachine {
                         let raw_parts = raw_parts.as_array().ok_or_else(|| {
                             GeminiSemanticError::protocol("Gemini content parts must be an array")
                         })?;
-                        if self.block_index.checked_add(raw_parts.len()).is_none()
-                            || self.block_index + raw_parts.len() > MAX_CONTENT_BLOCKS
+                        if self
+                            .part_count
+                            .checked_add(raw_parts.len())
+                            .is_none_or(|count| count > MAX_CONTENT_BLOCKS)
                         {
                             return Err(GeminiSemanticError::protocol(
                                 "Gemini content block count exceeds limit",
@@ -322,6 +332,7 @@ impl GeminiSseMachine {
                 }
             }
         }
+        let part_count = parts.len();
         Ok(CheckedChunk {
             parts,
             input_tokens,
@@ -329,6 +340,7 @@ impl GeminiSseMachine {
             finish_reason,
             provider_error: None,
             retained_bytes,
+            part_count,
         })
     }
 
@@ -765,7 +777,10 @@ fn validate_usage(
             }),
         }
     };
-    Ok((parse("promptTokenCount")?, parse("candidatesTokenCount")?))
+    let input = parse("promptTokenCount")?;
+    let output = parse("candidatesTokenCount")?;
+    let _ = parse("totalTokenCount")?;
+    Ok((input, output))
 }
 
 fn protocol_error_event(message: String) -> SseEvent {

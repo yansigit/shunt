@@ -501,10 +501,28 @@ fn gemini_semantic_strictness_rejects_ambiguous_and_incomplete() {
     let invalid = [
         json!([]),
         json!({"response": "not-an-object"}),
+        json!({"response": {"response": {}}}),
+        json!({"response": {}, "candidates": []}),
         json!({"candidates": [{}, {}]}),
+        json!({"candidates": ["not-an-object"]}),
+        json!({"candidates": [{"content": "not-an-object"}]}),
         json!({"candidates": [{"content": {"parts": "not-an-array"}}]}),
+        json!({"candidates": [{"content": {"role": "user", "parts": []}}]}),
+        json!({"candidates": [{"content": {"parts": ["not-an-object"]}}]}),
+        json!({"candidates": [{"content": {"parts": [{"text": 1}]}}]}),
+        json!({"candidates": [{"content": {"parts": [{"thought": "yes", "text": "x"}]}}]}),
+        json!({"candidates": [{"content": {"parts": [{"thinking": "x"}]}}]}),
+        json!({"candidates": [{"content": {"parts": [{"text": "x", "functionCall": {}}]}}]}),
+        json!({"candidates": [{"content": {"parts": [{"functionCall": "bad"}]}}]}),
+        json!({"candidates": [{"content": {"parts": [{"functionCall": {"name": " ", "args": {}}}]}}]}),
+        json!({"candidates": [{"content": {"parts": [{"functionCall": {"name": "x", "args": []}}]}}]}),
+        json!({"candidates": [{"content": {"parts": [{"functionCall": {"name": "x"}, "thoughtSignature": ""}]}}]}),
+        json!({"candidates": [{"content": {"parts": [{"functionResponse": {"name": "x"}}]}}]}),
         json!({"candidates": [{"finishReason": "MALFORMED_FUNCTION_CALL"}]}),
+        json!({"candidates": [{"finishReason": 1}]}),
+        json!({"usageMetadata": []}),
         json!({"usageMetadata": {"promptTokenCount": -1}}),
+        json!({"usageMetadata": {"candidatesTokenCount": 1.5}}),
         json!({"usageMetadata": {"totalTokenCount": "seven"}}),
     ];
     for value in invalid {
@@ -523,8 +541,12 @@ fn gemini_semantic_strictness_rejects_ambiguous_and_incomplete() {
     assert!(no_finish.transport_close_checked().is_err());
 
     let mut duplicate = GeminiSseMachine::new("gemini-3.1-pro-preview");
-    duplicate.process_chunk_checked(&semantic_fixture()).unwrap();
-    assert!(duplicate.process_chunk_checked(&semantic_fixture()).is_err());
+    duplicate
+        .process_chunk_checked(&semantic_fixture())
+        .unwrap();
+    assert!(duplicate
+        .process_chunk_checked(&semantic_fixture())
+        .is_err());
 
     let metadata_parts = vec![json!({"citationMetadata": {}}); 4_096];
     let mut bounded = GeminiSseMachine::new("gemini-2.5-pro");
