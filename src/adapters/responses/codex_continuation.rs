@@ -631,4 +631,14 @@ mod tests {
         let c = signature(&json!({"model": "n", "stream": true, "input": []}));
         assert_ne!(a, c, "a changed non-input field changes the signature");
     }
+
+    #[test]
+    fn continuation_bounds_reject_item_cap_plus_one() {
+        let input = vec![json!(null); 10_001];
+        let transcript = build_transcript(&input, &[]);
+        assert!(
+            transcript.len() <= 10_000,
+            "continuation construction must reject rather than retain cap-plus-one"
+        );
+    }
 }
