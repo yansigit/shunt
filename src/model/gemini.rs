@@ -464,7 +464,11 @@ impl GeminiSseMachine {
             if text.is_empty() {
                 return Ok((CheckedPart::Metadata, 0));
             }
-            let cost = self.accumulate_content.then_some(text.len()).unwrap_or(0);
+            let cost = if self.accumulate_content {
+                text.len()
+            } else {
+                0
+            };
             if part.get("thought").and_then(Value::as_bool) == Some(true) {
                 return Ok((CheckedPart::Thinking(text.to_string()), cost));
             }
