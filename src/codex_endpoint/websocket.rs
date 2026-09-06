@@ -30,7 +30,7 @@ use super::frame::{
 
 struct TurnContext {
     state: AppState,
-    model: String,
+    model: Option<String>,
     pool_key: Option<String>,
     headers: HeaderMap,
     body: Bytes,
@@ -155,7 +155,6 @@ async fn handle_socket(
                         }
                         let body_bytes = Bytes::from(serde_json::to_vec(&raw_json).unwrap_or_default());
 
-                        let turn_model = model.unwrap_or_else(|| "unknown".to_string());
                         let mut turn_headers = handshake_headers.clone();
                         turn_headers.insert(header::CONTENT_TYPE, "application/json".parse().unwrap());
                         turn_headers.remove(header::CONTENT_LENGTH);
@@ -169,7 +168,7 @@ async fn handle_socket(
                         active_turn_task = Some(tokio::spawn(async move {
                             run_turn(TurnContext {
                                 state: state_clone,
-                                model: turn_model,
+                                model,
                                 pool_key: pool_key_clone,
                                 headers: turn_headers,
                                 body: body_bytes,
@@ -207,7 +206,7 @@ async fn run_turn(context: TurnContext) {
     // one immutable runtime snapshot while later turns observe newer config.
     let state = state.refreshed();
     let started_at = Instant::now();
-    let dispatch_res = forward_turn(state, Some(model), pool_key, headers, body, started_at).await;
+    let dispatch_res = forward_turn(state, model, pool_key, headers, body, started_at).await;
 
     if !is_current() {
         return;

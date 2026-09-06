@@ -441,6 +441,103 @@ async fn native_route_matches_http_and_websocket_provider_selection() {
 }
 
 #[tokio::test]
+async fn missing_model_websocket_uses_pinned_fallback_even_when_unknown_route_exists() {
+    let _env = ENV_LOCK.lock().await;
+    let body_pinned = "data: {\"type\":\"response.completed\",\"marker\":\"pinned-codex\"}\n\n";
+    let (upstream_pinned, state_pinned) = start_upstream(vec![Reply::Static {
+        status: StatusCode::OK,
+        content_type: "text/event-stream",
+        body: body_pinned.to_string(),
+        headers: Vec::new(),
+    }, Reply::Static {
+        status: StatusCode::OK,
+        content_type: "text/event-stream",
+        body: body_pinned.to_string(),
+        headers: Vec::new(),
+    }])
+    .await;
+    let body_unknown = "data: {\"type\":\"response.completed\",\"marker\":\"unknown-route\"}\n\n";
+    let (upstream_unknown, state_unknown) = start_upstream(vec![Reply::Static {
+        status: StatusCode::OK,
+        content_type: "text/event-stream",
+        body: body_unknown.to_string(),
+        headers: Vec::new(),
+    }])
+    .await;
+
+    let account_env = "SHUNT_TEST_INBOUND_WS_ACCOUNT_UNKNOWN_ROUTE";
+    let client_env = "SHUNT_TEST_INBOUND_WS_CLIENT_UNKNOWN_ROUTE";
+    let api_env = "SHUNT_TEST_INBOUND_WS_API_UNKNOWN_ROUTE";
+    std::env::set_var(account_env, access_token("account-1"));
+    std::env::set_var(client_env, "client:gateway-secret");
+    std::env::set_var(api_env, "native-api-key");
+
+    let mut config = Config::default();
+    let codex = config.providers.get_mut("codex").unwrap();
+    codex.base_url = format!("http://{}", upstream_pinned.address);
+    codex.accounts = vec![AccountConfig {
+        name: "account-1".to_string(),
+        token_env: Some(account_env.to_string()),
+        ..Default::default()
+    }];
+    let openai = config.providers.get_mut("openai").unwrap();
+    openai.base_url = format!("http://{}", upstream_unknown.address);
+    openai.api_key_env = Some(api_env.to_string());
+    config.server.codex_endpoint = Some(CodexEndpointConfig {
+        provider: "codex".to_string(),
+    });
+    config.server.auth = Some(InboundAuthConfig {
+        header: "x-shunt-token".to_string(),
+        tokens_env: client_env.to_string(),
+    });
+    config.routes.push(RouteConfig {
+        model: "unknown".to_string(),
+        provider: "openai".to_string(),
+        upstream_model: None,
+        effort: None,
+        service_tier: None,
+    });
+    let (router, _, _) = server::build_router(config).unwrap();
+    let gateway = start_server(router).await;
+
+    // HTTP request without model uses pinned fallback (codex), not the "unknown" route.
+    let http = reqwest::Client::new()
+        .post(format!("http://{}/v1/responses", gateway.address))
+        .header("x-shunt-token", "gateway-secret")
+        .json(&serde_json::json!({
+            "stream": true,
+            "input": []
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(http.status(), StatusCode::OK);
+    assert!(http.text().await.unwrap().contains("pinned-codex"));
+
+    // WebSocket request without model also uses pinned fallback (codex), matching HTTP parity.
+    let mut socket = connect(&gateway, "/v1/responses").await;
+    socket
+        .send(Message::Text(
+            serde_json::json!({
+                "type": "response.create",
+                "stream": false,
+                "input": []
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .unwrap();
+    let frame = next_json(&mut socket).await;
+    assert_eq!(frame["marker"], "pinned-codex");
+
+    assert_eq!(state_pinned.requests.lock().unwrap().len(), 2);
+    assert!(state_unknown.requests.lock().unwrap().is_empty());
+    cleanup(&account_env, &client_env);
+    std::env::remove_var(api_env);
+}
+
+#[tokio::test]
 async fn hot_reload_snapshot_routes_each_websocket_turn_once() {
     let _env = ENV_LOCK.lock().await;
     let reply = |marker: &'static str| Reply::Static {
