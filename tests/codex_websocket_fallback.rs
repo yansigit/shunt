@@ -504,6 +504,95 @@ async fn serve_http(mut socket: TcpStream) {
     let _ = socket.flush().await;
 }
 
+/// Stateful Codex websocket used by the continuation-recovery regression. The
+/// first connection serves a tool turn, rejects the following delta request, and
+/// the second connection accepts the one full-input recovery. Every
+/// `response.create` body is retained structurally for exact assertions.
+async fn spawn_continuation_recovery_upstream(
+) -> (String, Arc<StdMutex<Vec<serde_json::Value>>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let frames = Arc::new(StdMutex::new(Vec::new()));
+    let recorded = Arc::clone(&frames);
+    tokio::spawn(async move {
+        let (first_socket, _) = listener.accept().await.unwrap();
+        let mut first = tokio_tungstenite::accept_async_with_config(
+            first_socket,
+            Some(WebSocketConfig::default()),
+        )
+        .await
+        .unwrap();
+
+        let first_frame = first.next().await.unwrap().unwrap().into_text().unwrap();
+        recorded
+            .lock()
+            .unwrap()
+            .push(serde_json::from_str(&first_frame).unwrap());
+        for event in [
+            r#"{"type":"response.created","response":{"id":"resp_seed"},"turn_state":"opaque-turn-state"}"#,
+            r#"{"type":"response.output_item.added","item":{"type":"reasoning","id":"reason_seed"}}"#,
+            r#"{"type":"response.output_item.done","item":{"type":"reasoning","id":"reason_seed","summary":[],"encrypted_content":"opaque-reasoning"}}"#,
+            r#"{"type":"response.output_item.added","item":{"type":"function_call","call_id":"call_seed","name":"inspect"}}"#,
+            r#"{"type":"response.function_call_arguments.delta","delta":"{\"path\":\"Cargo.toml\"}"}"#,
+            r#"{"type":"response.function_call_arguments.done","arguments":"{\"path\":\"Cargo.toml\"}"}"#,
+            r#"{"type":"response.output_item.done","item":{"type":"function_call","call_id":"call_seed","name":"inspect","arguments":"{\"path\":\"Cargo.toml\"}"}}"#,
+            r#"{"type":"response.completed","response":{"id":"resp_seed","usage":{"input_tokens":8,"output_tokens":3}}}"#,
+        ] {
+            first
+                .send(Message::Text(event.to_string().into()))
+                .await
+                .unwrap();
+        }
+
+        let delta_frame = loop {
+            match first.next().await.unwrap().unwrap() {
+                Message::Text(text) => break text,
+                Message::Ping(data) => first.send(Message::Pong(data)).await.unwrap(),
+                other => panic!("unexpected continuation probe frame: {other:?}"),
+            }
+        };
+        recorded
+            .lock()
+            .unwrap()
+            .push(serde_json::from_str(&delta_frame).unwrap());
+        first
+            .send(Message::Text(
+                r#"{"type":"error","error":{"code":"previous_response_not_found","message":"Previous response not found"}}"#
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .unwrap();
+        drop(first);
+
+        let (recovery_socket, _) = listener.accept().await.unwrap();
+        let mut recovery = tokio_tungstenite::accept_async_with_config(
+            recovery_socket,
+            Some(WebSocketConfig::default()),
+        )
+        .await
+        .unwrap();
+        let recovery_frame = recovery.next().await.unwrap().unwrap().into_text().unwrap();
+        recorded
+            .lock()
+            .unwrap()
+            .push(serde_json::from_str(&recovery_frame).unwrap());
+        for event in [
+            r#"{"type":"response.created","response":{"id":"resp_recovered"}}"#,
+            r#"{"type":"response.output_item.added","item":{"type":"message"}}"#,
+            r#"{"type":"response.output_text.delta","delta":"recovered once"}"#,
+            r#"{"type":"response.output_text.done"}"#,
+            r#"{"type":"response.completed","response":{"id":"resp_recovered","usage":{"input_tokens":12,"output_tokens":2}}}"#,
+        ] {
+            recovery
+                .send(Message::Text(event.to_string().into()))
+                .await
+                .unwrap();
+        }
+    });
+    (format!("http://{addr}"), frames)
+}
+
 /// Read an HTTP request's headers and `content-length` body off the socket, so
 /// the client finishes sending before the mock replies.
 async fn drain_http_request(socket: &mut TcpStream) {
@@ -571,6 +660,111 @@ async fn websocket_drop_before_first_event_falls_back_to_http() {
         http_hits.load(Ordering::SeqCst),
         1,
         "the fallback POSTs the turn to the HTTP endpoint exactly once (no double-send)"
+    );
+
+    std::env::remove_var("CODEX_AUTH_FILE");
+    let _ = std::fs::remove_file(auth_path);
+}
+
+#[tokio::test]
+async fn continuation_recovery_preserves_tool_pair_and_opaque_state_once() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env = ENV_LOCK.lock().await;
+    let (base_url, frames) = spawn_continuation_recovery_upstream().await;
+    let auth_path = write_fake_codex_auth();
+    let gateway = start_gateway_with(codex_ws_config(base_url)).await;
+    let client = reqwest::Client::new();
+    let session = "synthetic-continuation-session";
+
+    let first = client
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .header("content-type", "application/json")
+        .header("x-claude-code-session-id", session)
+        .json(&serde_json::json!({
+            "model": "codex-fallback-model",
+            "max_tokens": 16,
+            "stream": false,
+            "thinking": {"type": "enabled", "budget_tokens": 1024},
+            "tools": [{"name": "inspect", "description": "inspect", "input_schema": {"type": "object"}}],
+            "messages": [{"role": "user", "content": "inspect the project"}]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first.status(), StatusCode::OK);
+    let first_body: serde_json::Value = first.json().await.unwrap();
+    let assistant_content = first_body["content"].clone();
+    assert_eq!(assistant_content[1]["id"], "call_seed");
+
+    let recovered = client
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .header("content-type", "application/json")
+        .header("x-claude-code-session-id", session)
+        .json(&serde_json::json!({
+            "model": "codex-fallback-model",
+            "max_tokens": 16,
+            "stream": false,
+            "thinking": {"type": "enabled", "budget_tokens": 1024},
+            "tools": [{"name": "inspect", "description": "inspect", "input_schema": {"type": "object"}}],
+            "messages": [
+                {"role": "user", "content": "inspect the project"},
+                {"role": "assistant", "content": assistant_content},
+                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call_seed", "content": "ok"}]}
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(recovered.status(), StatusCode::OK);
+    assert!(recovered.text().await.unwrap().contains("recovered once"));
+
+    let frames = frames.lock().unwrap();
+    assert_eq!(frames.len(), 3, "seed plus exactly two second-turn attempts");
+    let delta = &frames[1];
+    assert_eq!(delta["previous_response_id"], "resp_seed");
+    assert_eq!(delta["input"].as_array().unwrap().len(), 1);
+    assert_eq!(delta["input"][0]["call_id"], "call_seed");
+    assert_eq!(
+        delta["client_metadata"]["x-codex-turn-state"],
+        "opaque-turn-state"
+    );
+
+    let full = &frames[2];
+    assert!(full.get("previous_response_id").is_none());
+    assert!(full.get("client_metadata").is_none());
+    let input = full["input"].as_array().unwrap();
+    assert_eq!(
+        input
+            .iter()
+            .filter(|item| item["type"] == "function_call")
+            .count(),
+        1
+    );
+    assert_eq!(
+        input
+            .iter()
+            .filter(|item| item["type"] == "function_call_output")
+            .count(),
+        1
+    );
+    let call = input
+        .iter()
+        .find(|item| item["type"] == "function_call")
+        .unwrap();
+    let result = input
+        .iter()
+        .find(|item| item["type"] == "function_call_output")
+        .unwrap();
+    assert_eq!(call["call_id"], "call_seed");
+    assert_eq!(result["call_id"], "call_seed");
+    assert_eq!(
+        input
+            .iter()
+            .filter(|item| item["encrypted_content"] == "opaque-reasoning")
+            .count(),
+        1
     );
 
     std::env::remove_var("CODEX_AUTH_FILE");
