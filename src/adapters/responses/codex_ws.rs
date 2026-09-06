@@ -106,15 +106,16 @@ const DEFERRED_FRAME_CAPACITY: usize = 8;
 /// WebSocket event types that end a response.
 const TERMINAL_EVENTS: &[&str] = &[
     "response.completed",
+    "response.done",
     "response.incomplete",
     "response.failed",
     "error",
 ];
 
-/// The only terminal event that leaves the connection healthy enough to reuse.
+/// Terminal events that leave the connection healthy enough to reuse.
 /// A failed/incomplete/error response may have left the socket in an undefined
 /// state, so those are not pooled.
-const REUSABLE_TERMINAL: &str = "response.completed";
+const REUSABLE_TERMINALS: &[&str] = &["response.completed", "response.done"];
 
 /// The concrete websocket stream type (TLS or plaintext over TCP).
 type WsStream = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
@@ -993,7 +994,7 @@ async fn run_turn(
                 continuation.capture(&event);
                 let name = event.event.as_deref().unwrap_or("");
                 let is_terminal = TERMINAL_EVENTS.contains(&name);
-                let completed = name == REUSABLE_TERMINAL;
+                let completed = REUSABLE_TERMINALS.contains(&name);
                 match forward_event(conn, source, events, Ok(event), &mut deferred).await {
                     ForwardEvent::Sent => {}
                     ForwardEvent::ReceiverClosed => {
@@ -1487,6 +1488,60 @@ mod tests {
         assert!(sse.contains("message_start"), "sse: {sse}");
         assert!(sse.contains(r#""text":"hello""#), "sse: {sse}");
         assert!(sse.contains("message_stop"), "sse: {sse}");
+    }
+
+    #[tokio::test]
+    async fn response_done_terminates_without_waiting_for_socket_eof() {
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (release_sender, release_receiver) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async_with_config(
+                socket,
+                Some(WebSocketConfig::default()),
+            )
+            .await
+            .unwrap();
+            let Some(Ok(Message::Text(_))) = ws.next().await else {
+                panic!("expected a client frame");
+            };
+            ws.send(Message::Text(
+                r#"{"type":"response.done","response":{"id":"resp_done"}}"#
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .unwrap();
+            let _ = release_receiver.await;
+        });
+
+        let body = serde_json::json!({"model": "m", "input": []});
+        let frame = response_create_frame(&body);
+        let mut events = open_simple(
+            &format!("ws://{addr}/codex/responses"),
+            HeaderMap::new(),
+            &frame,
+            None,
+        )
+        .await
+        .expect("websocket should connect");
+        let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+            .await
+            .expect("response.done should arrive")
+            .expect("terminal event")
+            .expect("terminal should be clean");
+        assert_eq!(event.event.as_deref(), Some("response.done"));
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+                .await
+                .expect("turn should end without waiting for socket EOF")
+                .is_none()
+        );
+        let _ = release_sender.send(());
+        server.await.unwrap();
     }
 
     /// When the mock server also enables `permessage-deflate`, the production
