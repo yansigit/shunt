@@ -1,7 +1,7 @@
 ---
 phase: 05-anthropic-translation
-status: draft
-wave_0_complete: false
+status: validated
+wave_0_complete: true
 created: 2026-09-05
 ---
 
@@ -9,13 +9,13 @@ created: 2026-09-05
 
 | Task | Requirement | Test seam | Status |
 |------|-------------|-----------|--------|
-| 05-01-01 | TRANS-01 | Pure request fixtures: instructions/messages/images/tools/results/reasoning | pending |
-| 05-01-02 | TRANS-03 | Pre-dispatch rejection matrix and native byte-identity regression | pending |
-| 05-02-01 | TRANS-02 | Non-stream output/tool/reasoning/usage/terminal fixtures | pending |
-| 05-02-02 | TRANS-02 | Chunk-split SSE event-order/tool-fragment/usage/terminal fixtures | pending |
-| 05-02-03 | TRANS-02 | HTTP and WebSocket translated integration tests | pending |
-| 05-03-01 | TRANS-01, TRANS-03 | Docs and maintained locale parity | pending |
-| 05-03-02 | TRANS-01, TRANS-02, TRANS-03 | fmt, clippy, full workspace, diff/wiki guards | pending |
+| 05-01-01 | TRANS-01 | Pure request fixtures: instructions/messages/images/tools/results/reasoning | complete |
+| 05-01-02 | TRANS-03 | Pre-dispatch rejection matrix and native byte-identity regression | complete |
+| 05-02-01 | TRANS-02 | Non-stream output/tool/reasoning/usage/terminal fixtures | complete |
+| 05-02-02 | TRANS-02 | Chunk-split SSE event-order/tool-fragment/usage/terminal fixtures | complete |
+| 05-02-03 | TRANS-02 | HTTP and WebSocket translated integration tests | complete |
+| 05-03-01 | TRANS-01, TRANS-03 | Docs and maintained locale parity | complete |
+| 05-03-02 | TRANS-01, TRANS-02, TRANS-03 | fmt, clippy, full workspace, diff/wiki guards | complete |
 
 ## Final commands
 
@@ -30,4 +30,3 @@ cargo test --all-features --workspace
 git diff --check
 test -z "$(git status --short -- wiki/)"
 ```
-

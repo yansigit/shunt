@@ -6,7 +6,8 @@ accounts. Every prior milestone routes traffic the other direction: [M1](m1-resp
 translates *Claude Code's* Anthropic Messages requests into the Responses shape shunt sends
 upstream, and [M10](m10-codex-multi-account.md) pools the accounts that outbound path uses. M11
 is the reverse-facing counterpart — a Codex CLI client talks the Responses protocol directly to
-shunt, and shunt relays it untranslated to the same M10 account-pool machinery.
+shunt. Native Responses targets relay it unchanged; an exact Anthropic target uses the strict
+translation contract below and the existing Anthropic transport machinery.
 
 ## Contrast with `/v1/messages`
 
@@ -16,13 +17,14 @@ shunt → Codex) share an upstream but differ in kind:
 | | `/v1/messages` (outbound, existing) | inbound Codex endpoint (this milestone) |
 | :-- | :-- | :-- |
 | Inbound client | Claude Code (Anthropic Messages) | OpenAI Codex CLI (OpenAI Responses) |
-| Inbound → upstream body | **Translated**: `translate_request` builds a Responses body from the Anthropic Messages request | **Raw passthrough**: the inbound Responses body is forwarded upstream byte-for-byte, no translation |
-| Upstream → outbound response | **Re-shaped**: `AnthropicSseMachine` turns Responses SSE into Anthropic SSE (or a single Anthropic JSON body) | **Raw passthrough**: the upstream response (SSE or JSON) is relayed verbatim, preserving status and content-type |
-| On pool exhaustion | Re-shapes the last upstream response into an Anthropic-style error envelope (`build_upstream_error`) | Relays the last upstream response verbatim — **not** re-shaped (see below) |
-| Model selects provider? | Yes, via `[models.upstream_model]` / `[[routes]]` / `[[route_prefixes]]` | Exact `[models.upstream_model]`/`[[routes]]` declarations may select one Responses-native provider; prefix-only, non-exact, and unmatched models use the pinned endpoint provider |
+| Inbound → upstream body | **Translated**: `translate_request` builds a Responses body from the Anthropic Messages request | Native Responses targets pass through; exact Anthropic targets translate Responses into Messages |
+| Upstream → outbound response | **Re-shaped**: `AnthropicSseMachine` turns Responses SSE into Anthropic SSE (or a single Anthropic JSON body) | Native targets pass through; Anthropic JSON/SSE is projected into Responses JSON/events |
+| On pool exhaustion | Re-shapes the last upstream response into an Anthropic-style error envelope (`build_upstream_error`) | Native Responses errors relay unchanged; Anthropic errors use the Responses error envelope and retain safe retry/request metadata |
+| Model selects provider? | Yes, via `[models.upstream_model]` / `[[routes]]` / `[[route_prefixes]]` | Exact unambiguous `[models.upstream_model]`/`[[routes]]` declarations may select one Responses-native or Anthropic provider; prefix-only, non-exact, and unmatched models use the pinned endpoint provider |
 
-Everything else — the M10 account pool, session-sticky selection, cooldowns, and refresh — is
-shared unchanged between the two paths.
+Native routes continue to share the M10 account pool, session-sticky selection, cooldowns, and
+refresh unchanged. Exact Anthropic routes instead reuse the configured Anthropic adapter's own
+credential and account behavior.
 
 ## Configuration
 
@@ -46,7 +48,7 @@ provider has the Codex OAuth injection this endpoint depends on.
 
 ## Routes
 
-When opted in, shunt registers three routes, all mapping to one passthrough handler:
+When opted in, shunt registers three Responses routes, all mapping to one inbound dispatcher:
 
 | Method | Path |
 | :-- | :-- |
@@ -105,16 +107,17 @@ sinks. Event names are limited to 64 bytes and to lowercase ASCII letters, digit
 `unparsed`. Oversized or unreadable bodies also succeed and are counted as `unparsed`. With no
 metric sink configured, these routes are pure discard sinks.
 
-## Exact native routing and pinned fallback
+## Exact routing, translation, and pinned fallback
 
 The inbound endpoint keeps `[server.codex_endpoint].provider` as its compatibility default. The
 bounded decoded `model` value is used only to look up an **exact** existing
 `[models.upstream_model]` or legacy `[[routes]]` declaration. A unique declaration may select a
-single `kind = "responses"` provider; the original request bytes and original `model` field are
-still sent unchanged. Prefix-only matches (`[[route_prefixes]]`), non-exact values, missing or
+single `kind = "responses"` provider, where the original request and response bytes remain
+unchanged, or a single `kind = "anthropic"` provider, where the request and response are translated
+under the contract below. Prefix-only matches (`[[route_prefixes]]`), non-exact values, missing or
 malformed model fields, and unmatched models all use the pinned provider. An exact declaration
-that is ambiguous, maps to a translated/non-Responses adapter, or rewrites the model is rejected
-before any upstream request, rather than silently translating or hopping providers.
+that is ambiguous or maps to another adapter is rejected before any upstream request, rather than
+silently guessing or hopping providers.
 
 HTTP and WebSocket turns use this same resolver. Provider-aware credentials and hop-by-hop/header
 filtering remain gateway responsibilities, while native payloads stay opaque. Once response body
@@ -131,16 +134,36 @@ or a content coding shunt does not decode — the request relays normally and on
 to `unknown`, with a `warn` naming the reason. It is never silently swallowed: an unexplained
 `model="unknown"` on every metric, log line, and span was the original symptom.
 
-## Raw passthrough
+## Native passthrough
 
-The inbound Responses body is forwarded upstream **byte-for-byte** — no `translate_request`, no
-model/effort resolution, no field rewriting of any kind. The upstream response is relayed back
+On a Responses-native route, the inbound body is forwarded upstream **byte-for-byte** — no
+model/effort resolution and no field rewriting. The upstream response is relayed back
 **verbatim**: the status code and (almost) every upstream response header are preserved unchanged,
 so an SSE reply stays `text/event-stream`, a non-streaming reply stays a single `application/json`
 body, and headers like `retry-after` and `x-codex-turn-state` reach the CLI untouched. There is no
 `AnthropicSseMachine`, no keepalive-ping injection, and no error re-shaping on a normal request —
 the Codex CLI speaks the same wire protocol to shunt that it would speak directly to
-`chatgpt.com`.
+`chatgpt.com`. The Anthropic branch below does not alter this path.
+
+## Exact Anthropic translation
+
+A unique exact route to `kind = "anthropic"` translates before credential resolution and network
+dispatch. Accepted Responses input covers instructions, user/assistant text, URL and data-URL
+images, paired function calls and outputs, function-tool schemas and tool choice, parallel-tool
+policy, generation controls, and supported reasoning effort. The translator rejects duplicate or
+malformed structures, `previous_response_id`, encrypted reasoning or compaction state, hosted or
+custom tools, remote file ids, orphaned tool results, and any input whose meaning cannot be
+preserved. `POST /v1/responses/compact` remains native-only.
+
+The request then uses the normal Anthropic adapter, including its configured authentication,
+account selection, refresh, retry, TTFB timeout, admission, and safe header filtering. The response
+translator is shared by HTTP and WebSocket. It converts Anthropic text, tool use, and thinking into
+Responses output items and emits bounded, ordered SSE events with stable ids, monotonic sequence
+numbers, and one terminal event. `end_turn`, `stop_sequence`, and `tool_use` become completed;
+`max_tokens` becomes incomplete. Malformed content, invalid tool JSON, unknown stop reasons,
+upstream stream errors, and EOF before `message_stop` become failed rather than false success.
+Usage input totals include ordinary, cache-read, and cache-creation tokens. Anthropic thinking
+signatures are neither relabeled as OpenAI encrypted state nor persisted.
 
 ### Header passthrough
 
@@ -161,7 +184,7 @@ to `chatgpt.com`. The only request headers shunt changes are:
 - **Stripped**: the shunt client-token header (the default `x-shunt-token` is stripped unconditionally
   — even on an ungated endpoint, or one using a custom auth header — so it never leaks upstream),
   the client's own `Authorization`/`chatgpt-account-id` (replaced above), `x-api-key` (stripped
-  unconditionally too — the target provider is validated `chatgpt_oauth`-only at boot, so no inbound
+  unconditionally too on the native branch — the pinned provider is validated `chatgpt_oauth`-only at boot, so no inbound
   `x-api-key` value can ever be a valid upstream credential; a client that sets both `Authorization`
   and `x-api-key` to the same key, as Claude Code's `apiKeyHelper` does, must not have the second slot
   leak the first slot's secret), `accept-encoding` (so the
@@ -190,14 +213,14 @@ carries: if it holds the shunt client token it authenticates the request (via `a
 above) and is then stripped; if it holds anything else (e.g. the Codex CLI's own ChatGPT credential)
 it fails the inbound check and is likewise stripped. The shunt client-token header is **stripped**
 too, and so is `x-api-key` — unconditionally, whether or not `[server.auth]` is configured, since the
-gate never reads that header and the upstream is `chatgpt_oauth`-only — so neither the shunt token
+  gate never reads that header and the native upstream is `chatgpt_oauth`-only — so neither the shunt token
 nor the client's own credential, in either slot, ever leaks to the backend. The passthrough forwards the
 Codex CLI's own request headers verbatim (see [Header passthrough](#header-passthrough) below) but
 **swaps in only** the selected pool account's `Authorization` bearer + `chatgpt-account-id` — see
 [`codex-configuration.md` §4.4](codex-configuration.md#4-authentication-codexauthjson). Nothing
 about the client's own credential reaches the Codex backend.
 
-## Account pool reuse (M10)
+## Native account pool reuse (M10)
 
 Session-sticky quota-aware selection (issue #195), reactive failover, cooldowns, storm control, per-account refresh, and identity coalescing are all reused unchanged from [M10](m10-codex-multi-account.md) — this endpoint adds no new pool logic, only a new entry point into it. Account resolution goes through the shared `resolve_pool_accounts` path: configured entries are used directly, while an empty list uses the store directory-mtime cache and fills each scanned account's stable identity from its Codex `account_id`. The existing empty-store single-account fallback remains unchanged.
 
@@ -218,7 +241,7 @@ Session-sticky quota-aware selection (issue #195), reactive failover, cooldowns,
 
 ## Exhaustion behavior (differs from `/v1/messages`)
 
-When every account in the pool has been tried and **at least one** upstream response was
+On a native Responses route, when every account in the pool has been tried and **at least one** upstream response was
 received, shunt relays the **last** upstream response **verbatim** — status and body unchanged.
 This is the opposite of the `/v1/messages` Codex path, which re-shapes the last response into an
 Anthropic-style error envelope (`build_upstream_error`); a passthrough client expects the raw
@@ -234,8 +257,9 @@ unreadable request body, a Codex endpoint disabled by hot reload, or an account-
 in the **OpenAI Responses error shape** (`{"error":{"message":..,"type":..,"code":null}}`),
 preserving its status code, so a Codex CLI (or any OpenAI Responses client) parses it through its
 own error path rather than the Anthropic `{"type":"error",...}` envelope shunt uses elsewhere. This
-is the one deliberate exception to the byte-for-byte passthrough: relayed **upstream** errors
-(429/4xx/5xx from the backend) still pass through verbatim and unchanged. The re-shaping happens
+is the one deliberate exception to native byte-for-byte passthrough: relayed native **upstream** errors
+(429/4xx/5xx from the backend) still pass through verbatim and unchanged. Anthropic-route upstream
+errors are translated to the same OpenAI envelope while retaining safe retry/request headers. Gateway re-shaping happens
 once, at the endpoint boundary (`codex_endpoint::post` → `error::into_openai_error_shape`), so the
 Anthropic Messages path keeps its own error shape untouched (issue #127).
 
