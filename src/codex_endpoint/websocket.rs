@@ -202,6 +202,10 @@ async fn run_turn(context: TurnContext) {
     } = context;
     let is_current = || current_generation.load(Ordering::Relaxed) == turn_gen;
 
+    // A WebSocket connection may outlive several config reloads.  Refresh at
+    // turn start (rather than once at upgrade time) so each live turn captures
+    // one immutable runtime snapshot while later turns observe newer config.
+    let state = state.refreshed();
     let started_at = Instant::now();
     let dispatch_res = forward_turn(state, Some(model), pool_key, headers, body, started_at).await;
 

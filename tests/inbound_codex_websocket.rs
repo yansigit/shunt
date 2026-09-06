@@ -18,7 +18,7 @@ use axum::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use futures_util::{SinkExt, StreamExt};
 use shunt::{
-    config::{AccountConfig, CodexEndpointConfig, Config, InboundAuthConfig},
+    config::{AccountConfig, CodexEndpointConfig, Config, InboundAuthConfig, RouteConfig},
     server,
 };
 use tokio::sync::{mpsc, Notify};
@@ -140,8 +140,49 @@ async fn start_upstream(replies: Vec<Reply>) -> (RunningServer, UpstreamState) {
     };
     let router = Router::new()
         .route("/codex/responses", post(upstream_response))
+        .route("/responses", post(upstream_response))
         .with_state(state.clone());
     (start_server(router).await, state)
+}
+
+async fn start_native_gateway(
+    upstream: &RunningServer,
+    suffix: &str,
+) -> (RunningServer, String, String, String) {
+    let account_env = format!("SHUNT_TEST_INBOUND_WS_ACCOUNT_{suffix}");
+    let client_env = format!("SHUNT_TEST_INBOUND_WS_CLIENT_{suffix}");
+    let api_env = format!("SHUNT_TEST_INBOUND_WS_API_{suffix}");
+    std::env::set_var(&account_env, access_token("account-1"));
+    std::env::set_var(&client_env, "client:gateway-secret");
+    std::env::set_var(&api_env, "native-api-key");
+
+    let mut config = Config::default();
+    let codex = config.providers.get_mut("codex").unwrap();
+    codex.base_url = format!("http://{}", upstream.address);
+    codex.accounts = vec![AccountConfig {
+        name: "account-1".to_string(),
+        token_env: Some(account_env.clone()),
+        ..Default::default()
+    }];
+    let openai = config.providers.get_mut("openai").unwrap();
+    openai.base_url = format!("http://{}", upstream.address);
+    openai.api_key_env = Some(api_env.clone());
+    config.server.codex_endpoint = Some(CodexEndpointConfig {
+        provider: "codex".to_string(),
+    });
+    config.server.auth = Some(InboundAuthConfig {
+        header: "x-shunt-token".to_string(),
+        tokens_env: client_env.clone(),
+    });
+    config.routes.push(RouteConfig {
+        model: "native-ws-model".to_string(),
+        provider: "openai".to_string(),
+        upstream_model: None,
+        effort: None,
+        service_tier: None,
+    });
+    let (router, _, _) = server::build_router(config).unwrap();
+    (start_server(router).await, account_env, client_env, api_env)
 }
 
 fn access_token(account_id: &str) -> String {
@@ -202,11 +243,19 @@ async fn send_create(
     socket: &mut WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
     marker: &str,
 ) {
+    send_create_model(socket, "gpt-5.4-mini", marker).await;
+}
+
+async fn send_create_model(
+    socket: &mut WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+    model: &str,
+    marker: &str,
+) {
     socket
         .send(Message::Text(
             serde_json::json!({
                 "type": "response.create",
-                "model": "gpt-5.4-mini",
+                "model": model,
                 "stream": false,
                 "metadata": {"marker": marker},
                 "input": []
@@ -339,6 +388,76 @@ async fn streams_ordered_payloads_and_forces_streaming_upstream() {
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0]["stream"], true);
     assert!(requests[0].get("type").is_none());
+    cleanup(&account_env, &client_env);
+}
+
+#[tokio::test]
+async fn native_route_matches_http_and_websocket_provider_selection() {
+    let _env = ENV_LOCK.lock().await;
+    let body = "data: {\"type\":\"response.completed\",\"marker\":\"native\"}\n\n";
+    let (upstream, state) = start_upstream(vec![
+        Reply::Static {
+            status: StatusCode::OK,
+            content_type: "text/event-stream",
+            body: body.to_string(),
+            headers: Vec::new(),
+        },
+        Reply::Static {
+            status: StatusCode::OK,
+            content_type: "text/event-stream",
+            body: body.to_string(),
+            headers: Vec::new(),
+        },
+    ])
+    .await;
+    let (gateway, account_env, client_env, api_env) =
+        start_native_gateway(&upstream, "NATIVE_PARITY").await;
+
+    let http = reqwest::Client::new()
+        .post(format!("http://{}/v1/responses", gateway.address))
+        .header("x-shunt-token", "gateway-secret")
+        .json(&serde_json::json!({
+            "model": "native-ws-model",
+            "stream": true,
+            "input": []
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(http.status(), StatusCode::OK);
+    assert!(http.text().await.unwrap().contains("response.completed"));
+
+    let mut socket = connect(&gateway, "/v1/responses").await;
+    send_create_model(&mut socket, "native-ws-model", "ws").await;
+    assert_eq!(next_json(&mut socket).await["type"], "response.completed");
+
+    let requests = state.requests.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert!(requests
+        .iter()
+        .all(|request| request["model"] == "native-ws-model"));
+    cleanup(&account_env, &client_env);
+    std::env::remove_var(api_env);
+}
+
+#[tokio::test]
+async fn no_mid_stream_hop() {
+    let _env = ENV_LOCK.lock().await;
+    let (upstream, state) = start_upstream(vec![Reply::Static {
+        status: StatusCode::OK,
+        content_type: "text/event-stream",
+        body:
+            "data: {\"type\":\"response.created\"}\n\ndata: {\"type\":\"response.completed\"}\n\n"
+                .to_string(),
+        headers: Vec::new(),
+    }])
+    .await;
+    let (gateway, account_env, client_env) = start_gateway(&upstream, "NO_HOP").await;
+    let mut socket = connect(&gateway, "/v1/responses").await;
+    send_create(&mut socket, "no-hop").await;
+    assert_eq!(next_json(&mut socket).await["type"], "response.created");
+    assert_eq!(next_json(&mut socket).await["type"], "response.completed");
+    assert_eq!(state.requests.lock().unwrap().len(), 1);
     cleanup(&account_env, &client_env);
 }
 
