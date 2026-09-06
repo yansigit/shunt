@@ -113,6 +113,7 @@ fn translate_stream(response: axum::response::Response, model: &str) -> axum::re
         header::HeaderValue::from_static("text/event-stream"),
     );
     parts.headers.remove(header::CONTENT_LENGTH);
+    parts.headers.remove(header::CONTENT_ENCODING);
     let mut translator = StreamTranslator::new(model);
     let pending = translator
         .start()

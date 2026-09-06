@@ -6,6 +6,7 @@ use uuid::Uuid;
 const MAX_TOOL_ARGUMENT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_TRANSLATED_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_OUTPUT_ITEMS: usize = 4_096;
+const ESTIMATED_ITEM_OVERHEAD_BYTES: usize = 512;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct Usage {
@@ -124,12 +125,6 @@ impl StreamTranslator {
                 }
                 self.saw_message_start = true;
                 let message = data.get("message").and_then(Value::as_object);
-                if let Some(model) = message
-                    .and_then(|value| value.get("model"))
-                    .and_then(Value::as_str)
-                {
-                    self.model = model.to_string();
-                }
                 self.usage
                     .update(message.and_then(|value| value.get("usage")));
             }
@@ -147,6 +142,24 @@ impl StreamTranslator {
                 if output_index >= MAX_OUTPUT_ITEMS {
                     return self.fail("Anthropic response exceeded the output item limit");
                 }
+                let metadata_bytes = ESTIMATED_ITEM_OVERHEAD_BYTES.saturating_add(
+                    block
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .map_or(0, str::len)
+                        .saturating_add(
+                            block
+                                .get("name")
+                                .and_then(Value::as_str)
+                                .map_or(0, str::len),
+                        ),
+                );
+                if self.retained_bytes.saturating_add(metadata_bytes)
+                    > MAX_TRANSLATED_RESPONSE_BYTES
+                {
+                    return self.fail("Anthropic response exceeded the translation limit");
+                }
+                self.retained_bytes += metadata_bytes;
                 match kind {
                     "text" => {
                         let id = item_id("msg");
@@ -473,9 +486,6 @@ pub(crate) fn translate_json(bytes: &[u8], requested_model: &str) -> Result<Vec<
         .ok_or_else(|| "Anthropic response `content` must be an array".to_string())?;
     let mut translator = StreamTranslator::new(requested_model);
     translator.saw_message_start = true;
-    if let Some(model) = object.get("model").and_then(Value::as_str) {
-        translator.model = model.to_string();
-    }
     translator.usage.update(object.get("usage"));
     for block in content {
         let block = block
@@ -576,7 +586,7 @@ mod tests {
         let mut events = translator.start();
         events.extend(translator.apply(
             "message_start",
-            json!({"message":{"model":"claude","usage":{"input_tokens":2}}}),
+            json!({"message":{"model":"claude-upstream","usage":{"input_tokens":2}}}),
         ));
         events.extend(translator.apply(
             "content_block_start",
@@ -599,6 +609,7 @@ mod tests {
         );
         assert!(joined.contains("response.output_text.done"));
         assert!(joined.contains("response.completed"));
+        assert!(!joined.contains("claude-upstream"));
 
         let mut truncated = StreamTranslator::new("claude");
         truncated.start();
