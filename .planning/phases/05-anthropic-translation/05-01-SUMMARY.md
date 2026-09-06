@@ -3,7 +3,7 @@ phase: 05-anthropic-translation
 plan: 01
 status: complete
 completed: 2026-09-06
-requirements: [TRANS-01, TRANS-03]
+requirements-completed: [TRANS-01, TRANS-03]
 ---
 
 # Plan 05-01 Summary
@@ -36,4 +36,3 @@ native Responses passthrough.
 - `cargo clippy --all-targets --all-features -- -D warnings`
 
 All passed.
-

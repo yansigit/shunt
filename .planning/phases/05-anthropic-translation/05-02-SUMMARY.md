@@ -3,7 +3,7 @@ phase: 05-anthropic-translation
 plan: 02
 status: complete
 completed: 2026-09-06
-requirements: [TRANS-02, TRANS-03]
+requirements-completed: [TRANS-02, TRANS-03]
 ---
 
 # Plan 05-02 Summary

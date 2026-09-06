@@ -1,6 +1,7 @@
 ---
 phase: 02-native-responses-routing
 plan: 03
+requirements-completed: [ROUTE-01, ROUTE-02]
 subsystem: inbound-responses-websocket
 tags: [websocket, native-routing, snapshots, concurrency]
 requires: [02-02]

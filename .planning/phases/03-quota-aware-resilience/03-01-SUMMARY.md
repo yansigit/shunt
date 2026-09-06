@@ -2,6 +2,7 @@
 phase: 03-quota-aware-resilience
 plan: 01
 status: complete
+requirements-completed: [RES-01]
 ---
 
 # Plan 03-01 Summary

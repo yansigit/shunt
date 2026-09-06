@@ -3,7 +3,7 @@ phase: 08-bounded-shutdown
 plan: 02
 status: complete
 completed: 2026-09-06
-requirements: [OPS-01]
+requirements-completed: [OPS-01]
 ---
 
 # Plan 08-02 Summary

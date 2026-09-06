@@ -1,6 +1,7 @@
 ---
 phase: 03-quota-aware-resilience
 plan: 03
+requirements-completed: [RES-01, RES-02]
 subsystem: documentation
 tags: [quota, retry-after, inbound-codex, locales]
 dependency_graph:

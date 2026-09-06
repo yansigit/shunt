@@ -3,7 +3,7 @@ phase: 04-native-compaction
 plan: 02
 status: complete
 completed: 2026-09-05
-requirements: [COMP-01]
+requirements-completed: [COMP-01]
 commits: []
 ---
 

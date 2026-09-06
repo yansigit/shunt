@@ -29,13 +29,14 @@ behavior while Shunt stays bounded, predictable, and operationally lean.
 - ✓ Inbound Responses can route exactly to compatible native Responses providers while preserving byte-level passthrough behavior — Phase 2
 - ✓ Transient rate limiting is distinguished from exact hard-quota exhaustion and `Retry-After` scheduling is standards-compatible and bounded — Phase 3
 - ✓ Native Responses compaction forwards opaque state to verified OpenAI-operated backends without local history persistence — Phase 4
+- ✓ A dedicated inbound Responses translation path targets Anthropic with tools, images, reasoning, usage, and terminal fidelity — Phase 5
+- ✓ Heterogeneous fallback routes exclude incompatible targets before credential lookup or dispatch — Phase 6
+- ✓ Routed Codex collaboration semantics are preserved when explicitly enabled while native traffic remains opaque — Phase 7
+- ✓ Graceful shutdown has a bounded drain deadline and cancels remaining turns safely — Phase 8
 
 ### Active
 
-- [ ] A dedicated inbound Responses translation path can target Anthropic with tools, images, reasoning, usage, and terminal fidelity
-- [ ] Heterogeneous routes reject incompatible capabilities before dispatch
-- [ ] Routed Codex collaboration semantics are preserved when explicitly enabled
-- [ ] Graceful shutdown has a bounded drain deadline and cancels remaining turns safely
+- None — all v1 requirements are validated.
 
 ### Out of Scope
 
@@ -84,9 +85,11 @@ written tests are preferred.
 | Quota inspection is bounded by bytes and total time | Prevents slow error bodies from occupying the pre-stream failover boundary while preserving relay fidelity | ✓ Validated in Phase 3 |
 | Native compaction reuses the inbound passthrough stack | Preserves account, credential, limit, and relay semantics without a second proxy implementation | ✓ Validated in Phase 4 |
 | Native compact capability is fail closed by destination | Avoids sending credentials or opaque session state to gateways that merely resemble Responses providers | ✓ Validated in Phase 4 |
-| Anthropic translation is a dedicated vertical subsystem | Current translation direction cannot be safely inverted through ad-hoc mutation | — Pending |
-| Collaboration recovery is opt-in and last | It is sensitive, billable, and unnecessary for native ChatGPT traffic | — Pending |
-| No persistence or repair layer without evidence | Keeps Shunt bounded and avoids speculative complexity | — Pending |
+| Anthropic translation is a dedicated vertical subsystem | Current translation direction cannot be safely inverted through ad-hoc mutation | ✓ Validated in Phase 5 |
+| Capability filtering is internal and preserves the primary | Avoids a generalized manifest platform and never changes the configured primary | ✓ Validated in Phase 6 |
+| Collaboration translation is opt-in and fails closed without plaintext | Hidden recovery would be sensitive, billable, and unnecessary for native ChatGPT traffic | ✓ Validated in Phase 7 |
+| Shutdown uses one process deadline and runtime cancellation | Bounds drain without adding a global active-turn registry | ✓ Validated in Phase 8 |
+| No persistence or repair layer without evidence | Keeps Shunt bounded and avoids speculative complexity | ✓ Validated for v1; deferred requirements remain in v2 |
 
 ## Evolution
 
@@ -105,4 +108,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Revisit deferred work only with evidence from usage or failing transcripts.
 
 ---
-*Last updated: 2026-09-05 after Phase 4*
+*Last updated: 2026-09-06 after v1 milestone validation*

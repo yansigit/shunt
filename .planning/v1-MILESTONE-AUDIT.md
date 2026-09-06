@@ -1,7 +1,7 @@
 ---
 milestone: v1
 audited: 2026-09-06T08:23:51Z
-status: tech_debt
+status: passed
 scores:
   requirements: 20/20
   phases: 8/8
@@ -11,20 +11,13 @@ gaps:
   requirements: []
   integration: []
   flows: []
-tech_debt:
-  - phase: planning-metadata
-    items:
-      - "Phase 1 has no VALIDATION.md under the active Nyquist hook."
-      - "Phase 5 and Phase 6 VALIDATION.md files are validated but omit nyquist_compliant: true."
-      - "Phase 7 and Phase 8 VALIDATION.md files use status: passed instead of the current status: validated schema and omit nyquist_compliant: true."
-      - "Several Phase 3-8 summaries use legacy requirements metadata instead of requirements-completed; verification and plan evidence still independently prove coverage."
-      - "PROJECT.md was last reconciled after Phase 4 and still labels the Phase 5-8 outcomes and decisions as active or pending."
+tech_debt: []
 nyquist:
-  compliant_phases: [02, 03, 04]
-  partial_phases: [05, 06]
-  not_validated_phases: [07, 08]
-  missing_phases: [01]
-  overall: partial
+  compliant_phases: [01, 02, 03, 04, 05, 06, 07, 08]
+  partial_phases: []
+  not_validated_phases: []
+  missing_phases: []
+  overall: compliant
 ---
 
 # v1 Milestone Audit — Shunt OpenCodex Behavior Port
@@ -33,10 +26,9 @@ nyquist:
 
 All v1 product requirements are satisfied and the complete repository quality
 gate passes. Independent integration review found no broken route, orphaned
-export, missing connection, unprotected sensitive endpoint, or broken end-to-end
-flow. The audit is classified as **tech debt**, not `gaps_found`, solely because
-planning metadata from older phases does not fully conform to the currently
-active GSD Nyquist schema and `PROJECT.md` has not been reconciled since Phase 4.
+export, missing connection, unprotected sensitive endpoint, or broken
+end-to-end flow. Nyquist metadata, summary requirement fields, and `PROJECT.md`
+have been reconciled across the full milestone.
 
 The unversioned roadmap is treated as **v1** because `REQUIREMENTS.md` assigns all
 milestone requirements to its `v1 Requirements` section; the deferred
@@ -57,17 +49,16 @@ storage and platform architecture. All eight phases are complete and verified.
 | WS-01–WS-07 | checked, Phase 1 | 7/7 passed | `requirements-completed` across 01-01/01-02 | satisfied |
 | CONF-01–CONF-02 | checked, Phase 1 | 2/2 passed | `requirements-completed` across 01-03/01-04 | satisfied |
 | ROUTE-01–ROUTE-02 | checked, Phase 2 | 2/2 passed | `requirements-completed` in Phase 2 summaries | satisfied |
-| RES-01–RES-02 | checked, Phase 3 | 2/2 passed | Plan requirements plus substantive summaries; legacy summary frontmatter manually verified | satisfied |
-| COMP-01 | checked, Phase 4 | passed | `requirements: [COMP-01]` in both summaries | satisfied |
+| RES-01–RES-02 | checked, Phase 3 | 2/2 passed | `requirements-completed` across Phase 3 summaries | satisfied |
+| COMP-01 | checked, Phase 4 | passed | `requirements-completed: [COMP-01]` in both summaries | satisfied |
 | TRANS-01–TRANS-03 | checked, Phase 5 | 3/3 passed | Requirements distributed across all three summaries | satisfied |
 | CAP-01 | checked, Phase 6 | passed | Requirement present in both summaries | satisfied |
 | COLLAB-01 | checked, Phase 7 | passed | Requirement present in all three summaries | satisfied |
 | OPS-01 | checked, Phase 8 | passed | Requirement present in all three summaries | satisfied |
 
 **Orphan detection:** none. Every requirement in the v1 traceability table is
-present in a phase verification report and backed by executed plans. Legacy
-summary field names were cross-checked manually against plan frontmatter and
-the summary bodies; they are bookkeeping debt, not an unverified requirement.
+present in a phase verification report and in normalized
+`requirements-completed` summary metadata backed by executed plans.
 
 ## Phase verification
 
@@ -124,23 +115,19 @@ The checker verified nine complete flows with no breaks:
 ## Nyquist discovery
 
 The active `validate-phase` post-verification hook uses the current schema:
-`status: validated`, `nyquist_compliant: true`, and all task rows green.
+`status: validated`, `nyquist_compliant: true`, and all task rows green. Every
+phase now conforms.
 
 | Phase | Classification | Reason |
 |---|---|---|
-| 01 | MISSING | No `01-VALIDATION.md` exists. |
+| 01 | COMPLIANT | Validation reconstructed from plans, verification, and green automated coverage. |
 | 02 | COMPLIANT | Current fields present; tasks green. |
 | 03 | COMPLIANT | Current fields present; tasks green. |
 | 04 | COMPLIANT | Current fields present; tasks green. |
-| 05 | PARTIAL | Validated and green, but the explicit compliance field is absent. |
-| 06 | PARTIAL | Validated and green, but the explicit compliance field is absent. |
-| 07 | NOT-VALIDATED | Green rows exist, but status remains `passed`. |
-| 08 | NOT-VALIDATED | Green rows exist, but status remains `passed`. |
-
-This is coverage metadata debt only: phase verification and the full workspace
-test gate independently passed. Use `gsd-validate-phase` for Phases 1 and 5–8
-to normalize the artifacts before milestone archival if strict lifecycle
-conformance is desired.
+| 05 | COMPLIANT | Current fields present; tasks green. |
+| 06 | COMPLIANT | Current fields present; tasks green. |
+| 07 | COMPLIANT | Current fields present; tasks green. |
+| 08 | COMPLIANT | Current fields present; tasks green. |
 
 ## Deferred scope
 
@@ -157,7 +144,7 @@ Clippy with warnings denied, 2,049 library tests with two intentional ignores,
 generated-wiki guard. The independent Phase 8 code/security review and the
 milestone integration review both returned clean.
 
-## Required decision
+## Completion readiness
 
-There are no product blockers. Before archive/tag, either accept the planning
-metadata debt or normalize it through validation and project-document updates.
+There are no product or planning-metadata blockers. The milestone is ready for
+archive and tag.

@@ -3,7 +3,7 @@ phase: 06-capability-aware-fallback
 plan: 01
 status: complete
 completed: 2026-09-06
-requirements: [CAP-01]
+requirements-completed: [CAP-01]
 ---
 
 # Plan 06-01 Summary

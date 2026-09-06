@@ -3,7 +3,7 @@ phase: 07-collaboration-preservation
 plan: 01
 status: complete
 completed: 2026-09-06
-requirements: [COLLAB-01]
+requirements-completed: [COLLAB-01]
 ---
 
 # Plan 07-01 Summary
