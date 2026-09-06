@@ -289,6 +289,13 @@ Presence of this table enables an inbound OpenAI Responses passthrough so the **
 
 Registers `POST /backend-api/codex/responses`, `POST /responses`, and `POST /v1/responses` — all served by the named provider's account pool. When `[server.auth]` is configured they require a valid client token (like the other injected-credential routes); with no `[server.auth]` they are **open** to anyone who can reach them while still injecting the operator's Codex credential, so gate them on anything beyond loopback. Unlike `/v1/messages`, the request is not translated to or from Anthropic Messages; it is relayed to and from the upstream verbatim.
 
+Inbound native routing is exact-only: a unique `[models.upstream_model]` or legacy `[[routes]]`
+declaration may select one compatible `kind = "responses"` upstream without rewriting the model or
+body. Prefix-only, non-exact, and unmatched models use the pinned `provider` above. Exact
+ambiguous maps, translated/non-Responses adapters, and model-rewriting aliases reject before
+dispatch. Credentials remain provider-aware and filtered by the gateway; HTTP/WS payloads stay
+opaque, and no provider hop occurs after output begins.
+
 ## `[server.usage]` (optional)
 
 Presence of this table registers a client-facing `GET /usage` endpoint that returns a **sanitized, aggregated** view of the shared account pool's quota state, so a non-admin client can anticipate throttling without the admin surface ([endpoint details](/reference/endpoints/)). When the table is absent, the route is not registered.

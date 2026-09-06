@@ -108,6 +108,13 @@ The YAML backend parses **YAML 1.1**, where the bare tokens `yes`, `no`, `on`, `
 
 A route can override the forwarded model id (`upstream_model`), the reasoning effort (`effort`), and the response `service_tier` (Codex's "Fast" mode) per model.
 
+The inbound Codex Responses endpoint applies a stricter native policy: only a unique exact model
+map or exact route selecting one `kind = "responses"` provider can override its pinned
+`[server.codex_endpoint].provider`. Prefix-only, non-exact, and unmatched models use that pinned
+fallback. Exact ambiguous, translated/non-Responses, or model-rewriting declarations reject before
+dispatch. Native HTTP/WS payloads stay opaque, credentials remain provider-aware, and no hop occurs
+after output begins.
+
 ## Partial overrides
 
 Config maps are deep-merged, so a partial override of a built-in provider keeps the rest of its defaults:

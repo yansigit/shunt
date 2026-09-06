@@ -290,6 +290,13 @@ the real reason rather than a generic failure.
 A request's `model` id selects the provider. Precedence: matching `[models.upstream_model]` entry
 → exact `[[routes]]` → `[[route_prefixes]]` → `server.default_provider`.
 
+For the inbound Codex Responses endpoint, only the first two **exact** declarations participate.
+They must resolve to one compatible `kind = "responses"` provider and must not rewrite the model;
+an ambiguous map, translated/non-Responses provider, or exact alias that requires rewriting is
+rejected before dispatch. A prefix-only, non-exact, or unmatched model uses the pinned
+`[server.codex_endpoint].provider` fallback. The request and response remain opaque, credentials
+are resolved for the selected provider, and no provider hop is allowed after output begins.
+
 ### 6.1 Exact route
 
 ```toml
@@ -303,6 +310,10 @@ provider = "codex"
 `upstream_model` lets the id Claude Code sends differ from the slug the backend receives — the
 mechanism behind discovery aliases (§7) and a way to swap the real slug without touching your
 Claude Code env.
+
+That aliasing remains valid for translated outbound `/v1/messages` traffic, but it is not eligible
+for native inbound Responses passthrough: native ingress must forward the client's exact model
+bytes unchanged.
 
 ### 6.2 Prefix route
 

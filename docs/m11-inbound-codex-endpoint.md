@@ -19,7 +19,7 @@ shunt → Codex) share an upstream but differ in kind:
 | Inbound → upstream body | **Translated**: `translate_request` builds a Responses body from the Anthropic Messages request | **Raw passthrough**: the inbound Responses body is forwarded upstream byte-for-byte, no translation |
 | Upstream → outbound response | **Re-shaped**: `AnthropicSseMachine` turns Responses SSE into Anthropic SSE (or a single Anthropic JSON body) | **Raw passthrough**: the upstream response (SSE or JSON) is relayed verbatim, preserving status and content-type |
 | On pool exhaustion | Re-shapes the last upstream response into an Anthropic-style error envelope (`build_upstream_error`) | Relays the last upstream response verbatim — **not** re-shaped (see below) |
-| Model selects provider? | Yes, via `[models.upstream_model]` / `[[routes]]` / `[[route_prefixes]]` | No — every request goes to the one configured provider; `model` forwards verbatim as a label only |
+| Model selects provider? | Yes, via `[models.upstream_model]` / `[[routes]]` / `[[route_prefixes]]` | Exact `[models.upstream_model]`/`[[routes]]` declarations may select one Responses-native provider; prefix-only, non-exact, and unmatched models use the pinned endpoint provider |
 
 Everything else — the M10 account pool, session-sticky selection, cooldowns, and refresh — is
 shared unchanged between the two paths.
@@ -95,14 +95,21 @@ sinks. Event names are limited to 64 bytes and to lowercase ASCII letters, digit
 `unparsed`. Oversized or unreadable bodies also succeed and are counted as `unparsed`. With no
 metric sink configured, these routes are pure discard sinks.
 
-## Fixed provider routing
+## Exact native routing and pinned fallback
 
-Unlike `/v1/messages`, this endpoint does not route by model. Every inbound request goes to the
-**one** provider named in `[server.codex_endpoint]`. The inbound body's `model` field is forwarded
-upstream verbatim — it is read only for metrics/logging labels, never used to pick a provider — so
-a request naming a model the account pool's ChatGPT subscription isn't entitled to fails exactly
-the way it would talking to the real ChatGPT backend directly (see
-[`codex-configuration.md` §5](codex-configuration.md#5-model-slugs)).
+The inbound endpoint keeps `[server.codex_endpoint].provider` as its compatibility default. The
+bounded decoded `model` value is used only to look up an **exact** existing
+`[models.upstream_model]` or legacy `[[routes]]` declaration. A unique declaration may select a
+single `kind = "responses"` provider; the original request bytes and original `model` field are
+still sent unchanged. Prefix-only matches (`[[route_prefixes]]`), non-exact values, missing or
+malformed model fields, and unmatched models all use the pinned provider. An exact declaration
+that is ambiguous, maps to a translated/non-Responses adapter, or rewrites the model is rejected
+before any upstream request, rather than silently translating or hopping providers.
+
+HTTP and WebSocket turns use this same resolver. Provider-aware credentials and hop-by-hop/header
+filtering remain gateway responsibilities, while native payloads stay opaque. Once response body
+bytes (or a WebSocket response event) are observable, there is no post-output provider hop; only
+provider-local account rotation before output may occur.
 
 Reading that label has to account for compression. Current Codex releases zstd-compress the
 Responses request body whenever they talk to the ChatGPT backend, which is true of the

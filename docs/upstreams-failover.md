@@ -108,6 +108,12 @@ strict per-provider auth objects.
 
 ## 2. Chain resolution (routing)
 
+The inbound Codex Responses endpoint is intentionally narrower than this generic chain resolver:
+its pinned `[server.codex_endpoint].provider` is the fallback, and only one exact compatible
+Responses declaration can override it. Prefix routes, multi-entry chains, translated adapters,
+and model-rewriting aliases are rejected or ignored for native ingress as documented; this
+failover chain never hops providers after response output has begun.
+
 - For a model whose `upstream_model` map has N entries: the chain is the
   `[[upstreams]]` declaration order filtered to names that are keys of the
   map. Map order is irrelevant. An upstream not named in the map does not
