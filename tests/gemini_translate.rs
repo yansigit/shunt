@@ -80,7 +80,8 @@ fn test_gemini_sse_machine_text_and_finish() {
         }
     });
 
-    let events = machine.process_chunk(&chunk);
+    let mut events = machine.process_chunk(&chunk);
+    events.extend(machine.transport_close_checked().unwrap());
     assert_eq!(events[0].event, "message_start");
     assert_eq!(events[0].data["message"]["model"], "gemini-3-flash-preview");
     assert_eq!(events[1].event, "content_block_start");
@@ -172,7 +173,8 @@ fn test_gemini_3_thought_signature_survives_tool_round_trip() {
         .as_str()
         .unwrap()
         .starts_with("call_gemini_v1_"));
-    let assistant_content = machine.final_json()["content"].clone();
+    machine.transport_close_checked().unwrap();
+    let assistant_content = machine.final_json_checked().unwrap()["content"].clone();
     let tool_use_id = assistant_content
         .as_array()
         .unwrap()
@@ -213,7 +215,7 @@ fn test_gemini_3_parallel_calls_keep_signature_on_first_call() {
                 },
                 {
                     "type": "tool_use",
-                    "id": "toolu_2",
+                    "id": "call_gemini_v1_cGFyYWxsZWwtc2lnbmF0dXJlLTI",
                     "name": "read_file",
                     "input": { "path": "b.tex" }
                 }
@@ -224,7 +226,7 @@ fn test_gemini_3_parallel_calls_keep_signature_on_first_call() {
     let translated = translate_request_for_model(&request, "gemini-3.1-pro-preview").unwrap();
     let parts = translated["contents"][0]["parts"].as_array().unwrap();
     assert_eq!(parts[0]["thoughtSignature"], "parallel-signature");
-    assert!(parts[1].get("thoughtSignature").is_none());
+    assert_eq!(parts[1]["thoughtSignature"], "parallel-signature-2");
 }
 
 #[test]
@@ -256,7 +258,7 @@ fn test_gemini_3_sequential_steps_keep_distinct_signatures() {
 }
 
 #[test]
-fn test_unsigned_gemini_3_history_uses_documented_placeholder() {
+fn test_unsigned_gemini_3_history_is_rejected() {
     let request = json!({
         "messages": [{
             "role": "assistant",
@@ -269,15 +271,12 @@ fn test_unsigned_gemini_3_history_uses_documented_placeholder() {
         }]
     });
 
-    let translated = translate_request_for_model(&request, "gemini-3.1-pro-preview").unwrap();
-    assert_eq!(
-        translated["contents"][0]["parts"][0]["thoughtSignature"],
-        "context_engineering_is_the_way to_go"
-    );
+    let error = translate_request_for_model(&request, "gemini-3.1-pro-preview").unwrap_err();
+    assert!(error.message.contains("authentic thought signature"));
 }
 
 #[test]
-fn test_foreign_tool_use_id_uses_gemini_3_placeholder() {
+fn test_foreign_tool_use_id_is_rejected_for_gemini_3() {
     let request = json!({
         "messages": [{
             "role": "assistant",
@@ -287,11 +286,8 @@ fn test_foreign_tool_use_id_uses_gemini_3_placeholder() {
         }]
     });
 
-    let translated = translate_request_for_model(&request, "gemini-3.1-pro-preview").unwrap();
-    assert_eq!(
-        translated["contents"][0]["parts"][0]["thoughtSignature"],
-        "context_engineering_is_the_way to_go"
-    );
+    let error = translate_request_for_model(&request, "gemini-3.1-pro-preview").unwrap_err();
+    assert!(error.message.contains("authentic thought signature"));
 }
 
 #[test]
@@ -339,17 +335,7 @@ fn test_gemini_sse_machine_finishes_on_eof() {
     });
     let _ = machine.process_chunk(&chunk);
 
-    let mut events = Vec::new();
-    machine.finish(&mut events);
-
-    assert_eq!(events[0].event, "content_block_stop");
-    assert_eq!(events[1].event, "message_delta");
-    assert_eq!(events[1].data["delta"]["stop_reason"], "end_turn");
-    assert_eq!(events[2].event, "message_stop");
-
-    let mut duplicate_events = Vec::new();
-    machine.finish(&mut duplicate_events);
-    assert!(duplicate_events.is_empty());
+    assert!(machine.transport_close_checked().is_err());
 }
 
 #[test]
@@ -386,6 +372,7 @@ fn test_gemini_sse_machine_non_streaming_accumulation() {
         }]
     });
     let _ = machine.process_chunk(&chunk2);
+    machine.transport_close_checked().unwrap();
 
     let final_json = machine.final_json();
     assert_eq!(final_json["type"], "message");
@@ -613,10 +600,22 @@ fn gemini_tool_signature_roundtrip_preserves_exact_parallel_identities() {
         "gemini-3.1-pro-preview",
     )
     .unwrap();
-    assert_eq!(translated["contents"][0]["parts"][0]["thoughtSignature"], "sig-a");
-    assert_eq!(translated["contents"][0]["parts"][1]["thoughtSignature"], "sig-b");
-    assert_eq!(translated["contents"][1]["parts"][0]["functionResponse"]["name"], "read_file");
-    assert_eq!(translated["contents"][1]["parts"][1]["functionResponse"]["name"], "read_file");
+    assert_eq!(
+        translated["contents"][0]["parts"][0]["thoughtSignature"],
+        "sig-a"
+    );
+    assert_eq!(
+        translated["contents"][0]["parts"][1]["thoughtSignature"],
+        "sig-b"
+    );
+    assert_eq!(
+        translated["contents"][1]["parts"][0]["functionResponse"]["name"],
+        "read_file"
+    );
+    assert_eq!(
+        translated["contents"][1]["parts"][1]["functionResponse"]["name"],
+        "read_file"
+    );
 }
 
 #[test]

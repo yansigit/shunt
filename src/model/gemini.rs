@@ -909,7 +909,8 @@ mod tests {
             }
         });
 
-        let events2 = machine.process_chunk(&chunk2);
+        let mut events2 = machine.process_chunk(&chunk2);
+        events2.extend(machine.transport_close_checked().unwrap());
         assert_eq!(events2[0].event, "content_block_delta");
         assert_eq!(events2[0].data["delta"]["text"], "world!");
         assert_eq!(events2[1].event, "content_block_stop");
@@ -929,7 +930,8 @@ mod tests {
                         "functionCall": {
                             "name": "get_weather",
                             "args": { "location": "Paris" }
-                        }
+                        },
+                        "thoughtSignature": "weather-signature"
                     }],
                     "role": "model"
                 },
@@ -937,7 +939,8 @@ mod tests {
             }]
         });
 
-        let events = machine.process_chunk(&chunk);
+        let mut events = machine.process_chunk(&chunk);
+        events.extend(machine.transport_close_checked().unwrap());
         assert_eq!(events[0].event, "message_start");
         assert_eq!(events[1].event, "content_block_start");
         assert_eq!(events[1].data["content_block"]["type"], "tool_use");

@@ -699,10 +699,10 @@ fn never_merges_consecutive_model_turns() {
         "messages": [
             {"role": "user", "content": "go"},
             {"role": "assistant", "content": [{
-                "type": "tool_use", "id": "toolu_1", "name": "a", "input": {}
+                "type": "tool_use", "id": "call_gemini_v1_c2lnLTE", "name": "a", "input": {}
             }]},
             {"role": "assistant", "content": [{
-                "type": "tool_use", "id": "toolu_2", "name": "b", "input": {}
+                "type": "tool_use", "id": "call_gemini_v1_c2lnLTI", "name": "b", "input": {}
             }]}
         ]
     });
@@ -715,14 +715,8 @@ fn never_merges_consecutive_model_turns() {
         .map(|c| c["role"].as_str().unwrap())
         .collect();
     assert_eq!(roles, ["user", "model", "model"]);
-    assert_eq!(
-        contents[1]["parts"][0]["thoughtSignature"],
-        GEMINI_THOUGHT_SIGNATURE_PLACEHOLDER
-    );
-    assert_eq!(
-        contents[2]["parts"][0]["thoughtSignature"],
-        GEMINI_THOUGHT_SIGNATURE_PLACEHOLDER
-    );
+    assert_eq!(contents[1]["parts"][0]["thoughtSignature"], "sig-1");
+    assert_eq!(contents[2]["parts"][0]["thoughtSignature"], "sig-2");
 }
 
 #[test]
@@ -767,6 +761,39 @@ fn wrap_envelope_creates_code_assist_shape() {
     assert_eq!(wrapped["model"], "gemini-3-flash-preview");
     assert_eq!(wrapped["project"], "test-proj-789");
     assert!(wrapped.get("request").is_some());
+}
+
+#[test]
+fn gemini_tool_signature_roundtrip_rejects_orphan_result_before_dispatch() {
+    let request = json!({
+        "model": "gemini-3.1-pro-preview",
+        "messages": [{"role": "user", "content": [{
+            "type": "tool_result",
+            "tool_use_id": "call_gemini_v1_c2ln",
+            "content": "result"
+        }]}]
+    });
+
+    let error = translate_request(&request).unwrap_err();
+    assert!(error.message.contains("unknown tool_use_id"));
+}
+
+#[test]
+fn gemini_tool_signature_roundtrip_keeps_legacy_calls_unsigned() {
+    let request = json!({
+        "model": "gemini-2.5-pro",
+        "messages": [{"role": "assistant", "content": [{
+            "type": "tool_use",
+            "id": "toolu_legacy",
+            "name": "read_file",
+            "input": {"path": "a.txt"}
+        }]}]
+    });
+
+    let translated = translate_request(&request).unwrap();
+    assert!(translated["contents"][0]["parts"][0]
+        .get("thoughtSignature")
+        .is_none());
 }
 
 #[test]

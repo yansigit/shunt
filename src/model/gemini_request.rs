@@ -10,8 +10,8 @@ use crate::adapters::AdapterError;
 const MAX_SCHEMA_DEPTH: usize = 64;
 const GEMINI_3_MODEL_PREFIX: &str = "gemini-3";
 const GEMINI_TOOL_USE_ID_PREFIX: &str = "call_gemini_v1_";
-// Google documents this exact value for imported/custom Gemini 3 function-call history.
-const GEMINI_THOUGHT_SIGNATURE_PLACEHOLDER: &str = "context_engineering_is_the_way to_go";
+const MAX_TOOL_SIGNATURE_BYTES: usize = 64 * 1024;
+const MAX_TOOL_USE_ID_BYTES: usize = 96 * 1024;
 /// Budget an enabled `thinking` block asks for when it names none. Shared with
 /// `crate::model::antigravity_request`, which reads the same block to pick an
 /// effort tier — the two must not drift apart on what "enabled, no budget"
@@ -122,7 +122,6 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
         };
 
         let mut parts = Vec::new();
-        let mut saw_function_call = false;
 
         if let Some(content) = message.get("content") {
             match content {
@@ -179,41 +178,67 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
                                 }
                             }
                             "tool_use" => {
-                                let name = block.get("name").and_then(Value::as_str).unwrap_or("");
+                                let name = block
+                                    .get("name")
+                                    .and_then(Value::as_str)
+                                    .filter(|name| !name.trim().is_empty())
+                                    .ok_or_else(|| {
+                                        bad_request("tool_use name must be non-blank")
+                                    })?;
                                 let input =
                                     block.get("input").cloned().unwrap_or_else(|| json!({}));
-                                if !name.is_empty() {
-                                    let id = block.get("id").and_then(Value::as_str).unwrap_or("");
-                                    if !id.is_empty() {
-                                        tool_names.insert(id.to_string(), name.to_string());
-                                    }
-                                    let signature = decode_tool_use_signature(id).or_else(|| {
-                                        (!saw_function_call
-                                            && model.starts_with(GEMINI_3_MODEL_PREFIX))
-                                        .then(|| GEMINI_THOUGHT_SIGNATURE_PLACEHOLDER.to_string())
-                                    });
-                                    let mut part = json!({
-                                        "functionCall": {
-                                            "name": name,
-                                            "args": input
-                                        }
-                                    });
-                                    if let Some(signature) = signature {
-                                        part["thoughtSignature"] = Value::String(signature);
-                                    }
-                                    parts.push(part);
-                                    saw_function_call = true;
+                                if !input.is_object() {
+                                    return Err(bad_request("tool_use input must be an object"));
                                 }
+                                let id = block
+                                    .get("id")
+                                    .and_then(Value::as_str)
+                                    .filter(|id| !id.is_empty())
+                                    .ok_or_else(|| bad_request("tool_use id must be non-empty"))?;
+                                if id.len() > MAX_TOOL_USE_ID_BYTES {
+                                    return Err(bad_request("Gemini tool_use id exceeds limit"));
+                                }
+                                if tool_names
+                                    .insert(id.to_string(), name.to_string())
+                                    .is_some()
+                                {
+                                    return Err(bad_request(
+                                        "duplicate Gemini tool_use id is ambiguous",
+                                    ));
+                                }
+                                let signature = decode_tool_use_signature(id)?;
+                                if model.starts_with(GEMINI_3_MODEL_PREFIX) && signature.is_none() {
+                                    return Err(bad_request(
+                                        "Gemini 3 tool history requires an authentic thought signature",
+                                    ));
+                                }
+                                let mut part = json!({
+                                    "functionCall": {
+                                        "name": name,
+                                        "args": input
+                                    }
+                                });
+                                if let Some(signature) = signature {
+                                    part["thoughtSignature"] = Value::String(signature);
+                                }
+                                parts.push(part);
                             }
                             "tool_result" => {
                                 let tool_use_id = block
                                     .get("tool_use_id")
                                     .and_then(Value::as_str)
-                                    .unwrap_or("unknown_tool");
+                                    .filter(|id| !id.is_empty())
+                                    .ok_or_else(|| {
+                                        bad_request("tool_result tool_use_id must be non-empty")
+                                    })?;
                                 let name = tool_names
                                     .get(tool_use_id)
                                     .map(String::as_str)
-                                    .unwrap_or("unknown_tool");
+                                    .ok_or_else(|| {
+                                        bad_request(format!(
+                                            "tool_result references unknown tool_use_id {tool_use_id}"
+                                        ))
+                                    })?;
                                 let output_val = extract_tool_result_content(block)?;
                                 let mut response = Map::new();
                                 response.insert("output".to_string(), output_val);
@@ -267,12 +292,27 @@ fn push_content(contents: &mut Vec<Value>, role: &str, parts: Vec<Value>) {
     contents.push(json!({ "role": role, "parts": parts }));
 }
 
-fn decode_tool_use_signature(id: &str) -> Option<String> {
-    let encoded = id.strip_prefix(GEMINI_TOOL_USE_ID_PREFIX)?;
-    let bytes = URL_SAFE_NO_PAD.decode(encoded).ok()?;
-    String::from_utf8(bytes)
-        .ok()
-        .filter(|signature| !signature.is_empty())
+fn decode_tool_use_signature(id: &str) -> Result<Option<String>, AdapterError> {
+    let Some(encoded) = id.strip_prefix(GEMINI_TOOL_USE_ID_PREFIX) else {
+        return Ok(None);
+    };
+    if encoded.is_empty() || encoded.len() > MAX_TOOL_USE_ID_BYTES - GEMINI_TOOL_USE_ID_PREFIX.len()
+    {
+        return Err(bad_request(
+            "malformed Gemini thought-signature tool_use id",
+        ));
+    }
+    let bytes = URL_SAFE_NO_PAD
+        .decode(encoded)
+        .map_err(|_| bad_request("malformed Gemini thought-signature tool_use id"))?;
+    if bytes.is_empty() || bytes.len() > MAX_TOOL_SIGNATURE_BYTES {
+        return Err(bad_request(
+            "Gemini thought signature is empty or exceeds limit",
+        ));
+    }
+    let signature = String::from_utf8(bytes)
+        .map_err(|_| bad_request("Gemini thought signature is not valid UTF-8"))?;
+    Ok(Some(signature))
 }
 
 fn extract_tool_result_content(block: &Value) -> Result<Value, AdapterError> {
