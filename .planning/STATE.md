@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 5
-current_phase_name: Anthropic Translation
+current_phase: 6
+current_phase_name: Capability-Aware Fallback
 status: ready_to_plan
-stopped_at: Phase 04 complete, ready to plan Phase 5
-last_updated: "2026-09-06T05:42:23.878Z"
-last_activity: 2026-09-05
-last_activity_desc: Phase 04 complete, transitioned to Phase 5
-state_head: 861908c46d559189491a468f9eca952b2aaf4efc
+stopped_at: Phase 05 complete, ready to plan Phase 6
+last_updated: "2026-09-06T06:48:11.263Z"
+last_activity: 2026-09-06
+last_activity_desc: Phase 05 complete, transitioned to Phase 6
+state_head: a90230c3b15a6703be0d9febfabef54d7f7c2c9c
 progress:
   total_phases: 8
-  completed_phases: 4
-  total_plans: 14
-  completed_plans: 14
-  percent: 50
+  completed_phases: 5
+  total_plans: 17
+  completed_plans: 17
+  percent: 63
 ---
 
 # Project State
@@ -23,22 +23,22 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-09-05 after Phase 4)
 
 **Core value:** Protocol-faithful, streaming-safe client behavior in a bounded, lean gateway.
-**Current focus:** Phase 5 — Anthropic Translation
+**Current focus:** Phase 6 — Capability-Aware Fallback
 
 ## Current Position
 
-Phase: 5 — Anthropic Translation
+Phase: 6 — Capability-Aware Fallback
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-09-05 — Phase 04 complete, transitioned to Phase 5
+Last activity: 2026-09-06 — Phase 05 complete, transitioned to Phase 6
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████░░░░] 63%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 14
+- Total plans completed: 17
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -50,6 +50,7 @@ Progress: [░░░░░░░░░░] 0%
 | 02 | 5 | - | - |
 | 03 | 3 | - | - |
 | 04 | 2 | - | - |
+| 05 | 3 | - | - |
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
@@ -78,6 +79,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 03]: Quota inspection is capped by bytes and total time while preserving the downstream response stream.
 - [Phase 04]: Native compaction is HTTP-only, byte-faithful, and shares the existing inbound Responses account/auth path.
 - [Phase 04]: Compact capability is limited to ChatGPT/Codex and the canonical OpenAI API; arbitrary compatible gateways fail closed.
+- [Phase 05]: Only unique exact Anthropic mappings enter translation; native Responses routes remain byte-faithful and fallback inference stays pinned.
+- [Phase 05]: Stateful or lossy Responses features fail before dispatch; HTTP and WebSocket share one bounded Anthropic response state machine.
+- [Phase 05]: Anthropic transport remains authoritative for credentials, account selection, retries, admission, timeouts, and safe headers.
 
 ### Pending Todos
 
@@ -97,5 +101,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-09-06T03:30:00Z
-Stopped at: Phase 04 complete, ready to plan Phase 5
+Stopped at: Phase 05 complete, ready to plan Phase 6
 Resume file: None

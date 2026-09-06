@@ -36,9 +36,9 @@
 
 ### Responses-to-Anthropic Translation
 
-- [ ] **TRANS-01**: A dedicated inbound translator maps Responses instructions, messages, tools, tool results, images, and reasoning controls to an Anthropic Messages request without modifying native passthrough paths.
-- [ ] **TRANS-02**: Anthropic streaming output maps to Responses event ordering with tool-call, reasoning, usage, completion, failure, and incomplete terminal fidelity.
-- [ ] **TRANS-03**: Unsupported or lossy features fail before dispatch with an actionable Responses error instead of silent degradation.
+- [x] **TRANS-01**: A dedicated inbound translator maps Responses instructions, messages, tools, tool results, images, and reasoning controls to an Anthropic Messages request without modifying native passthrough paths.
+- [x] **TRANS-02**: Anthropic streaming output maps to Responses event ordering with tool-call, reasoning, usage, completion, failure, and incomplete terminal fidelity.
+- [x] **TRANS-03**: Unsupported or lossy features fail before dispatch with an actionable Responses error instead of silent degradation.
 
 ### Compatibility and Collaboration
 
@@ -84,9 +84,9 @@
 | RES-01 | Phase 3 | Complete |
 | RES-02 | Phase 3 | Complete |
 | COMP-01 | Phase 4 | Complete |
-| TRANS-01 | Phase 5 | Pending |
-| TRANS-02 | Phase 5 | Pending |
-| TRANS-03 | Phase 5 | Pending |
+| TRANS-01 | Phase 5 | Complete |
+| TRANS-02 | Phase 5 | Complete |
+| TRANS-03 | Phase 5 | Complete |
 | CAP-01 | Phase 6 | Pending |
 | COLLAB-01 | Phase 7 | Pending |
 | OPS-01 | Phase 8 | Pending |
