@@ -1042,6 +1042,82 @@ async fn mixed_chain_is_gated_and_strips_credentials_per_attempt() {
 }
 
 #[tokio::test]
+async fn route_selected_credentials_are_rebound_per_destination() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let first_env = format!("SHUNT_REBIND_FIRST_{}", std::process::id());
+    let second_env = format!("SHUNT_REBIND_SECOND_{}", std::process::id());
+    let first_key = ["first", "-route-marker"].concat();
+    let second_key = ["second", "-route-marker"].concat();
+    std::env::set_var(&first_env, &first_key);
+    std::env::set_var(&second_env, &second_key);
+
+    let first = MockServer::start().await;
+    let second = MockServer::start().await;
+    let first_bearer = format!("Bearer {first_key}");
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .and(header("authorization", first_bearer.as_str()))
+        .and(HeaderAbsent("x-api-key"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("first-failed"))
+        .expect(1)
+        .mount(&first)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .and(header("x-api-key", second_key.as_str()))
+        .and(HeaderAbsent("authorization"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("second-served"))
+        .expect(1)
+        .mount(&second)
+        .await;
+
+    let config = chain_config(
+        vec![
+            upstream(
+                "first",
+                first.uri(),
+                ProviderKind::Anthropic,
+                UpstreamAuth::Map(AuthMap::ApiKey {
+                    env: Some(first_env.clone()),
+                    header: ApiKeyHeader::Bearer,
+                }),
+            ),
+            upstream(
+                "second",
+                second.uri(),
+                ProviderKind::Anthropic,
+                UpstreamAuth::Map(AuthMap::ApiKey {
+                    env: Some(second_env.clone()),
+                    header: ApiKeyHeader::XApiKey,
+                }),
+            ),
+        ],
+        &[("first", "model-a"), ("second", "model-b")],
+    );
+    let gateway = start_gateway(config).await;
+
+    let response = post_path(
+        &gateway,
+        "/v1/messages",
+        &[
+            ("authorization", "Bearer inbound-auth-marker"),
+            ("x-api-key", "inbound-key-marker"),
+        ],
+    )
+    .await;
+
+    std::env::remove_var(first_env);
+    std::env::remove_var(second_env);
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_gateway_headers(&response, "second", "model-b");
+    assert_eq!(response.text().await.unwrap(), "second-served");
+    first.verify().await;
+    second.verify().await;
+}
+
+#[tokio::test]
 async fn passthrough_failover_does_not_replay_client_credential_to_next_host() {
     if !can_bind_loopback() {
         return;

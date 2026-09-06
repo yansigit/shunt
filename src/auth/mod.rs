@@ -1,4 +1,4 @@
-use std::{env, path::PathBuf, time::Duration};
+use std::{env, fmt, path::PathBuf, time::Duration};
 
 use axum::{http::StatusCode, response::IntoResponse};
 
@@ -26,7 +26,7 @@ pub mod xai;
 // TODO(M2): Add the optional `shunt login` PKCE loopback fallback. M2 currently
 // reuses the Codex CLI-owned ~/.codex/auth.json credential source.
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Credential {
     /// Forward the client's own credential unchanged (Anthropic passthrough).
     Passthrough,
@@ -62,6 +62,27 @@ pub enum Credential {
         access_token: String,
         device_id: Option<String>,
     },
+}
+
+impl fmt::Debug for Credential {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Passthrough => formatter.write_str("Credential::Passthrough"),
+            Self::ApiKey { header, .. } => formatter
+                .debug_struct("Credential::ApiKey")
+                .field("header", header)
+                .finish_non_exhaustive(),
+            Self::ChatGptOAuth { .. } => formatter.write_str("Credential::ChatGptOAuth { .. }"),
+            Self::XaiOauth { .. } => formatter.write_str("Credential::XaiOauth { .. }"),
+            Self::CursorOauth { .. } => formatter.write_str("Credential::CursorOauth { .. }"),
+            Self::GoogleOauth { .. } => formatter.write_str("Credential::GoogleOauth { .. }"),
+            Self::AntigravityOauth { .. } => {
+                formatter.write_str("Credential::AntigravityOauth { .. }")
+            }
+            Self::ClaudeOauth { .. } => formatter.write_str("Credential::ClaudeOauth { .. }"),
+            Self::KimiOauth { .. } => formatter.write_str("Credential::KimiOauth { .. }"),
+        }
+    }
 }
 
 /// Resolve the credential for a route from its provider's configured `auth`.
