@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 7
-current_phase_name: Collaboration Preservation
+current_phase: 8
+current_phase_name: Bounded Shutdown
 status: ready_to_plan
-stopped_at: Phase 06 complete, ready to plan Phase 7
-last_updated: "2026-09-06T07:08:40.488Z"
+stopped_at: Phase 07 complete, ready to plan Phase 8
+last_updated: "2026-09-06T07:47:25.020Z"
 last_activity: 2026-09-06
-last_activity_desc: Phase 06 complete, transitioned to Phase 7
-state_head: 870393916a8225b73f67276dd0b28901980b3142
+last_activity_desc: Phase 07 complete, transitioned to Phase 8
+state_head: efa5ee0388cfa2d4dc22b7f6bbc99ab5937847f8
 progress:
   total_phases: 8
-  completed_phases: 6
-  total_plans: 19
-  completed_plans: 19
-  percent: 75
+  completed_phases: 7
+  total_plans: 22
+  completed_plans: 22
+  percent: 88
 ---
 
 # Project State
@@ -23,22 +23,22 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-09-05 after Phase 4)
 
 **Core value:** Protocol-faithful, streaming-safe client behavior in a bounded, lean gateway.
-**Current focus:** Phase 7 — Collaboration Preservation
+**Current focus:** Phase 8 — Bounded Shutdown
 
 ## Current Position
 
-Phase: 7 — Collaboration Preservation
+Phase: 8 — Bounded Shutdown
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-09-06 — Phase 06 complete, transitioned to Phase 7
+Last activity: 2026-09-06 — Phase 07 complete, transitioned to Phase 8
 
-Progress: [████████░░] 75%
+Progress: [█████████░] 88%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 19
+- Total plans completed: 22
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -52,6 +52,7 @@ Progress: [████████░░] 75%
 | 04 | 2 | - | - |
 | 05 | 3 | - | - |
 | 06 | 2 | - | - |
+| 07 | 3 | - | - |
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
@@ -86,6 +87,9 @@ Progress: [████████░░] 75%
 - [Phase 06]: Capability filtering never removes the primary and runs before fallback credentials or network access.
 - [Phase 06]: Eligibility uses one internal provider matrix; no public configuration or provider semantics were added.
 - [Phase 06]: The `[1m]` context marker removes every fallback because no later target can guarantee the requested context window.
+- [Phase 07]: Collaboration translation is default-off and request-authorized; native Responses traffic remains opaque regardless of the flag.
+- [Phase 07]: Exact Anthropic routes bridge declared V2 collaboration tools and plaintext tasks, but ciphertext-only or provider continuation state fails before dispatch.
+- [Phase 07]: shunt performs no collaboration decryption, persistence, cache, or hidden billable recovery call.
 
 ### Pending Todos
 
@@ -105,5 +109,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-09-06T03:30:00Z
-Stopped at: Phase 06 complete, ready to plan Phase 7
+Stopped at: Phase 07 complete, ready to plan Phase 8
 Resume file: None

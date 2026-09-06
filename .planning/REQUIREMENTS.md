@@ -43,7 +43,7 @@
 ### Compatibility and Collaboration
 
 - [x] **CAP-01**: Heterogeneous fallback routes exclude targets that cannot satisfy required tools, images, structured output, reasoning effort, or known context constraints.
-- [ ] **COLLAB-01**: When collaboration routing is explicitly enabled, task metadata and encrypted/opaque continuation state survive routing without affecting native ChatGPT traffic.
+- [x] **COLLAB-01**: When collaboration routing is explicitly enabled, task metadata and encrypted/opaque continuation state survive routing without affecting native ChatGPT traffic.
 
 ### Operations
 
@@ -88,7 +88,7 @@
 | TRANS-02 | Phase 5 | Complete |
 | TRANS-03 | Phase 5 | Complete |
 | CAP-01 | Phase 6 | Complete |
-| COLLAB-01 | Phase 7 | Pending |
+| COLLAB-01 | Phase 7 | Complete |
 | OPS-01 | Phase 8 | Pending |
 
 **Coverage:**
