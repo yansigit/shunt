@@ -444,17 +444,20 @@ async fn native_route_matches_http_and_websocket_provider_selection() {
 async fn missing_model_websocket_uses_pinned_fallback_even_when_unknown_route_exists() {
     let _env = ENV_LOCK.lock().await;
     let body_pinned = "data: {\"type\":\"response.completed\",\"marker\":\"pinned-codex\"}\n\n";
-    let (upstream_pinned, state_pinned) = start_upstream(vec![Reply::Static {
-        status: StatusCode::OK,
-        content_type: "text/event-stream",
-        body: body_pinned.to_string(),
-        headers: Vec::new(),
-    }, Reply::Static {
-        status: StatusCode::OK,
-        content_type: "text/event-stream",
-        body: body_pinned.to_string(),
-        headers: Vec::new(),
-    }])
+    let (upstream_pinned, state_pinned) = start_upstream(vec![
+        Reply::Static {
+            status: StatusCode::OK,
+            content_type: "text/event-stream",
+            body: body_pinned.to_string(),
+            headers: Vec::new(),
+        },
+        Reply::Static {
+            status: StatusCode::OK,
+            content_type: "text/event-stream",
+            body: body_pinned.to_string(),
+            headers: Vec::new(),
+        },
+    ])
     .await;
     let body_unknown = "data: {\"type\":\"response.completed\",\"marker\":\"unknown-route\"}\n\n";
     let (upstream_unknown, state_unknown) = start_upstream(vec![Reply::Static {
@@ -533,7 +536,7 @@ async fn missing_model_websocket_uses_pinned_fallback_even_when_unknown_route_ex
 
     assert_eq!(state_pinned.requests.lock().unwrap().len(), 2);
     assert!(state_unknown.requests.lock().unwrap().is_empty());
-    cleanup(&account_env, &client_env);
+    cleanup(account_env, client_env);
     std::env::remove_var(api_env);
 }
 
