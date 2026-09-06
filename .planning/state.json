@@ -1,21 +1,58 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v2",
+  "milestone": "v2 — Provider Compatibility",
   "phases": [
-    { "number": "9", "name": "Provider Conformance Foundation", "status": "not_started" },
-    { "number": "10", "name": "Gemini Semantic Hardening", "status": "not_started" },
-    { "number": "11", "name": "Antigravity Protocol and Credential Hardening", "status": "not_started" },
-    { "number": "12", "name": "Cursor Evidence-Backed Hardening", "status": "not_started" },
-    { "number": "13", "name": "Generic OpenAI Chat Completions", "status": "not_started" },
-    { "number": "14", "name": "Command Code Product Separation", "status": "not_started" },
-    { "number": "15", "name": "Exact OpenCode Go Evidence Gate", "status": "not_started" },
-    { "number": "16", "name": "Cross-Provider Release Gate", "status": "not_started" }
+    {
+      "number": "1",
+      "name": "8. OpenCodex Port",
+      "status": "complete"
+    },
+    {
+      "number": "9",
+      "name": "Provider Conformance Foundation",
+      "status": "complete"
+    },
+    {
+      "number": "10",
+      "name": "Gemini Semantic Hardening",
+      "status": "pending"
+    },
+    {
+      "number": "11",
+      "name": "Antigravity Protocol and Credential Hardening",
+      "status": "pending"
+    },
+    {
+      "number": "12",
+      "name": "Cursor Evidence-Backed Hardening",
+      "status": "pending"
+    },
+    {
+      "number": "13",
+      "name": "Generic OpenAI Chat Completions",
+      "status": "pending"
+    },
+    {
+      "number": "14",
+      "name": "Command Code Product Separation",
+      "status": "pending"
+    },
+    {
+      "number": "15",
+      "name": "Exact OpenCode Go Evidence Gate",
+      "status": "pending"
+    },
+    {
+      "number": "16",
+      "name": "Cross-Provider Release Gate",
+      "status": "pending"
+    }
   ],
   "next": {
-    "command": "/gsd:discuss-phase 9",
-    "label": "Discuss Phase 9",
-    "reason": "Provider Compatibility roadmap is ready; establish conformance guarantees before provider changes"
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step (plan phase 10)",
+    "reason": "Phase 10 of 8 — needs a plan"
   },
-  "updated_at": "2026-09-06T20:00:00.000Z"
+  "updated_at": "2026-09-06T22:45:55.740Z"
 }

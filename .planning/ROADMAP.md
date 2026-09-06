@@ -29,7 +29,7 @@ Full phase goals, requirements, success criteria, and plan references are kept i
 
 ### 🚧 v2 Provider Compatibility (In Progress)
 
-- [ ] **Phase 9: Provider Conformance Foundation** - Make preservation, safety, credential, terminal, cancellation, and retry commitments executable across provider fixtures.
+- [x] **Phase 9: Provider Conformance Foundation** - Make preservation, safety, credential, terminal, cancellation, and retry commitments executable across provider fixtures. (completed 2026-09-06)
 - [ ] **Phase 10: Gemini Semantic Hardening** - Give streaming and non-streaming Google Code Assist turns one strict, replay-safe semantic contract.
 - [ ] **Phase 11: Antigravity Protocol and Credential Hardening** - Enforce Antigravity's exact Cloud Code Assist envelope, identity, destination, model, signature, tool, and SSE rules.
 - [ ] **Phase 12: Cursor Evidence-Backed Hardening** - Correct Cursor profiles, continuation, tools, terminal handling, cancellation, and pre-output failover from verified evidence.
@@ -55,9 +55,9 @@ Full phase goals, requirements, success criteria, and plan references are kept i
 **Plans**: TBD
 
 - [x] 09-01-PLAN.md
-- [ ] 09-02-PLAN.md
-- [ ] 09-03-PLAN.md
-- [ ] 09-04-PLAN.md
+- [x] 09-02-PLAN.md
+- [x] 09-03-PLAN.md
+- [x] 09-04-PLAN.md
 
 ### Phase 10: Gemini Semantic Hardening
 
@@ -165,7 +165,7 @@ Full phase goals, requirements, success criteria, and plan references are kept i
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1–8. OpenCodex Port | v1 | 25/25 | Complete | 2026-09-06 |
-| 9. Provider Conformance Foundation | v2 | 1/4 | In Progress|  |
+| 9. Provider Conformance Foundation | v2 | 4/4 | Complete    | 2026-09-06 |
 | 10. Gemini Semantic Hardening | v2 | 0/TBD | Not started | - |
 | 11. Antigravity Protocol and Credential Hardening | v2 | 0/TBD | Not started | - |
 | 12. Cursor Evidence-Backed Hardening | v2 | 0/TBD | Not started | - |

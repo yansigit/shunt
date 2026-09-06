@@ -57,11 +57,12 @@ behavior while Shunt stays bounded, predictable, and operationally lean.
 - ✓ Heterogeneous fallback routes exclude incompatible targets before credential lookup or dispatch — Phase 6
 - ✓ Routed Codex collaboration semantics are preserved when explicitly enabled while native traffic remains opaque — Phase 7
 - ✓ Graceful shutdown has a bounded drain deadline and cancels remaining turns safely — Phase 8
+- ✓ Existing ChatGPT/Codex and generic-Anthropic Vercel paths preserve their verified streaming, authentication, error, retry, continuation, and cancellation behavior behind shared fail-closed bounds — Phase 9
 
 ### Active
 
-- [ ] ChatGPT/Codex and Gemini retain their verified streaming, tool-call,
-  authentication, and error behavior.
+- [ ] Gemini retains its verified streaming, tool-call, authentication, and
+  error behavior under the shared Phase 9 conformance foundation.
 - [ ] Antigravity implements the proven Cloud Code Assist request, stream,
   signature, tool-history, model, and destination-security contracts.
 - [ ] Cursor's existing provider gains evidence-backed model, continuation,
@@ -139,10 +140,12 @@ written tests are preferred.
 | Collaboration translation is opt-in and fails closed without plaintext | Hidden recovery would be sensitive, billable, and unnecessary for native ChatGPT traffic | ✓ Validated in Phase 7 |
 | Shutdown uses one process deadline and runtime cancellation | Bounds drain without adding a global active-turn registry | ✓ Validated in Phase 8 |
 | No persistence or repair layer without evidence | Keeps Shunt bounded and avoids speculative complexity | ✓ Validated for v1; deferred requirements remain in v2 |
-| Port OpenCodex provider behavior selectively | Its issue history provides valuable wire invariants and fixtures, while its generalized infrastructure does not fit Shunt | — Pending |
-| Keep existing credential writeback behavior unchanged | Provider compatibility does not justify expanding persistence authority | — Pending |
+| Port OpenCodex provider behavior selectively | Its issue history provides valuable wire invariants and fixtures, while its generalized infrastructure does not fit Shunt | ✓ Foundation validated in Phase 9 |
+| Keep existing credential writeback behavior unchanged | Provider compatibility does not justify expanding persistence authority | ✓ Preserved in Phase 9 |
 | Treat OpenCode Go as exact-model compatibility | The provider spans three wire protocols and has recent model-specific regressions | — Pending |
-| Exclude Google AI Studio Web completely | It is known nonfunctional and unrelated to the supported Code Assist transport | — Pending |
+| Exclude Google AI Studio Web completely | It is known nonfunctional and unrelated to the supported Code Assist transport | ✓ Preserved in Phase 9 |
+| Treat provider terminals as authoritative only after complete bounded framing | Prevents malformed input, provider errors, and transport cuts from becoming clean completion | ✓ Validated in Phase 9 |
+| Keep replay commitment only at production-reachable semantic redispatch seams | Generic HTTP retry is structurally pre-response; WebSocket fallback and continuation recovery carry actual output/tool evidence | ✓ Validated in Phase 9 |
 
 ## Evolution
 
@@ -161,4 +164,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Revisit deferred work only with evidence from usage or failing transcripts.
 
 ---
-*Last updated: 2026-09-06 after starting v2 Provider Compatibility*
+*Last updated: 2026-09-06 after Phase 9*

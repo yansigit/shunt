@@ -2,45 +2,45 @@
 gsd_state_version: "1.0"
 milestone: v2
 milestone_name: Provider Compatibility
-current_phase: 9
-current_phase_name: Provider Conformance Foundation
-current_plan: 2
-total_plans_in_phase: 4
-status: executing
-stopped_at: Completed 09-01-PLAN.md
-last_updated: "2026-09-06T21:17:54.970Z"
+current_phase: 10
+current_phase_name: Gemini Semantic Hardening
+status: planning
+stopped_at: Phase 9 complete, ready to plan Phase 10
+last_updated: "2026-09-06T22:45:55.717Z"
 last_activity: 2026-09-06
-last_activity_desc: Milestone v2 started
-state_head: b22ec56efe7c6b0b5fc3e3151ab750d213c23597
+last_activity_desc: Phase 9 complete, transitioned to Phase 10
+state_head: 27d4f1d53e6c44966cb4a54cadf489de943eb509
 progress:
   total_phases: 8
-  completed_phases: 0
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 1
-  percent: 13
+  completed_plans: 4
+  percent: 22
+total_plans_in_phase: 0
+current_plan: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-09-06 after v1 milestone completion)
+See: `.planning/PROJECT.md` (updated 2026-09-06 after Phase 9)
 
 **Core value:** Protocol-faithful, streaming-safe client behavior in a bounded, lean gateway.
-**Current focus:** Planning the next evidence-driven milestone
+**Current focus:** Phase 10 — Gemini Semantic Hardening
 
 ## Current Position
 
-Phase: 9 of 16 (Provider Conformance Foundation)
-Plan: 2 of 4
-Status: Executing
-Last activity: 2026-09-06 — Completed 09-01 shared redispatch commitment
+Phase: 10 of 16 (Gemini Semantic Hardening)
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-09-06 — Phase 9 complete, transitioned to Phase 10
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 25
+- Total plans completed: 29
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -56,6 +56,7 @@ Last activity: 2026-09-06 — Completed 09-01 shared redispatch commitment
 | 06 | 2 | - | - |
 | 07 | 3 | - | - |
 | 08 | 3 | - | - |
+| 9 | 4 | - | - |
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
@@ -99,6 +100,9 @@ Last activity: 2026-09-06 — Completed 09-01 shared redispatch commitment
 - [Phase 08]: The existing second-signal immediate-exit escape hatch remains available, while timeout changes require restart because the coordinator captures the value at boot.
 - [Phase 09]: Commitment remains crate-private and additive to existing transport, status, safety, and retry-budget evidence.
 - [Phase 09]: Every successful first Codex WebSocket event remains conservative commitment; structural tool events are replay-unsafe.
+- [Phase 09]: Complete bounded framing plus an authoritative provider terminal is required for clean completion; malformed, duplicate, or cut streams fail closed.
+- [Phase 09]: Semantic commitment gates only production-reachable WebSocket fallback and continuation recovery; generic HTTP retry remains structurally pre-response.
+- [Phase 09]: Provider credentials are redacted and rebound per destination without changing credential-file writeback.
 
 ### Pending Todos
 
@@ -117,10 +121,10 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-09-06T21:17:54.954Z
-Stopped at: Completed 09-01-PLAN.md
+Last session: 2026-09-06T22:45:55.717Z
+Stopped at: Phase 9 complete, ready to plan Phase 10
 Resume file: None
 
 ## Operator Next Steps
 
-- Execute the remaining Phase 9 plans.
+- Phase 9 is complete. Discuss or plan Phase 10 when explicitly requested.

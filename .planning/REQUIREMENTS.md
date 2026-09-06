@@ -12,11 +12,11 @@ requirement maps to exactly one roadmap phase after roadmap creation.
 
 ### Preservation and Conformance
 
-- [ ] **PRES-01**: Existing ChatGPT/Codex HTTP, SSE, and outbound WebSocket v2 requests retain their current opaque passthrough, continuation, compression, cancellation, and terminal behavior.
-- [ ] **PRES-02**: Existing ChatGPT/Codex account selection, quota admission, compaction, and opt-in collaboration behavior remain covered by regression tests.
+- [x] **PRES-01**: Existing ChatGPT/Codex HTTP, SSE, and outbound WebSocket v2 requests retain their current opaque passthrough, continuation, compression, cancellation, and terminal behavior.
+- [x] **PRES-02**: Existing ChatGPT/Codex account selection, quota admission, compaction, and opt-in collaboration behavior remain covered by regression tests.
 - [x] **PRES-03**: ChatGPT/Codex requests never retry or fail over after any client-visible output or replay-unsafe tool activity.
-- [ ] **PRES-04**: Gateway-owned errors on Codex ingress remain OpenAI Responses-shaped, while gateway-owned errors on other ingress surfaces remain Anthropic-shaped.
-- [ ] **PRES-05**: The existing Vercel Anthropic-compatible path retains its request, streaming, authentication, and error behavior without requiring a new provider adapter.
+- [x] **PRES-04**: Gateway-owned errors on Codex ingress remain OpenAI Responses-shaped, while gateway-owned errors on other ingress surfaces remain Anthropic-shaped.
+- [x] **PRES-05**: The existing Vercel Anthropic-compatible path retains its request, streaming, authentication, and error behavior without requiring a new provider adapter.
 
 ### Gemini / Google Code Assist
 
@@ -86,13 +86,13 @@ requirement maps to exactly one roadmap phase after roadmap creation.
 
 ### Security, Bounds, and Failure Invariants
 
-- [ ] **SAFE-01**: Every new request body, decompressed frame, SSE/NDJSON residual, event, tool assembly, replay state, queue, retry, and timeout has an explicit tested bound.
-- [ ] **SAFE-02**: Streaming success bodies are never fully buffered; accumulation is permitted only when the client explicitly requested non-streaming output and remains bounded.
-- [ ] **SAFE-03**: Every provider path emits at most one authoritative terminal outcome, and explicit upstream errors or incomplete streams never become clean completion.
+- [x] **SAFE-01**: Every new request body, decompressed frame, SSE/NDJSON residual, event, tool assembly, replay state, queue, retry, and timeout has an explicit tested bound.
+- [x] **SAFE-02**: Streaming success bodies are never fully buffered; accumulation is permitted only when the client explicitly requested non-streaming output and remains bounded.
+- [x] **SAFE-03**: Every provider path emits at most one authoritative terminal outcome, and explicit upstream errors or incomplete streams never become clean completion.
 - [x] **SAFE-04**: Retry and fallback share a tested commitment boundary that forbids redispatch after client-visible output or replay-unsafe tool activity.
-- [ ] **SAFE-05**: Provider credentials are bound to their provider kind and approved destination, redacted from diagnostics and fixtures, and held no longer than the response lifetime requires.
-- [ ] **SAFE-06**: Tool-call/result pairs and authentic continuation metadata survive supported filtering, retries, recovery, and translation without inventing signatures or duplicating execution.
-- [ ] **SAFE-07**: Dropping or cancelling a request releases upstream work, admission permits, account leases, parser state, and buffered data within a bounded time.
+- [x] **SAFE-05**: Provider credentials are bound to their provider kind and approved destination, redacted from diagnostics and fixtures, and held no longer than the response lifetime requires.
+- [x] **SAFE-06**: Tool-call/result pairs and authentic continuation metadata survive supported filtering, retries, recovery, and translation without inventing signatures or duplicating execution.
+- [x] **SAFE-07**: Dropping or cancelling a request releases upstream work, admission permits, account leases, parser state, and buffered data within a bounded time.
 
 ### Verification, Provenance, and Documentation
 
@@ -126,11 +126,11 @@ Each committed requirement has exactly one owning phase.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PRES-01 | Phase 9 | Pending |
-| PRES-02 | Phase 9 | Pending |
+| PRES-01 | Phase 9 | Complete |
+| PRES-02 | Phase 9 | Complete |
 | PRES-03 | Phase 9 | Complete |
-| PRES-04 | Phase 9 | Pending |
-| PRES-05 | Phase 9 | Pending |
+| PRES-04 | Phase 9 | Complete |
+| PRES-05 | Phase 9 | Complete |
 | GEM-01 | Phase 10 | Pending |
 | GEM-02 | Phase 10 | Pending |
 | GEM-03 | Phase 10 | Pending |
@@ -176,13 +176,13 @@ Each committed requirement has exactly one owning phase.
 | OGO-02 | Phase 15 | Pending |
 | OGO-03 | Phase 15 | Pending |
 | OGO-04 | Phase 15 | Pending |
-| SAFE-01 | Phase 9 | Pending |
-| SAFE-02 | Phase 9 | Pending |
-| SAFE-03 | Phase 9 | Pending |
+| SAFE-01 | Phase 9 | Complete |
+| SAFE-02 | Phase 9 | Complete |
+| SAFE-03 | Phase 9 | Complete |
 | SAFE-04 | Phase 9 | Complete |
-| SAFE-05 | Phase 9 | Pending |
-| SAFE-06 | Phase 9 | Pending |
-| SAFE-07 | Phase 9 | Pending |
+| SAFE-05 | Phase 9 | Complete |
+| SAFE-06 | Phase 9 | Complete |
+| SAFE-07 | Phase 9 | Complete |
 | REL-01 | Phase 16 | Pending |
 | REL-02 | Phase 16 | Pending |
 | REL-03 | Phase 16 | Pending |
