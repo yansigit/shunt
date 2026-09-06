@@ -2,15 +2,22 @@
 gsd_state_version: "1.0"
 milestone: v2
 milestone_name: Provider Compatibility
-status: planning
-last_updated: "2026-09-06T19:31:33.138Z"
+current_phase: 9
+current_phase_name: Provider Conformance Foundation
+current_plan: 2
+total_plans_in_phase: 4
+status: executing
+stopped_at: Completed 09-01-PLAN.md
+last_updated: "2026-09-06T21:17:54.970Z"
 last_activity: 2026-09-06
+last_activity_desc: Milestone v2 started
+state_head: b22ec56efe7c6b0b5fc3e3151ab750d213c23597
 progress:
-  total_phases: 0
+  total_phases: 8
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 4
+  completed_plans: 1
+  percent: 13
 ---
 
 # Project State
@@ -24,10 +31,10 @@ See: `.planning/PROJECT.md` (updated 2026-09-06 after v1 milestone completion)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-09-06 — Milestone v2 started
+Phase: 9 of 16 (Provider Conformance Foundation)
+Plan: 2 of 4
+Status: Executing
+Last activity: 2026-09-06 — Completed 09-01 shared redispatch commitment
 
 ## Performance Metrics
 
@@ -61,6 +68,7 @@ Last activity: 2026-09-06 — Milestone v2 started
 | Phase 02 P03 | 12 | 2 tasks | 2 files |
 | Phase 02 P04 | 6 | 2 tasks | 8 files |
 | Phase 2 P5 | 13 min | 2 tasks | 12 files |
+| Phase 09 P01 | 12min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -89,6 +97,8 @@ Last activity: 2026-09-06 — Milestone v2 started
 - [Phase 08]: The first signal stops admission and starts one validated process deadline, defaulting to 30 seconds with an inclusive 1..=3600 range.
 - [Phase 08]: Deadline expiry drops the Axum server future; normal Tokio runtime teardown cancels remaining HTTP, SSE, WebSocket, and background work and releases RAII-owned resources.
 - [Phase 08]: The existing second-signal immediate-exit escape hatch remains available, while timeout changes require restart because the coordinator captures the value at boot.
+- [Phase 09]: Commitment remains crate-private and additive to existing transport, status, safety, and retry-budget evidence.
+- [Phase 09]: Every successful first Codex WebSocket event remains conservative commitment; structural tool events are replay-unsafe.
 
 ### Pending Todos
 
@@ -107,10 +117,10 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-09-06T03:30:00Z
-Stopped at: Milestone v1 completed and archived
+Last session: 2026-09-06T21:17:54.954Z
+Stopped at: Completed 09-01-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Execute the remaining Phase 9 plans.
