@@ -354,6 +354,7 @@ async fn streaming_ws_fallback_still_seeds_message_start_estimate() {
 enum WsDrop {
     BeforeFirstEvent,
     AfterFirstEvent,
+    ReplayUnsafeToolBeforeText,
 }
 
 /// Build a codex-provider config with the websocket transport enabled, pointing
@@ -466,19 +467,25 @@ async fn serve_ws(socket: TcpStream, drop: WsDrop) {
         return;
     };
     let _ = ws.next().await; // the client's response.create frame
-    if let WsDrop::AfterFirstEvent = drop {
-        for event in [
+    let events: &[&str] = match drop {
+        WsDrop::BeforeFirstEvent => &[],
+        WsDrop::AfterFirstEvent => &[
             r#"{"type":"response.created","response":{"id":"resp_ws"}}"#,
             r#"{"type":"response.output_item.added","item":{"type":"message"}}"#,
             r#"{"type":"response.output_text.delta","delta":"partial over websocket"}"#,
-        ] {
+        ],
+        WsDrop::ReplayUnsafeToolBeforeText => &[
+            r#"{"type":"response.output_item.added","item":{"type":"function_call","call_id":"call_replay_boundary","name":"inspect"}}"#,
+            r#"{"type":"response.function_call_arguments.delta","delta":"{\"path\":\"Cargo.toml\"}"}"#,
+        ],
+    };
+    for event in events {
             // Surface a send failure loudly rather than swallowing it: a dropped
             // event would silently break the "partial over websocket" assertions
             // and make the AfterFirstEvent tests non-deterministic.
-            ws.send(Message::Text(event.to_string().into()))
+            ws.send(Message::Text((*event).to_string().into()))
                 .await
                 .expect("mock upstream should stream the event before dropping");
-        }
     }
     // Dropping `ws` closes the socket before a terminal event.
 }
@@ -617,6 +624,50 @@ async fn websocket_drop_after_first_event_surfaces_clean_error() {
         http_hits.load(Ordering::SeqCst),
         0,
         "no HTTP fallback POST is made after streaming has begun"
+    );
+
+    std::env::remove_var("CODEX_AUTH_FILE");
+    let _ = std::fs::remove_file(auth_path);
+}
+
+/// A structural tool event commits the turn before ordinary text. Replaying
+/// after the socket drops could execute the same tool twice, so the HTTP path
+/// must remain untouched even though no text delta was emitted.
+#[tokio::test]
+async fn replay_commitment_tool_before_text_does_not_fallback_to_http() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env = ENV_LOCK.lock().await;
+
+    let (base_url, http_hits) = spawn_dual_upstream(WsDrop::ReplayUnsafeToolBeforeText).await;
+    let auth_path = write_fake_codex_auth();
+    let gateway = start_gateway_with(codex_ws_config(base_url)).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .header("content-type", "application/json")
+        .body(
+            r#"{"model":"codex-fallback-model","max_tokens":16,"stream":true,"messages":[{"role":"user","content":"inspect the project"}]}"#,
+        )
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.unwrap();
+    assert!(
+        body.contains("call_replay_boundary") && body.contains("event: error"),
+        "the tool event and subsequent transport failure reach the client: {body}"
+    );
+    assert!(
+        !body.contains("served over HTTP fallback"),
+        "tool activity must not be replayed over HTTP: {body}"
+    );
+    assert_eq!(
+        http_hits.load(Ordering::SeqCst),
+        0,
+        "no HTTP fallback is made after replay-unsafe tool activity"
     );
 
     std::env::remove_var("CODEX_AUTH_FILE");

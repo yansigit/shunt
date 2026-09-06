@@ -99,6 +99,30 @@ pub trait RetryableError {
     fn is_transient(&self) -> bool;
 }
 
+/// Monotonic evidence that determines whether an accepted generation may be
+/// dispatched again. This is crate-private because it is a policy seam between
+/// transports, not part of Shunt's public provider API.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Commitment {
+    /// No client-visible output or replay-unsafe tool activity has occurred.
+    #[default]
+    ReplaySafe,
+    /// Output has become visible to the downstream client.
+    ClientVisible,
+    /// A tool call may have escaped the model transport and must not be replayed.
+    ReplayUnsafeTool,
+}
+
+impl Commitment {
+    pub(crate) fn mark_client_visible(&mut self) {}
+
+    pub(crate) fn mark_replay_unsafe_tool(&mut self) {}
+
+    pub(crate) fn may_redispatch(self) -> bool {
+        true
+    }
+}
+
 /// Controls whether a response status may be retried.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RetrySafety {
@@ -360,6 +384,27 @@ mod tests {
             max_backoff: Duration::from_millis(1000),
             multiplier: 2.0,
         }
+    }
+
+    #[test]
+    fn replay_commitment_transitions_are_monotonic() {
+        let mut client_visible = Commitment::default();
+        assert!(client_visible.may_redispatch());
+        client_visible.mark_client_visible();
+        assert_eq!(client_visible, Commitment::ClientVisible);
+        assert!(!client_visible.may_redispatch());
+        client_visible.mark_replay_unsafe_tool();
+        assert_eq!(client_visible, Commitment::ReplayUnsafeTool);
+        assert!(!client_visible.may_redispatch());
+        client_visible.mark_client_visible();
+        assert_eq!(client_visible, Commitment::ReplayUnsafeTool);
+
+        let mut tool_committed = Commitment::default();
+        tool_committed.mark_replay_unsafe_tool();
+        assert_eq!(tool_committed, Commitment::ReplayUnsafeTool);
+        assert!(!tool_committed.may_redispatch());
+        tool_committed.mark_client_visible();
+        assert_eq!(tool_committed, Commitment::ReplayUnsafeTool);
     }
 
     #[test]
