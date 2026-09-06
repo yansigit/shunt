@@ -32,7 +32,7 @@
 
 ### Compaction
 
-- [ ] **COMP-01**: Compatible native Responses routes can perform `/v1/responses/compact` without local request-history persistence or inspection of opaque continuation state.
+- [x] **COMP-01**: Compatible native Responses routes can perform `/v1/responses/compact` without local request-history persistence or inspection of opaque continuation state.
 
 ### Responses-to-Anthropic Translation
 
@@ -83,7 +83,7 @@
 | ROUTE-02 | Phase 2 | Complete |
 | RES-01 | Phase 3 | Complete |
 | RES-02 | Phase 3 | Complete |
-| COMP-01 | Phase 4 | Pending |
+| COMP-01 | Phase 4 | Complete |
 | TRANS-01 | Phase 5 | Pending |
 | TRANS-02 | Phase 5 | Pending |
 | TRANS-03 | Phase 5 | Pending |

@@ -28,10 +28,10 @@ behavior while Shunt stays bounded, predictable, and operationally lean.
 - ✓ Missing OpenCodex protocol transcript cases are represented as focused Rust fixtures without duplicating existing Shunt coverage — Phase 1
 - ✓ Inbound Responses can route exactly to compatible native Responses providers while preserving byte-level passthrough behavior — Phase 2
 - ✓ Transient rate limiting is distinguished from exact hard-quota exhaustion and `Retry-After` scheduling is standards-compatible and bounded — Phase 3
+- ✓ Native Responses compaction forwards opaque state to verified OpenAI-operated backends without local history persistence — Phase 4
 
 ### Active
 
-- [ ] Native Responses compaction works without adding general request-history persistence
 - [ ] A dedicated inbound Responses translation path can target Anthropic with tools, images, reasoning, usage, and terminal fidelity
 - [ ] Heterogeneous routes reject incompatible capabilities before dispatch
 - [ ] Routed Codex collaboration semantics are preserved when explicitly enabled
@@ -82,6 +82,8 @@ written tests are preferred.
 | Exact Responses-native routing precedes universal translation | Delivers provider choice with a smaller failure surface | ✓ Validated in Phase 2 |
 | Hard quota requires bounded exact structured evidence | Prevents ambiguous or attacker-controlled error text from suppressing healthy accounts | ✓ Validated in Phase 3 |
 | Quota inspection is bounded by bytes and total time | Prevents slow error bodies from occupying the pre-stream failover boundary while preserving relay fidelity | ✓ Validated in Phase 3 |
+| Native compaction reuses the inbound passthrough stack | Preserves account, credential, limit, and relay semantics without a second proxy implementation | ✓ Validated in Phase 4 |
+| Native compact capability is fail closed by destination | Avoids sending credentials or opaque session state to gateways that merely resemble Responses providers | ✓ Validated in Phase 4 |
 | Anthropic translation is a dedicated vertical subsystem | Current translation direction cannot be safely inverted through ad-hoc mutation | — Pending |
 | Collaboration recovery is opt-in and last | It is sensitive, billable, and unnecessary for native ChatGPT traffic | — Pending |
 | No persistence or repair layer without evidence | Keeps Shunt bounded and avoids speculative complexity | — Pending |
@@ -103,4 +105,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Revisit deferred work only with evidence from usage or failing transcripts.
 
 ---
-*Last updated: 2026-09-05 after Phase 3*
+*Last updated: 2026-09-05 after Phase 4*

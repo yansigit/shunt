@@ -12,7 +12,7 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
 - [x] **Phase 1: Inbound Responses WebSocket** - Deliver authenticated, bounded, cancellable WS transport with focused conformance coverage. (completed 2026-09-05)
 - [x] **Phase 2: Native Responses Routing** - Route exact models to compatible Responses-native providers without translation. **Requires user approval before implementation because it changes documented provider semantics.** (completed 2026-09-05)
 - [x] **Phase 3: Quota-Aware Resilience** - Distinguish transient throttling from exhausted quota and honor standards-compliant retry timing. (completed 2026-09-05)
-- [ ] **Phase 4: Native Compaction** - Forward Responses compaction opaquely without local history persistence.
+- [x] **Phase 4: Native Compaction** - Forward Responses compaction opaquely without local history persistence. (completed 2026-09-05)
 - [ ] **Phase 5: Anthropic Translation** - Add a dedicated Responses-to-Anthropic vertical translation subsystem.
 - [ ] **Phase 6: Capability-Aware Fallback** - Exclude incompatible targets before heterogeneous dispatch.
 - [ ] **Phase 7: Collaboration Preservation** - Preserve opt-in routed collaboration and continuation semantics.
@@ -86,7 +86,10 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
   2. Unsupported routes fail clearly before dispatch.
   3. No request-history database or durable continuation store is introduced.
 
-**Plans**: TBD
+**Plans**: 2 plans
+
+- [x] 04-01-PLAN.md
+- [x] 04-02-PLAN.md
 
 ### Phase 5: Anthropic Translation
 
@@ -146,7 +149,7 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
 | 1. Inbound Responses WebSocket | 4/4 | Complete    | 2026-09-05 |
 | 2. Native Responses Routing | 5/5 | Complete    | 2026-09-05 |
 | 3. Quota-Aware Resilience | 3/3 | Complete    | 2026-09-05 |
-| 4. Native Compaction | 0/TBD | Not started | - |
+| 4. Native Compaction | 2/2 | Complete    | 2026-09-05 |
 | 5. Anthropic Translation | 0/TBD | Not started | - |
 | 6. Capability-Aware Fallback | 0/TBD | Not started | - |
 | 7. Collaboration Preservation | 0/TBD | Not started | - |
