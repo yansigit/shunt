@@ -128,7 +128,9 @@ pub(super) async fn json_events_response(
         };
         match item {
             Some(Ok(event)) => {
-                let _ = machine.apply_checked(event).map_err(protocol_adapter_error)?;
+                let _ = machine
+                    .apply_checked(event)
+                    .map_err(protocol_adapter_error)?;
                 // A backend error event is terminal: the machine records the
                 // mapped envelope and ignores everything after. Return the moment
                 // it lands instead of looping on `recv()` for a channel close the
@@ -153,7 +155,9 @@ pub(super) async fn json_events_response(
             None => break,
         }
     }
-    let message = machine.final_json_checked().map_err(protocol_adapter_error)?;
+    let message = machine
+        .final_json_checked()
+        .map_err(protocol_adapter_error)?;
     Ok((StatusCode::OK, axum::Json(message)).into_response())
 }
 
