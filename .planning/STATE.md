@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 6
-current_phase_name: Capability-Aware Fallback
+current_phase: 7
+current_phase_name: Collaboration Preservation
 status: ready_to_plan
-stopped_at: Phase 05 complete, ready to plan Phase 6
-last_updated: "2026-09-06T06:48:11.263Z"
+stopped_at: Phase 06 complete, ready to plan Phase 7
+last_updated: "2026-09-06T07:08:40.488Z"
 last_activity: 2026-09-06
-last_activity_desc: Phase 05 complete, transitioned to Phase 6
-state_head: a90230c3b15a6703be0d9febfabef54d7f7c2c9c
+last_activity_desc: Phase 06 complete, transitioned to Phase 7
+state_head: 870393916a8225b73f67276dd0b28901980b3142
 progress:
   total_phases: 8
-  completed_phases: 5
-  total_plans: 17
-  completed_plans: 17
-  percent: 63
+  completed_phases: 6
+  total_plans: 19
+  completed_plans: 19
+  percent: 75
 ---
 
 # Project State
@@ -23,22 +23,22 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-09-05 after Phase 4)
 
 **Core value:** Protocol-faithful, streaming-safe client behavior in a bounded, lean gateway.
-**Current focus:** Phase 6 — Capability-Aware Fallback
+**Current focus:** Phase 7 — Collaboration Preservation
 
 ## Current Position
 
-Phase: 6 — Capability-Aware Fallback
+Phase: 7 — Collaboration Preservation
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-09-06 — Phase 05 complete, transitioned to Phase 6
+Last activity: 2026-09-06 — Phase 06 complete, transitioned to Phase 7
 
-Progress: [██████░░░░] 63%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 17
+- Total plans completed: 19
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -51,6 +51,7 @@ Progress: [██████░░░░] 63%
 | 03 | 3 | - | - |
 | 04 | 2 | - | - |
 | 05 | 3 | - | - |
+| 06 | 2 | - | - |
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
@@ -82,6 +83,9 @@ Progress: [██████░░░░] 63%
 - [Phase 05]: Only unique exact Anthropic mappings enter translation; native Responses routes remain byte-faithful and fallback inference stays pinned.
 - [Phase 05]: Stateful or lossy Responses features fail before dispatch; HTTP and WebSocket share one bounded Anthropic response state machine.
 - [Phase 05]: Anthropic transport remains authoritative for credentials, account selection, retries, admission, timeouts, and safe headers.
+- [Phase 06]: Capability filtering never removes the primary and runs before fallback credentials or network access.
+- [Phase 06]: Eligibility uses one internal provider matrix; no public configuration or provider semantics were added.
+- [Phase 06]: The `[1m]` context marker removes every fallback because no later target can guarantee the requested context window.
 
 ### Pending Todos
 
@@ -101,5 +105,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-09-06T03:30:00Z
-Stopped at: Phase 05 complete, ready to plan Phase 6
+Stopped at: Phase 06 complete, ready to plan Phase 7
 Resume file: None

@@ -14,7 +14,7 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
 - [x] **Phase 3: Quota-Aware Resilience** - Distinguish transient throttling from exhausted quota and honor standards-compliant retry timing. (completed 2026-09-05)
 - [x] **Phase 4: Native Compaction** - Forward Responses compaction opaquely without local history persistence. (completed 2026-09-05)
 - [x] **Phase 5: Anthropic Translation** - Add a dedicated Responses-to-Anthropic vertical translation subsystem. (completed 2026-09-06)
-- [ ] **Phase 6: Capability-Aware Fallback** - Exclude incompatible targets before heterogeneous dispatch.
+- [x] **Phase 6: Capability-Aware Fallback** - Exclude incompatible targets before heterogeneous dispatch. (completed 2026-09-06)
 - [ ] **Phase 7: Collaboration Preservation** - Preserve opt-in routed collaboration and continuation semantics.
 - [ ] **Phase 8: Bounded Shutdown** - Drain streaming transports to a deadline, then cancel safely.
 
@@ -151,6 +151,6 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
 | 3. Quota-Aware Resilience | 3/3 | Complete    | 2026-09-05 |
 | 4. Native Compaction | 2/2 | Complete    | 2026-09-05 |
 | 5. Anthropic Translation | 3/3 | Complete    | 2026-09-06 |
-| 6. Capability-Aware Fallback | 0/TBD | Not started | - |
+| 6. Capability-Aware Fallback | 2/2 | Complete    | 2026-09-06 |
 | 7. Collaboration Preservation | 0/TBD | Not started | - |
 | 8. Bounded Shutdown | 0/TBD | Not started | - |
