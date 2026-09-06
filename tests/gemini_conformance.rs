@@ -212,6 +212,32 @@ async fn held_gemini_stream(State(dropped): State<Arc<Notify>>) -> Body {
     }))
 }
 
+async fn chunked_gemini_unary(State(body): State<Arc<Vec<u8>>>) -> Body {
+    let body = bytes::Bytes::copy_from_slice(body.as_slice());
+    Body::from_stream(stream::once(async move { Ok::<_, Infallible>(body) }))
+}
+
+async fn chunked_unary_gateway_response(body: Vec<u8>) -> reqwest::Response {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let app = Router::new()
+        .route(
+            "/v1beta/models/gemini-2.5-pro:generateContent",
+            post(chunked_gemini_unary),
+        )
+        .with_state(Arc::new(body));
+    let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let gateway = start_gateway(format!("http://{addr}")).await;
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .body(request(false))
+        .send()
+        .await
+        .unwrap();
+    task.abort();
+    response
+}
+
 #[tokio::test]
 async fn gemini_streaming_framing_delivers_early_and_drops_pending_upstream() {
     if !can_bind_loopback() {
@@ -338,4 +364,30 @@ async fn gemini_unary_bounds_direct_and_wrapped_have_semantic_parity() {
     assert_eq!(direct_body["content"], wrapped_body["content"]);
     assert_eq!(direct_body["stop_reason"], wrapped_body["stop_reason"]);
     assert_eq!(direct_body["usage"], wrapped_body["usage"]);
+}
+
+#[tokio::test]
+async fn gemini_unary_bounds_rejects_plus_one_without_content_length() {
+    if !can_bind_loopback() {
+        return;
+    }
+    const LIMIT: usize = 32 * 1024 * 1024;
+    let response = chunked_unary_gateway_response(padded_gemini_response(LIMIT + 1)).await;
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["type"], "error");
+}
+
+#[tokio::test]
+async fn gemini_unary_bounds_rejects_malformed_json_without_sensitive_context() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let response = unary_gateway_response(b"not-json".to_vec()).await;
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["type"], "error");
+    let body = body.to_string();
+    assert!(!body.contains("fixture-key"));
+    assert!(!body.contains("project"));
 }

@@ -30,6 +30,8 @@ use crate::{
 
 use self::sse::{Decoder as GeminiSseDecoder, Item as GeminiSseItem};
 
+const MAX_GEMINI_UNARY_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
+
 pub struct GeminiAdapter;
 
 impl Adapter for GeminiAdapter {
@@ -117,6 +119,73 @@ fn append_protocol_error(message: impl Into<String>, output: &mut Vec<u8>) {
         }],
         output,
     );
+}
+
+fn local_gemini_error(message: impl Into<String>) -> AdapterError {
+    let message = message.into();
+    let body = serde_json::json!({
+        "type": "error",
+        "error": {"type": "api_error", "message": message}
+    });
+    AdapterError {
+        message,
+        response: Box::new((StatusCode::BAD_GATEWAY, axum::Json(body)).into_response()),
+        failure: None,
+    }
+}
+
+fn embedded_gemini_error(data: Value) -> AdapterError {
+    let error_type = data
+        .pointer("/error/type")
+        .and_then(Value::as_str)
+        .unwrap_or("api_error");
+    let status = if error_type == "rate_limit_error" {
+        StatusCode::TOO_MANY_REQUESTS
+    } else {
+        StatusCode::BAD_GATEWAY
+    };
+    let message = data
+        .pointer("/error/message")
+        .and_then(Value::as_str)
+        .unwrap_or("Gemini backend error")
+        .to_string();
+    AdapterError {
+        message,
+        response: Box::new((status, axum::Json(data)).into_response()),
+        failure: None,
+    }
+}
+
+async fn collect_unary_response(
+    response: reqwest::Response,
+    max_bytes: usize,
+) -> Result<Vec<u8>, AdapterError> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > max_bytes as u64)
+    {
+        return Err(local_gemini_error(format!(
+            "Gemini response exceeded {max_bytes} bytes"
+        )));
+    }
+    let mut stream = response.bytes_stream();
+    let mut body = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|error| {
+            local_gemini_error(format!("failed to read Gemini response body: {error}"))
+        })?;
+        let new_len = body
+            .len()
+            .checked_add(chunk.len())
+            .ok_or_else(|| local_gemini_error("Gemini response size overflow"))?;
+        if new_len > max_bytes {
+            return Err(local_gemini_error(format!(
+                "Gemini response exceeded {max_bytes} bytes"
+            )));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
 }
 
 async fn forward(
@@ -411,20 +480,23 @@ async fn forward(
 
         Ok((StatusCode::OK, response_res))
     } else {
-        let full_text = response.text().await.map_err(|error| AdapterError {
-            message: format!("failed to read response body: {error}"),
-            response: Box::new(StatusCode::BAD_GATEWAY.into_response()),
-            failure: None,
-        })?;
-
-        let parsed = serde_json::from_str::<Value>(&full_text).map_err(|error| AdapterError {
-            message: format!("invalid JSON from Gemini backend: {error}"),
-            response: Box::new(StatusCode::BAD_GATEWAY.into_response()),
-            failure: None,
+        let full_body = collect_unary_response(response, MAX_GEMINI_UNARY_RESPONSE_BYTES).await?;
+        let parsed = serde_json::from_slice::<Value>(&full_body).map_err(|error| {
+            local_gemini_error(format!("invalid JSON from Gemini backend: {error}"))
         })?;
         let mut machine = GeminiSseMachine::new(&route.model);
-        let _ = machine.process_chunk(&parsed);
-        let final_json = machine.final_json();
+        let events = machine
+            .process_chunk_checked(&parsed)
+            .map_err(|error| local_gemini_error(error.to_string()))?;
+        if let Some(error) = events.into_iter().find(|event| event.event == "error") {
+            return Err(embedded_gemini_error(error.data));
+        }
+        machine
+            .transport_close_checked()
+            .map_err(|error| local_gemini_error(error.to_string()))?;
+        let final_json = machine
+            .final_json_checked()
+            .map_err(|error| local_gemini_error(error.to_string()))?;
 
         let mut headers = HeaderMap::new();
         headers.insert("content-type", HeaderValue::from_static("application/json"));
