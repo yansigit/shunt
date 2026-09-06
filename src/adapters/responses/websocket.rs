@@ -146,9 +146,16 @@ async fn open_ws_turn(
 ) -> Result<(BufferedEvent, CodexWsEvents), AdapterError> {
     let (events, used_continuation) = start_ws_turn(ctx, true).await?;
     let (first, events) = peek_first_event(events).await;
+    let mut recovery_commitment = Commitment::default();
+    if let Some(Ok(event)) = &first {
+        observe_event_commitment(&mut recovery_commitment, event);
+    }
     // A rejected previous_response_id arrives before any output: retry once with
     // the full input on a fresh connection, then evaluate that stream instead.
-    if used_continuation && matches!(&first, Some(Err(error)) if error.previous_response_missing) {
+    if used_continuation
+        && recovery_commitment.may_redispatch()
+        && matches!(&first, Some(Err(error)) if error.previous_response_missing)
+    {
         tracing::info!("codex previous_response_id rejected; retrying with full input");
         let (events, _) = start_ws_turn(ctx, false).await?;
         let (first, events) = peek_first_event(events).await;
@@ -179,13 +186,7 @@ fn commit_or_fallback(
     let mut commitment = Commitment::default();
     match first {
         Some(Ok(event)) => {
-            if is_replay_unsafe_tool_event(&event) {
-                commitment.mark_replay_unsafe_tool();
-            } else {
-                // Preservation phase: any successful provider event remains a
-                // conservative commitment, including metadata-only events.
-                commitment.mark_client_visible();
-            }
+            observe_event_commitment(&mut commitment, &event);
             debug_assert!(!commitment.may_redispatch());
             Ok((Some(Ok(event)), events))
         }
@@ -194,6 +195,16 @@ fn commit_or_fallback(
             "codex websocket closed before any event".to_string(),
         )),
         Some(Err(_)) | None => unreachable!("uncommitted websocket fallback gate reopened"),
+    }
+}
+
+fn observe_event_commitment(commitment: &mut Commitment, event: &ResponseEvent) {
+    if is_replay_unsafe_tool_event(event) {
+        commitment.mark_replay_unsafe_tool();
+    } else {
+        // Preservation phase: any successful provider event remains a
+        // conservative commitment, including metadata-only events.
+        commitment.mark_client_visible();
     }
 }
 
