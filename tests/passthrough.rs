@@ -681,6 +681,318 @@ async fn upstream_error_status_and_body_are_returned_unmodified() {
     upstream.verify().await;
 }
 
+mod vercel_anthropic {
+    use std::ffi::OsString;
+
+    use shunt::config::{ApiKeyHeader, AuthMode, RetryConfig};
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        sync::oneshot,
+    };
+
+    use super::*;
+
+    const CLIENT_MODEL: &str = "anthropic/claude-sonnet-4";
+
+    struct EnvRestore {
+        name: String,
+        previous: Option<OsString>,
+    }
+
+    impl EnvRestore {
+        fn set(name: String, value: &str) -> Self {
+            let previous = std::env::var_os(&name);
+            std::env::set_var(&name, value);
+            Self { name, previous }
+        }
+
+        fn remove(name: String) -> Self {
+            let previous = std::env::var_os(&name);
+            std::env::remove_var(&name);
+            Self { name, previous }
+        }
+    }
+
+    impl Drop for EnvRestore {
+        fn drop(&mut self) {
+            if let Some(value) = self.previous.take() {
+                std::env::set_var(&self.name, value);
+            } else {
+                std::env::remove_var(&self.name);
+            }
+        }
+    }
+
+    fn config(base_url: String, env_name: &str, header: ApiKeyHeader) -> Config {
+        let mut config = Config::default();
+        let mut provider = config.providers.get("anthropic").unwrap().clone();
+        provider.base_url = base_url;
+        provider.auth = AuthMode::ApiKey;
+        provider.api_key_env = Some(env_name.to_string());
+        provider.api_key_header = header;
+        provider.retry = RetryConfig {
+            max_retries: 0,
+            ..RetryConfig::default()
+        };
+        config.providers.clear();
+        config.providers.insert("vercel".to_string(), provider);
+        config.server.default_provider = "vercel".to_string();
+        config.routes = vec![RouteConfig {
+            model: CLIENT_MODEL.to_string(),
+            provider: "vercel".to_string(),
+            upstream_model: None,
+            effort: None,
+            service_tier: None,
+        }];
+        config
+    }
+
+    fn request_body(stream: bool) -> String {
+        json!({
+            "model": CLIENT_MODEL,
+            "max_tokens": 16,
+            "stream": stream,
+            "messages": [{"role": "user", "content": "hello"}]
+        })
+        .to_string()
+    }
+
+    #[tokio::test]
+    async fn vercel_anthropic_manual_route_preserves_model_body_and_bearer_auth() {
+        if !can_bind_loopback() {
+            return;
+        }
+        let env_name = format!("SHUNT_TEST_VERCEL_BEARER_{}", std::process::id());
+        let selected = ["selected", "-gateway-marker"].concat();
+        let inbound_bearer = ["inbound", "-bearer-marker"].concat();
+        let inbound_key = ["inbound", "-key-marker"].concat();
+        let _env = EnvRestore::set(env_name.clone(), &selected);
+        let upstream = MockServer::start().await;
+        let body = request_body(false);
+        let expected_authorization = format!("Bearer {selected}");
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .and(ExactBody(body.as_bytes().to_vec()))
+            .and(header("authorization", expected_authorization.as_str()))
+            .and(HeaderAbsent("x-api-key"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"ok":true}"#))
+            .expect(1)
+            .mount(&upstream)
+            .await;
+        let gateway =
+            start_gateway_with(config(upstream.uri(), &env_name, ApiKeyHeader::Bearer)).await;
+
+        let response = reqwest::Client::new()
+            .post(format!("{}/v1/messages", gateway.base_url))
+            .header("authorization", format!("Bearer {inbound_bearer}"))
+            .header("x-api-key", inbound_key)
+            .body(body)
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["x-gateway-upstream"], "vercel");
+        assert_eq!(response.headers()["x-gateway-upstream-model"], CLIENT_MODEL);
+        upstream.verify().await;
+    }
+
+    #[tokio::test]
+    async fn vercel_anthropic_manual_route_injects_only_selected_x_api_key() {
+        if !can_bind_loopback() {
+            return;
+        }
+        let env_name = format!("SHUNT_TEST_VERCEL_X_KEY_{}", std::process::id());
+        let selected = ["selected", "-x-key-marker"].concat();
+        let _env = EnvRestore::set(env_name.clone(), &selected);
+        let upstream = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .and(header("x-api-key", selected.as_str()))
+            .and(HeaderAbsent("authorization"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"ok":true}"#))
+            .expect(1)
+            .mount(&upstream)
+            .await;
+        let gateway =
+            start_gateway_with(config(upstream.uri(), &env_name, ApiKeyHeader::XApiKey)).await;
+
+        let response = reqwest::Client::new()
+            .post(format!("{}/v1/messages", gateway.base_url))
+            .header("authorization", "Bearer inbound-marker")
+            .header("x-api-key", "inbound-key-marker")
+            .body(request_body(false))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["x-gateway-upstream"], "vercel");
+        upstream.verify().await;
+    }
+
+    #[tokio::test]
+    async fn vercel_anthropic_sse_arrives_before_the_upstream_terminal() {
+        if !can_bind_loopback() {
+            return;
+        }
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (release_tx, release_rx) = oneshot::channel::<()>();
+        let upstream_task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0_u8; 4096];
+            let _ = socket.read(&mut request).await;
+            socket
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n",
+                )
+                .await
+                .unwrap();
+            let first = b"event: message_start\ndata: {\"type\":\"message_start\"}\n\n";
+            socket
+                .write_all(format!("{:x}\r\n", first.len()).as_bytes())
+                .await
+                .unwrap();
+            socket.write_all(first).await.unwrap();
+            socket.write_all(b"\r\n").await.unwrap();
+            socket.flush().await.unwrap();
+            release_rx.await.unwrap();
+            let terminal = b"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
+            socket
+                .write_all(format!("{:x}\r\n", terminal.len()).as_bytes())
+                .await
+                .unwrap();
+            socket.write_all(terminal).await.unwrap();
+            socket.write_all(b"\r\n0\r\n\r\n").await.unwrap();
+        });
+        let env_name = format!("SHUNT_TEST_VERCEL_STREAM_{}", std::process::id());
+        let _env = EnvRestore::set(env_name.clone(), "stream-marker");
+        let gateway = start_gateway_with(config(
+            format!("http://{addr}"),
+            &env_name,
+            ApiKeyHeader::XApiKey,
+        ))
+        .await;
+
+        let mut response = reqwest::Client::new()
+            .post(format!("{}/v1/messages", gateway.base_url))
+            .body(request_body(true))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "text/event-stream"
+        );
+        let first = tokio::time::timeout(Duration::from_secs(1), response.chunk())
+            .await
+            .expect("the first SSE chunk must arrive before terminal release")
+            .unwrap()
+            .unwrap();
+        assert!(String::from_utf8_lossy(&first).contains("message_start"));
+        assert!(!upstream_task.is_finished());
+
+        release_tx.send(()).unwrap();
+        let rest = tokio::time::timeout(Duration::from_secs(1), response.text())
+            .await
+            .expect("terminal SSE chunk must arrive")
+            .unwrap();
+        assert!(rest.contains("message_stop"));
+        upstream_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn vercel_anthropic_provider_errors_are_relayed_without_retry() {
+        if !can_bind_loopback() {
+            return;
+        }
+        let env_name = format!("SHUNT_TEST_VERCEL_ERRORS_{}", std::process::id());
+        let _env = EnvRestore::set(env_name.clone(), "error-marker");
+        for status in [400_u16, 401, 429, 503] {
+            let upstream = MockServer::start().await;
+            let body = format!(r#"{{"provider_status":{status}}}"#);
+            Mock::given(method("POST"))
+                .and(path("/v1/messages"))
+                .respond_with(
+                    ResponseTemplate::new(status)
+                        .insert_header("retry-after", "7")
+                        .set_body_string(body.clone()),
+                )
+                .expect(1)
+                .mount(&upstream)
+                .await;
+            let gateway =
+                start_gateway_with(config(upstream.uri(), &env_name, ApiKeyHeader::XApiKey)).await;
+
+            let response = reqwest::Client::new()
+                .post(format!("{}/v1/messages", gateway.base_url))
+                .body(request_body(false))
+                .send()
+                .await
+                .unwrap();
+
+            assert_eq!(response.status().as_u16(), status);
+            assert_eq!(
+                response
+                    .headers()
+                    .get("retry-after")
+                    .and_then(|value| value.to_str().ok()),
+                Some("7")
+            );
+            assert_eq!(response.text().await.unwrap(), body);
+            upstream.verify().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn vercel_anthropic_missing_key_is_redacted_and_never_dispatched() {
+        if !can_bind_loopback() {
+            return;
+        }
+        let env_name = "AI_GATEWAY_API_KEY".to_string();
+        let _env = EnvRestore::remove(env_name.clone());
+        let upstream = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(0)
+            .mount(&upstream)
+            .await;
+        let gateway =
+            start_gateway_with(config(upstream.uri(), &env_name, ApiKeyHeader::XApiKey)).await;
+
+        let response = reqwest::Client::new()
+            .post(format!("{}/v1/messages", gateway.base_url))
+            .header("authorization", "Bearer inbound-secret-fragment")
+            .header("x-api-key", "inbound-key-fragment")
+            .body(request_body(false))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = response.text().await.unwrap();
+        let parsed: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(parsed["type"], "error");
+        assert_eq!(parsed["error"]["type"], "authentication_error");
+        assert_eq!(
+            parsed,
+            json!({
+                "type": "error",
+                "error": {
+                    "type": "authentication_error",
+                    "message": "AI_GATEWAY_API_KEY is not set"
+                }
+            })
+        );
+        assert!(!body.contains("inbound-secret-fragment"));
+        assert!(!body.contains("inbound-key-fragment"));
+        upstream.verify().await;
+    }
+}
+
 #[tokio::test]
 async fn count_tokens_is_passed_through() {
     if !can_bind_loopback() {
