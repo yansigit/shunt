@@ -45,9 +45,10 @@ pub struct Route {
     pub service_tier: Option<String>,
 }
 
-/// The deliberately narrow policy used by the inbound native Responses
-/// endpoint.  Unlike the general resolver below this never considers prefix
-/// routes or ordered fallback chains.
+/// The deliberately narrow policy used by the inbound Responses endpoint.
+/// Unlike the general resolver below this never considers prefix routes or
+/// ordered fallback chains. Exact Anthropic routes are returned for the
+/// dedicated translated vertical slice; all other non-Responses adapters fail.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NativeInboundDecision {
     Pinned(Route),
@@ -191,12 +192,15 @@ pub fn resolve_native_inbound(config: &Config, model: Option<&str>) -> NativeInb
         effort.map(ToOwned::to_owned),
         service_tier.map(ToOwned::to_owned),
     );
-    if route.adapter != AdapterKind::Responses {
+    if !matches!(
+        route.adapter,
+        AdapterKind::Responses | AdapterKind::Anthropic
+    ) {
         return NativeInboundDecision::Rejected(format!(
-            "native Responses model `{original_model}` selects a non-Responses provider `{provider}`"
+            "inbound Responses model `{original_model}` selects unsupported provider `{provider}`"
         ));
     }
-    if route.upstream_model != lookup_model {
+    if route.adapter == AdapterKind::Responses && route.upstream_model != lookup_model {
         return NativeInboundDecision::Rejected(format!(
             "native Responses model `{original_model}` requires model translation to `{}`",
             route.upstream_model
@@ -803,7 +807,7 @@ mod tests {
     }
 
     #[test]
-    fn native_resolver_rejects_ambiguous_and_non_responses_routes() {
+    fn inbound_resolver_rejects_ambiguous_and_selects_exact_anthropic_routes() {
         let mut config = Config::default();
         config.server.codex_endpoint = Some(crate::config::CodexEndpointConfig {
             provider: "codex".into(),
@@ -821,10 +825,13 @@ mod tests {
             NativeInboundDecision::Rejected(_)
         ));
         config.models = vec![mapped_model("anthropic", "anthropic", "anthropic")];
-        assert!(matches!(
-            resolve_native_inbound(&config, Some("anthropic")),
-            NativeInboundDecision::Rejected(_)
-        ));
+        let NativeInboundDecision::Selected(route) =
+            resolve_native_inbound(&config, Some("anthropic"))
+        else {
+            panic!("expected exact Anthropic route to select translation");
+        };
+        assert_eq!(route.adapter, AdapterKind::Anthropic);
+        assert_eq!(route.provider, "anthropic");
     }
 
     #[test]

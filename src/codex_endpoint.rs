@@ -20,7 +20,7 @@ use serde::Deserialize;
 use tracing::Instrument;
 
 use crate::{
-    adapters::{responses, AdapterError},
+    adapters::{anthropic::AnthropicAdapter, responses, Adapter, AdapterError},
     compression::BodyEncoding,
     error::ShuntError,
     server::AppState,
@@ -438,8 +438,38 @@ pub(crate) async fn forward_turn(
     let provider = route.provider.clone();
     let model = route.model.clone();
 
-    let result =
-        responses::forward_codex_inbound(state, route, operation, pool_key, headers, body).await;
+    let result = match route.adapter {
+        crate::routing::AdapterKind::Responses => {
+            responses::forward_codex_inbound(state, route, operation, pool_key, headers, body).await
+        }
+        crate::routing::AdapterKind::Anthropic
+            if operation == responses::inbound::InboundOperation::Responses =>
+        {
+            let translated = crate::model::inbound_responses::request::translate(
+                body.to_vec(),
+                &route.upstream_model,
+            )
+            .map_err(|message| AdapterError {
+                message: message.clone(),
+                response: Box::new(
+                    ShuntError::new(StatusCode::BAD_REQUEST, "invalid_request_error", message)
+                        .into_response(),
+                ),
+                failure: None,
+            })?;
+            let _stream = translated.stream;
+            AnthropicAdapter
+                .forward(
+                    state,
+                    route,
+                    &axum::http::Uri::from_static("/v1/messages"),
+                    &headers,
+                    translated.body,
+                )
+                .await
+        }
+        _ => unreachable!("inbound resolver returned an unsupported adapter"),
+    };
     let status_code = match &result {
         Ok((status, _)) => *status,
         Err(error) => error.response.status(),
