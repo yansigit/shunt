@@ -1,37 +1,35 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 08
-status: completed
+status: Awaiting next milestone
 stopped_at: Phase 08 complete — all phases complete
-last_updated: "2026-09-06T08:15:03.439Z"
+last_updated: "2026-09-06T17:03:00.781Z"
 last_activity: 2026-09-06
-last_activity_desc: Phase 08 complete
-state_head: 5055e6ed78d153c0377a98d3fdafe91cfb57e868
+last_activity_desc: Milestone v1 completed and archived
+state_head: 6be4fa9dae3f8d50541de2c3850f88fa516f9e94
 progress:
   total_phases: 8
   completed_phases: 8
   total_plans: 25
   completed_plans: 25
   percent: 100
+current_phase: 08
 ---
 
 # Project State
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-09-05 after Phase 4)
+See: `.planning/PROJECT.md` (updated 2026-09-06 after v1 milestone completion)
 
 **Core value:** Protocol-faithful, streaming-safe client behavior in a bounded, lean gateway.
-**Current focus:** OpenCodex port milestone complete — ready for milestone audit
+**Current focus:** Planning the next evidence-driven milestone
 
 ## Current Position
 
-Phase: 08
-Plan: Complete (3/3)
-Status: All phases complete
-Last activity: 2026-09-06 — Phase 08 complete
-
-Progress: [██████████] 100%
+Phase: Milestone v1 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-09-06 — Milestone v1 completed and archived
 
 ## Performance Metrics
 
@@ -112,5 +110,9 @@ None.
 ## Session Continuity
 
 Last session: 2026-09-06T03:30:00Z
-Stopped at: Phase 08 complete — all phases complete
+Stopped at: Milestone v1 completed and archived
 Resume file: None
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone

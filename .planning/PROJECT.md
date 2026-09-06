@@ -8,6 +8,23 @@ milestone ports the useful, proven protocol behavior and conformance coverage
 from OpenCodex into Shunt without importing OpenCodex's broader platform
 complexity.
 
+## Current State
+
+v1 OpenCodex Port shipped on 2026-09-06. Shunt now supports bounded inbound
+Responses WebSockets, exact native routing and compaction, strict Anthropic
+translation, capability-aware fallback, opt-in collaboration preservation, and
+finite process shutdown. All 20 v1 requirements and the repository-wide quality
+gate passed.
+
+## Next Milestone Goals
+
+- Gather production evidence for the deferred `REPAIR-01` and `RECOVERY-01`
+  requirements before designing either subsystem.
+- Preserve the v1 boundaries: native opacity, no post-output replay, bounded
+  resources, and no credential writeback changes without explicit approval.
+- Start a new milestone only when a concrete failing transcript or operational
+  need establishes scope.
+
 ## Core Value
 
 Codex and Anthropic clients must receive protocol-faithful, streaming-safe
@@ -108,4 +125,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Revisit deferred work only with evidence from usage or failing transcripts.
 
 ---
-*Last updated: 2026-09-06 after v1 milestone validation*
+*Last updated: 2026-09-06 after v1 milestone completion*
