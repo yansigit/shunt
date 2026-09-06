@@ -83,7 +83,7 @@ None. Live provider credentials are intentionally unnecessary for Phase 9.
 - [x] All 11 tasks map to an automated check.
 - [x] All 12 assigned requirements map to behavioral evidence.
 - [x] PRES-01 names and executes every required native Codex transport/property suite, including `tests/inbound_codex_websocket.rs`.
-- [x] SAFE-04 covers same-provider retry, route failover, WebSocket fallback, and continuation recovery through one commitment predicate.
+- [x] SAFE-04 uses one commitment predicate at the reachable WebSocket fallback and continuation-recovery seams; same-provider retry and route failover are structurally pre-response.
 - [x] Sampling continuity has no three-task gap.
 - [x] Final format, Clippy, and full-suite gates are executable in the final wave.
 - [x] `nyquist_compliant: true` and `wave_0_complete: true` reflect the complete planned verification graph.

@@ -9,7 +9,7 @@ requires:
     provides: bounded response-lifetime cancellation and RAII ownership
 provides:
   - crate-private monotonic redispatch commitment vocabulary
-  - shared replay-safe predicate at WebSocket, same-provider retry, and route-failover seams
+  - shared replay-safe predicate at WebSocket fallback and continuation-recovery seams
   - real-gateway no-redispatch evidence for output, truncation, provider error, and tool activity
 affects: [gemini-hardening, antigravity-hardening, cursor-hardening, openai-chat, command-code]
 
@@ -34,11 +34,11 @@ key-files:
     - tests/codex_websocket_fallback.rs
 
 key-decisions:
-  - "Keep Commitment crate-private and additive to existing transport, status, operation-safety, and retry-budget evidence."
+  - "Keep Commitment crate-private for semantic WebSocket redispatch; generic retry and route failover remain structurally pre-response."
   - "Preserve the conservative Codex rule that every successfully received first WebSocket event commits, while classifying structural tool events as replay-unsafe."
 
 patterns-established:
-  - "Redispatch requires Commitment::may_redispatch() in addition to each seam's existing eligibility facts."
+  - "Semantic WebSocket redispatch requires Commitment::may_redispatch(); generic retry/failover use stronger pre-response facts."
   - "Client-visible output and replay-unsafe tool activity monotonically close redispatch and cannot reopen it."
 
 requirements-completed: [PRES-03, SAFE-04]
@@ -64,14 +64,11 @@ coverage:
         status: pass
     human_judgment: false
   - id: D3
-    description: "Same-provider retry and route failover share the commitment predicate without widening existing pre-response eligibility."
+    description: "Same-provider retry and route failover cannot observe semantic commitment because both decide before body handoff; their structural boundaries remain covered."
     requirement: SAFE-04
     verification:
-      - kind: unit
-        ref: "src/retry.rs#redispatch_gate_same_provider_commitment_matrix"
-        status: pass
       - kind: integration
-        ref: "cargo test --all-features redispatch_gate"
+        ref: "tests/retry.rs#same_provider_retry_stops_before_body_handoff"
         status: pass
       - kind: integration
         ref: "cargo test --all-features --test failover --test retry"
@@ -85,7 +82,7 @@ status: complete
 
 # Phase 9 Plan 1: Shared Redispatch Commitment Summary
 
-**One monotonic replay-safety state now gates Codex WebSocket fallback, same-provider retry, and HTTP route advancement without broadening any existing retry behavior.**
+**One monotonic replay-safety state gates the real Codex WebSocket fallback and continuation-recovery seams; generic retry and route failover remain structurally pre-response.**
 
 ## Performance
 
@@ -112,8 +109,8 @@ Each task was committed atomically:
 
 ## Files Created/Modified
 
-- `src/retry.rs` - Defines monotonic commitment evidence and applies it to same-provider retry reissues.
-- `src/proxy/failover.rs` - Requires replay-safe commitment in addition to existing route-advance evidence.
+- `src/retry.rs` - Defines monotonic commitment evidence and keeps same-provider retry explicitly pre-body.
+- `src/proxy/failover.rs` - Documents route advancement as a pre-response-only decision.
 - `src/adapters/responses/websocket.rs` - Classifies the first successful event and gates HTTP fallback through commitment.
 - `tests/codex_websocket_fallback.rs` - Proves tool-before-text commitment causes zero HTTP fallback requests.
 - `tests/failover.rs` - Characterizes accepted error, body truncation, and tool activity as no-advance outcomes.
@@ -121,13 +118,13 @@ Each task was committed atomically:
 
 ## Decisions Made
 
-- Kept `RetrySafety` and `AdapterFailure` as independent operation/transport evidence; commitment is an additional safety gate, not a replacement.
+- Kept `RetrySafety` and `AdapterFailure` as the complete pre-response evidence for generic retry/failover; semantic commitment governs only reachable WebSocket redispatch.
 - Kept metadata-only first WebSocket events conservative in this preservation phase: any successfully received event commits exactly as before.
 - No public provider/configuration semantics changed, so README, engineering docs, site locales, root translations, and generated `wiki/` require no update for this plan.
 
 ## Deviations from Plan
 
-None - plan executed exactly as written.
+- Review correction: removed vacuous default commitment checks from generic retry and route failover. Those loops cannot receive client-visible/tool evidence; the shared predicate remains production-reachable at WebSocket-to-HTTP fallback and continuation recovery.
 
 ## Issues Encountered
 

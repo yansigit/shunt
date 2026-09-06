@@ -198,24 +198,6 @@ pub async fn send_with_retry_with_safety<E, F, Fut>(
     policy: RetryPolicy,
     provider: &str,
     safety: RetrySafety,
-    attempt: F,
-) -> Result<reqwest::Response, E>
-where
-    E: RetryableError + std::fmt::Display,
-    F: FnMut() -> Fut,
-    Fut: std::future::Future<Output = Result<reqwest::Response, E>>,
-{
-    send_with_retry_with_commitment(policy, provider, safety, Commitment::default(), attempt).await
-}
-
-/// Internal form used by transports that already carry commitment evidence.
-/// An initial attempt is always driven; only a reissue is gated, preserving the
-/// existing request lifecycle while making post-commit redispatch impossible.
-async fn send_with_retry_with_commitment<E, F, Fut>(
-    policy: RetryPolicy,
-    provider: &str,
-    safety: RetrySafety,
-    commitment: Commitment,
     mut attempt: F,
 ) -> Result<reqwest::Response, E>
 where
@@ -226,7 +208,11 @@ where
     let mut retries: u32 = 0;
     loop {
         let outcome = attempt().await;
-        let retries_left = commitment.may_redispatch() && retries < policy.max_retries;
+        // This loop ends when `.send()` returns response headers. No response
+        // body or provider event has been exposed yet, so semantic commitment
+        // cannot occur inside it; operation safety and retry budget are the
+        // complete reissue boundary here.
+        let retries_left = retries < policy.max_retries;
 
         match outcome {
             Ok(response)
@@ -665,42 +651,6 @@ mod tests {
 
         assert_eq!(result.unwrap().status().as_u16(), 200);
         assert_eq!(calls, 2, "a pre-response transport error still retries");
-    }
-
-    #[tokio::test]
-    async fn redispatch_gate_same_provider_commitment_matrix() {
-        for (commitment, expected_calls) in [
-            (Commitment::ReplaySafe, 2),
-            (Commitment::ClientVisible, 1),
-            (Commitment::ReplayUnsafeTool, 1),
-        ] {
-            let mut calls = 0u32;
-            let result: Result<reqwest::Response, StubError> = send_with_retry_with_commitment(
-                fast_policy(),
-                "test",
-                RetrySafety::Idempotent,
-                commitment,
-                || {
-                    calls += 1;
-                    let attempt = calls;
-                    async move {
-                        if attempt == 1 {
-                            Err(StubError { transient: true })
-                        } else {
-                            Ok(response(200))
-                        }
-                    }
-                },
-            )
-            .await;
-
-            if commitment.may_redispatch() {
-                assert_eq!(result.unwrap().status(), StatusCode::OK);
-            } else {
-                assert!(result.is_err());
-            }
-            assert_eq!(calls, expected_calls, "commitment: {commitment:?}");
-        }
     }
 
     #[tokio::test]

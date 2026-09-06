@@ -94,7 +94,7 @@ fn commit_or_fallback(
 
 The helper should be monotonic (`ReplaySafe` may advance to client-visible or replay-unsafe-tool commitment, never back) and expose one predicate such as `may_redispatch()`. Map existing facts into it without enabling retries that do not already occur. A tool activity transition must close redispatch even if no text was emitted. Keep this policy in the already planned modules; the final plans supersede the earlier optional `src/commitment.rs` and `src/lib.rs` proposal.
 
-For route failover, retain the current decision shape at `src/proxy/failover.rs:161-223`: advance only on an configured pre-response status or `BeforeHeaders`; return all other failures immediately. Commitment is an additional gate, not a replacement for route/status capability checks.
+For route failover, retain the current decision shape at `src/proxy/failover.rs`: advance only on a configured pre-response status or `BeforeHeaders`; return all other failures immediately. Semantic commitment is structurally unreachable after either fact because body/provider events cannot return to the route loop. Use `Commitment::may_redispatch()` at the real WebSocket fallback and continuation-recovery seams instead.
 
 **Tests to copy:** the table-like three-arm unit test at `src/adapters/responses/websocket.rs:484-530`, plus the real-gateway paired proof at `tests/codex_websocket_fallback.rs:529-624`. Add the replay-unsafe-tool arm beside the existing pre-first-event and post-output arms, asserting the HTTP/upstream hit counter remains zero after commitment.
 

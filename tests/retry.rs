@@ -220,7 +220,7 @@ async fn count_tokens_is_not_retried() {
 }
 
 #[tokio::test]
-async fn redispatch_gate_same_provider_commitment() {
+async fn same_provider_retry_stops_before_body_handoff() {
     if !can_bind_loopback() {
         return;
     }
