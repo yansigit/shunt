@@ -14,7 +14,7 @@ affects: [native-responses-routing, public-docs]
 actuals:
   tokens: 6000
   tasks: 3
-  commits: 3
+  commits: 4
 tech-stack:
   added: []
   patterns: [notify-synchronized cancellation tests, full locale parity]
@@ -74,6 +74,7 @@ status: complete
 
 - Verified upgrades, local warmup, ordered event delivery, safe errors, replacement cancellation, and disconnect cancellation over TCP/WebSocket.
 - Updated M11, all root README translations, and every Nimbus guide/reference locale; `wiki/` remains untouched.
+- Closed the independent verifier's invalid-UTF-8 gap with an immediate protocol error and regression coverage.
 - Passed format, strict Clippy, and all-feature workspace tests (2,022 library tests plus all integration suites).
 
 ## Task Commits
@@ -81,10 +82,11 @@ status: complete
 1. **Live upgrade harness** - `2f303d9` (test)
 2. **Full WebSocket lifecycle suite** - `d41a6b9` (test)
 3. **Engineering and localized documentation** - `90fd232` (docs)
+4. **Invalid UTF-8 protocol-error handling** - `3cf85c2` (fix)
 
 ## Files Created/Modified
 
-- `tests/inbound_codex_websocket.rs` - Six deterministic end-to-end cases.
+- `tests/inbound_codex_websocket.rs` - Seven deterministic end-to-end cases.
 - `docs/m11-inbound-codex-endpoint.md` - Transport and safety contract.
 - `README*.md` - Four synchronized project-overview descriptions.
 - `site/src/content/docs/**/guides/inbound-codex-endpoint.md` - Four localized guides.
@@ -101,7 +103,7 @@ The live upgrade assertion moved from an in-memory router test to a TCP server a
 
 ## Issues Encountered
 
-The initial authorized-upgrade harness modeled an impossible in-memory upgrade. Replacing it with a live connection made the assertion meaningful and stable.
+The initial authorized-upgrade harness modeled an impossible in-memory upgrade. Replacing it with a live connection made the assertion meaningful and stable. Independent verification then found that invalid UTF-8 SSE frames were skipped; the relay now emits an immediate `websocket_protocol_error` instead.
 
 ## User Setup Required
 
