@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 
 use crate::{
     adapters::AdapterError, auth::Credential, config::AuthMode, error::ShuntError,
-    model::responses::ResponseEvent, routing::Route, server::AppState,
+    model::responses::ResponseEvent, retry::Commitment, routing::Route, server::AppState,
 };
 
 use super::codex_continuation;
@@ -176,13 +176,41 @@ fn commit_or_fallback(
     first: BufferedEvent,
     events: CodexWsEvents,
 ) -> Result<(BufferedEvent, CodexWsEvents), AdapterError> {
+    let mut commitment = Commitment::default();
     match first {
-        Some(Ok(event)) => Ok((Some(Ok(event)), events)),
-        Some(Err(error)) => Err(ws_transport_error(error)),
-        None => Err(ws_before_headers_error(
+        Some(Ok(event)) => {
+            if is_replay_unsafe_tool_event(&event) {
+                commitment.mark_replay_unsafe_tool();
+            } else {
+                // Preservation phase: any successful provider event remains a
+                // conservative commitment, including metadata-only events.
+                commitment.mark_client_visible();
+            }
+            debug_assert!(!commitment.may_redispatch());
+            Ok((Some(Ok(event)), events))
+        }
+        Some(Err(error)) if commitment.may_redispatch() => Err(ws_transport_error(error)),
+        None if commitment.may_redispatch() => Err(ws_before_headers_error(
             "codex websocket closed before any event".to_string(),
         )),
+        Some(Err(_)) | None => unreachable!("uncommitted websocket fallback gate reopened"),
     }
+}
+
+/// Classify structural Responses tool events before ordinary text exists. The
+/// transport still commits every successful first event in this preservation
+/// phase, but naming the stronger tool boundary prevents later callers from
+/// treating it as merely client-visible output and replaying side effects.
+fn is_replay_unsafe_tool_event(event: &ResponseEvent) -> bool {
+    let event_name = event.event.as_deref().unwrap_or_default();
+    if event_name.contains("function_call") || event_name.contains("tool_call") {
+        return true;
+    }
+    event
+        .data
+        .pointer("/item/type")
+        .and_then(Value::as_str)
+        .is_some_and(|item_type| item_type.ends_with("_call"))
 }
 
 /// Rewrite `frame_body` in place for a continuation turn: replace `input` with the

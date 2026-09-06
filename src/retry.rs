@@ -114,12 +114,18 @@ pub(crate) enum Commitment {
 }
 
 impl Commitment {
-    pub(crate) fn mark_client_visible(&mut self) {}
+    pub(crate) fn mark_client_visible(&mut self) {
+        if matches!(self, Self::ReplaySafe) {
+            *self = Self::ClientVisible;
+        }
+    }
 
-    pub(crate) fn mark_replay_unsafe_tool(&mut self) {}
+    pub(crate) fn mark_replay_unsafe_tool(&mut self) {
+        *self = Self::ReplayUnsafeTool;
+    }
 
     pub(crate) fn may_redispatch(self) -> bool {
-        true
+        matches!(self, Self::ReplaySafe)
     }
 }
 
