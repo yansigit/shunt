@@ -466,6 +466,27 @@ async fn compact_rejects_unverified_responses_provider_without_network() {
     std::env::remove_var(key_env);
 }
 
+#[tokio::test]
+async fn compact_body_limit_uses_openai_responses_shape_without_network() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let upstream = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&upstream)
+        .await;
+    let mut config = test_config(&upstream.uri(), Vec::new());
+    config.server.limits.max_request_bytes = 4;
+    let gateway = start_gateway_with(config).await;
+    let response = post_compact(&gateway, COMPACT_BODY, None).await;
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    let error: serde_json::Value = response.json().await.unwrap();
+    assert_openai_error_shape(&error, "request_too_large");
+    upstream.verify().await;
+}
+
 async fn post_analytics(
     gateway: &TestGateway,
     endpoint_path: &str,
