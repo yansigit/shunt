@@ -84,6 +84,8 @@ pub(crate) enum ContinuationError {
     Limit { field: &'static str },
     #[error("continuation transcript could not be serialized: {0}")]
     Serialize(#[from] serde_json::Error),
+    #[error("continuation contains invalid {field}")]
+    Invalid { field: &'static str },
 }
 
 /// Backend-only keys on an output item that shunt's reconstruction never carries.
@@ -169,6 +171,7 @@ pub fn decide_with_signature(
 
 /// Build the transcript to store after a turn: the request's full logical input
 /// (not the delta) followed by the backend's output items.
+#[cfg(test)]
 pub(crate) fn build_transcript(
     request_input: &[Value],
     output_items: &[Value],
@@ -199,6 +202,7 @@ pub(crate) fn build_transcript_with_limits(
     // checked arithmetic and the candidate is returned only after every item fits.
     let mut serialized_bytes = 2usize; // '[' + ']'
     for (index, item) in request_input.iter().chain(output_items).enumerate() {
+        validate_retained_item(item)?;
         let item_bytes = serde_json::to_vec(item)?.len();
         serialized_bytes = serialized_bytes
             .checked_add(item_bytes)
@@ -218,6 +222,60 @@ pub(crate) fn build_transcript_with_limits(
         .cloned()
         .chain(output_items.iter().cloned())
         .collect())
+}
+
+fn validate_retained_item(item: &Value) -> Result<(), ContinuationError> {
+    match item.get("type").and_then(Value::as_str) {
+        Some("function_call") => {
+            let valid_id = item
+                .get("call_id")
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.is_empty());
+            let valid_name = item
+                .get("name")
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.is_empty());
+            let valid_arguments = item
+                .get("arguments")
+                .and_then(Value::as_str)
+                .and_then(|arguments| serde_json::from_str::<Value>(arguments).ok())
+                .is_some_and(|arguments| arguments.is_object());
+            if !valid_id || !valid_name || !valid_arguments {
+                return Err(ContinuationError::Invalid {
+                    field: "function-call identity or arguments",
+                });
+            }
+        }
+        Some("function_call_output") => {
+            if !item
+                .get("call_id")
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.is_empty())
+            {
+                return Err(ContinuationError::Invalid {
+                    field: "function-call result identity",
+                });
+            }
+        }
+        Some("reasoning")
+            if item
+                .get("encrypted_content")
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.is_empty()) =>
+        {
+            if !item
+                .get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.is_empty())
+            {
+                return Err(ContinuationError::Invalid {
+                    field: "reasoning identity",
+                });
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// A stable, key-sorted signature of the request's non-input fields, so a changed

@@ -231,6 +231,59 @@ impl AnthropicSseMachine {
             return Ok(Vec::new());
         }
         self.reserve_retained_event(name, &event.data)?;
+        if name == "response.output_item.added" {
+            let item = event.data.get("item").unwrap_or(&event.data);
+            if item.get("type").and_then(Value::as_str) == Some("function_call") {
+                let valid_id = item
+                    .get("call_id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| !value.is_empty());
+                let valid_name = item
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| !value.is_empty());
+                if !valid_id || !valid_name {
+                    return Err(self.protocol_failure(
+                        "upstream Responses tool identity was missing a call id or name",
+                    ));
+                }
+            }
+        }
+        if name == "response.output_item.done" {
+            let item = event.data.get("item").unwrap_or(&event.data);
+            if item.get("type").and_then(Value::as_str) == Some("tool_search_call")
+                && self.tool_search_native
+            {
+                let valid_id = item
+                    .get("call_id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| !value.is_empty());
+                let valid_arguments = item.get("arguments").is_some_and(Value::is_object);
+                if !valid_id || !valid_arguments {
+                    return Err(self.protocol_failure(
+                        "upstream Responses tool identity or arguments were invalid",
+                    ));
+                }
+            }
+            if item.get("type").and_then(Value::as_str) == Some("reasoning")
+                && item
+                    .get("encrypted_content")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| !value.is_empty())
+            {
+                let id = self
+                    .reasoning
+                    .as_ref()
+                    .map(|reasoning| reasoning.id.as_str())
+                    .filter(|id| !id.is_empty())
+                    .or_else(|| item.get("id").and_then(Value::as_str));
+                if !id.is_some_and(|value| !value.is_empty()) {
+                    return Err(
+                        self.protocol_failure("upstream Responses reasoning identity was missing")
+                    );
+                }
+            }
+        }
         if name == "response.function_call_arguments.done" {
             if let Some(tool) = &self.tool_buffer {
                 if !tool.json.is_empty()
@@ -415,23 +468,18 @@ impl AnthropicSseMachine {
     /// open/delta/stop shape, and records the block for the non-streaming path.
     fn tool_search_call_done(&mut self, item: &Value) -> Vec<String> {
         let mut out = self.close_any();
-        // Claude Code needs a non-empty tool_use id to match the tool_result it
-        // sends back; if upstream ever omits `call_id`, fall back to a synthetic
-        // per-block id rather than emit an empty (invalid) one.
+        // Identity and argument shape were validated by `apply_checked` before
+        // this event reached the translator.
         let id = item
             .get("call_id")
             .and_then(Value::as_str)
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| format!("toolu_ts_{}", self.index));
-        // Anthropic requires tool_use `input` to be a JSON object; if upstream
-        // omits `arguments` or sends a non-object, fall back to `{}` rather than
-        // forward an invalid input.
+            .expect("validated native tool_search call id")
+            .to_string();
         let arguments = item
             .get("arguments")
             .filter(|value| value.is_object())
             .cloned()
-            .unwrap_or_else(|| json!({}));
+            .expect("validated native tool_search arguments");
         self.saw_tool = true;
         out.push(sse(
             "content_block_start",
@@ -622,12 +670,12 @@ impl AnthropicSseMachine {
         let id = item
             .get("call_id")
             .and_then(Value::as_str)
-            .unwrap_or("")
+            .expect("validated function call id")
             .to_string();
         let name = item
             .get("name")
             .and_then(Value::as_str)
-            .unwrap_or("")
+            .expect("validated function call name")
             .to_string();
         self.saw_tool = true;
         self.tool_buffer = Some(ToolBuffer {

@@ -16,7 +16,10 @@ mod ws_stream;
 
 use std::sync::Arc;
 
-use axum::http::{HeaderMap, StatusCode, Uri};
+use axum::{
+    http::{HeaderMap, StatusCode, Uri},
+    response::IntoResponse,
+};
 use serde_json::Value;
 
 use crate::{
@@ -134,12 +137,22 @@ async fn forward(
         thinking_enabled,
         tool_search_native,
     };
-    let upstream_body = Arc::new(translate_request_value(
-        request_json,
-        &route,
-        flavor,
-        tool_search_native,
-    ));
+    let upstream_body = Arc::new(
+        translate_request_value(request_json, &route, flavor, tool_search_native).map_err(
+            |error| AdapterError {
+                message: error.to_string(),
+                response: Box::new(
+                    crate::error::ShuntError::new(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_request_error",
+                        error.to_string(),
+                    )
+                    .into_response(),
+                ),
+                failure: None,
+            },
+        )?,
+    );
     tracing::debug!(
         provider = %route.provider,
         upstream_model = %route.upstream_model,

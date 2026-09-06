@@ -14,6 +14,16 @@ use crate::routing::Route;
 /// upstream `tool_search_call` as a `tool_use` under this same name.
 pub(crate) const TOOL_SEARCH_NAME: &str = "ToolSearch";
 
+#[derive(Debug, thiserror::Error)]
+pub enum ResponsesRequestError {
+    #[error("invalid Responses request JSON: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("invalid Responses tool identity: {0}")]
+    ToolIdentity(&'static str),
+    #[error("invalid Responses reasoning identity")]
+    ReasoningIdentity,
+}
+
 /// Request-scoped state for Claude Code's tool-search feature. Borrows from the
 /// request `Value` the whole translator already parses and traverses — a separate
 /// typed deserialization pass would only add a second parse — so the pre-scan
@@ -110,14 +120,9 @@ pub fn translate_request(
     route: &Route,
     flavor: ResponsesFlavor,
     tool_search_native: bool,
-) -> Result<Value, serde_json::Error> {
+) -> Result<Value, ResponsesRequestError> {
     let request: Value = serde_json::from_slice(body)?;
-    Ok(translate_request_value(
-        &request,
-        route,
-        flavor,
-        tool_search_native,
-    ))
+    translate_request_value(&request, route, flavor, tool_search_native)
 }
 
 pub fn translate_request_value(
@@ -125,7 +130,8 @@ pub fn translate_request_value(
     route: &Route,
     flavor: ResponsesFlavor,
     tool_search_native: bool,
-) -> Value {
+) -> Result<Value, ResponsesRequestError> {
+    validate_authentic_history(request)?;
     let tool_search = ToolSearchContext::from_request(request, tool_search_native);
     let mut out = Map::new();
     out.insert("model".to_string(), json!(route.upstream_model));
@@ -227,7 +233,69 @@ pub fn translate_request_value(
     }
     out.insert("store".to_string(), json!(false));
     out.insert("stream".to_string(), json!(true));
-    Value::Object(out)
+    Ok(Value::Object(out))
+}
+
+fn validate_authentic_history(request: &Value) -> Result<(), ResponsesRequestError> {
+    let Some(messages) = request.get("messages").and_then(Value::as_array) else {
+        return Ok(());
+    };
+    for block in messages
+        .iter()
+        .filter_map(|message| message.get("content").and_then(Value::as_array))
+        .flatten()
+    {
+        match block.get("type").and_then(Value::as_str) {
+            Some("tool_use") => {
+                require_non_empty(block, "id", "tool_use.id")?;
+                require_non_empty(block, "name", "tool_use.name")?;
+                if !block.get("input").is_some_and(Value::is_object) {
+                    return Err(ResponsesRequestError::ToolIdentity(
+                        "tool_use.input must be an object",
+                    ));
+                }
+            }
+            Some("tool_result") => {
+                require_non_empty(block, "tool_use_id", "tool_result.tool_use_id")?;
+            }
+            Some("thinking") => {
+                if let Some(signature) = block.get("signature").and_then(Value::as_str) {
+                    if let Some((id, _)) = decode_reasoning_signature(signature) {
+                        if id.is_empty() {
+                            return Err(ResponsesRequestError::ReasoningIdentity);
+                        }
+                    }
+                }
+            }
+            Some("redacted_thinking") => {
+                if let Some(data) = block.get("data").and_then(Value::as_str) {
+                    if let Some((id, _)) = decode_reasoning_signature(data) {
+                        if id.is_empty() {
+                            return Err(ResponsesRequestError::ReasoningIdentity);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn require_non_empty(
+    object: &Value,
+    field: &str,
+    label: &'static str,
+) -> Result<(), ResponsesRequestError> {
+    if object
+        .get(field)
+        .and_then(Value::as_str)
+        .is_some_and(|value| !value.is_empty())
+    {
+        Ok(())
+    } else {
+        Err(ResponsesRequestError::ToolIdentity(label))
+    }
 }
 
 /// A stable per-conversation key so the Responses backend routes every turn of a
