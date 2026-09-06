@@ -553,7 +553,7 @@ mod tests {
     /// still classify the stream as an upstream cut instead of a normal
     /// completion (see that constant's doc comment for the full rationale).
     #[tokio::test]
-    async fn responses_terminal_stream_rejects_a_truncated_upstream() {
+    async fn responses_transport_terminal_http_rejects_a_truncated_upstream() {
         let sse = concat!(
             "event: response.created\n",
             "data: {\"response\":{\"id\":\"resp_1\"}}\n\n",
@@ -583,7 +583,7 @@ mod tests {
     /// A clean turn that reaches `response.completed` must not carry the
     /// truncation marker — it exists only for the EOF-before-terminal path.
     #[tokio::test]
-    async fn stream_response_does_not_mark_a_genuine_completion() {
+    async fn responses_transport_terminal_http_accepts_a_genuine_completion() {
         let sse = concat!(
             "event: response.created\n",
             "data: {\"response\":{\"id\":\"resp_1\"}}\n\n",

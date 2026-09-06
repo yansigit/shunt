@@ -381,9 +381,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stream_events_response_replays_buffered_event_and_flushes_on_close() {
-        // The peeked first event (buffered) is replayed and, once the channel
-        // closes, `machine.finish()` flushes the terminal Anthropic events.
+    async fn responses_transport_terminal_stream_rejects_bare_channel_close() {
         let (tx, rx) = mpsc::channel::<Result<ResponseEvent, CodexWsError>>(1);
         drop(tx); // channel closed: only the buffered event drives output
 
@@ -396,7 +394,20 @@ mod tests {
         );
         let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let text = String::from_utf8_lossy(&bytes);
-        // `response.created` opens the stream with `message_start`.
         assert!(text.contains("message_start"));
+        assert!(text.contains("event: error"));
+        assert!(!text.contains("event: message_stop"));
+    }
+
+    #[tokio::test]
+    async fn responses_transport_terminal_json_rejects_bare_channel_close() {
+        let (tx, rx) = mpsc::channel::<Result<ResponseEvent, CodexWsError>>(1);
+        tx.try_send(Ok(created_event())).unwrap();
+        drop(tx);
+
+        let error = json_events_response(None, rx, relay_opts())
+            .await
+            .expect_err("bare close is an upstream protocol failure");
+        assert_eq!(error.response.status(), StatusCode::BAD_GATEWAY);
     }
 }
