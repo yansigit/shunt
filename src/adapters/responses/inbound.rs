@@ -452,9 +452,9 @@ async fn passthrough_send(
                 .bearer_auth(access_token)
                 .header("chatgpt-account-id", account_id);
         }
-        // A codex_endpoint provider is validated to be chatgpt_oauth, so only the
-        // arm above runs in practice; the rest keep the credential swap defensive
-        // without ever adding a synthetic client-identity header.
+        // Native Responses routes may use API-key or xAI OAuth credentials; keep
+        // credential injection provider-specific without adding a synthetic
+        // client-identity header.
         Credential::ApiKey { value, header } => {
             request = match header {
                 ApiKeyHeader::Bearer => request.bearer_auth(value),
