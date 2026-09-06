@@ -1,9 +1,9 @@
 ---
 phase: "03"
 slug: "quota-aware-resilience"
-status: draft
+status: validated
 nyquist_compliant: true
-wave_0_complete: false
+wave_0_complete: true
 created: "2026-09-06"
 ---
 
@@ -32,12 +32,12 @@ created: "2026-09-06"
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 03-01-01 | 03-01 | 1 | RES-01 | T-03-01-01, T-03-01-02 | Hard-quota evidence is classified before output; account rotation avoids revisit; all-eligible exhaustion preserves final status/body/safe Retry-After | e2e/integration | `cargo test --test inbound_codex_endpoint hard_quota_rotates_without_revisit && cargo test --test codex_multi_account -- exhausted_pool_preserves_final_body` | ❌ Wave 0 | pending |
-| 03-01-02 | 03-01 | 1 | RES-01 | T-03-01-01, T-03-01-03 | Translated and refreshed Responses pools reuse the typed decision and preserve existing non-quota behavior | unit/integration | `cargo test adapters::responses::pool:: --lib && cargo test --test codex_multi_account` | ✅ | pending |
-| 03-02-01 | 03-02 | 2 | RES-02 | T-03-02-01 | Decimal/datetime Retry-After values are rounded, normalized, bounded, and consumed by retry policy | unit/integration | `cargo test accounts::retry_after --lib && cargo test retry:: --lib && cargo test --test retry` | ✅ | pending |
-| 03-02-02 | 03-02 | 2 | RES-01, RES-02 | T-03-02-02, T-03-02-03 | Adversarial bodies fail closed; stream boundaries and unrelated route failover remain unchanged | unit/integration | `cargo test adapters::responses::pool:: --lib && cargo test --test codex_multi_account && cargo test --test failover` | ❌ Wave 0 | pending |
-| 03-03-01 | 03-03 | 3 | RES-01, RES-02 | T-03-03-01 | English docs state exact transient/hard-quota, bounded timing, final relay, and pre-output semantics | source check | `git diff --check && test -s README.md && test -s site/src/content/docs/guides/inbound-codex-endpoint.md && grep -q 'Retry-After' README.md && grep -q '429' site/src/content/docs/guides/inbound-codex-endpoint.md` | ✅ | pending |
-| 03-03-02 | 03-03 | 3 | RES-01, RES-02 | T-03-03-02, T-03-03-03 | Maintained locales match English, wiki remains untouched, and all focused/full quality gates pass | source/quality | `for f in README.ko.md README.ja.md README.zh-CN.md site/src/content/docs/ko/guides/inbound-codex-endpoint.md site/src/content/docs/ja/guides/inbound-codex-endpoint.md site/src/content/docs/zh-cn/guides/inbound-codex-endpoint.md; do test -s "$f" || exit 1; done && git diff --check && test -z "$(git status --short -- wiki/)" && cargo test accounts::retry_after --lib && cargo test retry:: --lib && cargo test adapters::responses::pool:: --lib && cargo test --test inbound_codex_endpoint && cargo test --test codex_multi_account && cargo test --test failover && cargo fmt --all --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test --all-features --workspace` | ✅ | pending |
+| 03-01-01 | 03-01 | 1 | RES-01 | T-03-01-01, T-03-01-02 | Hard-quota evidence is classified before output; account rotation avoids revisit; all-eligible exhaustion preserves final status/body/safe Retry-After | e2e/integration | `cargo test --test inbound_codex_endpoint hard_quota_rotates_without_revisit && cargo test --test codex_multi_account -- exhausted_pool_preserves_final_body` | ✅ | complete |
+| 03-01-02 | 03-01 | 1 | RES-01 | T-03-01-01, T-03-01-03 | Translated and refreshed Responses pools reuse the typed decision and preserve existing non-quota behavior | unit/integration | `cargo test adapters::responses::pool:: --lib && cargo test --test codex_multi_account` | ✅ | complete |
+| 03-02-01 | 03-02 | 2 | RES-02 | T-03-02-01 | Decimal/datetime Retry-After values are rounded, normalized, bounded, and consumed by retry policy | unit/integration | `cargo test accounts::retry_after --lib && cargo test retry:: --lib && cargo test --test retry` | ✅ | complete |
+| 03-02-02 | 03-02 | 2 | RES-01, RES-02 | T-03-02-02, T-03-02-03 | Adversarial bodies fail closed; stream boundaries and unrelated route failover remain unchanged | unit/integration | `cargo test adapters::responses::pool:: --lib && cargo test --test codex_multi_account && cargo test --test failover` | ✅ | complete |
+| 03-03-01 | 03-03 | 3 | RES-01, RES-02 | T-03-03-01 | English docs state exact transient/hard-quota, bounded timing, final relay, and pre-output semantics | source check | `git diff --check && test -s README.md && test -s site/src/content/docs/guides/inbound-codex-endpoint.md && grep -q 'Retry-After' README.md && grep -q '429' site/src/content/docs/guides/inbound-codex-endpoint.md` | ✅ | complete |
+| 03-03-02 | 03-03 | 3 | RES-01, RES-02 | T-03-03-02, T-03-03-03 | Maintained locales match English, wiki remains untouched, and all focused/full quality gates pass | source/quality | `for f in README.ko.md README.ja.md README.zh-CN.md site/src/content/docs/ko/guides/inbound-codex-endpoint.md site/src/content/docs/ja/guides/inbound-codex-endpoint.md site/src/content/docs/zh-cn/guides/inbound-codex-endpoint.md; do test -s "$f" || exit 1; done && git diff --check && test -z "$(git status --short -- wiki/)" && cargo test accounts::retry_after --lib && cargo test retry:: --lib && cargo test adapters::responses::pool:: --lib && cargo test --test inbound_codex_endpoint && cargo test --test codex_multi_account && cargo test --test failover && cargo fmt --all --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test --all-features --workspace` | ✅ | complete |
 
 ## Wave Structure
 
@@ -75,9 +75,9 @@ Locale prose requires human language review, but all behavior, file presence, pa
 
 - [x] Every plan task has an executable automated verification command.
 - [x] Sampling continuity: no three consecutive tasks without automated verification.
-- [ ] Wave 0 test additions are present and passing.
+- [x] Wave 0 test additions are present and passing.
 - [x] No watch-mode flags or unbounded fallback commands.
 - [x] Focused feedback latency target is under 180 seconds.
-- [ ] `status: validated` and `wave_0_complete: true` will be set after execution evidence exists.
+- [x] `status: validated` and `wave_0_complete: true` set after execution evidence.
 
 **Approval:** draft pending Wave 0 implementation and phase execution.
