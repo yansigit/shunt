@@ -3200,8 +3200,11 @@ pub fn retry_after(headers: &HeaderMap) -> Option<Duration> {
 /// capped to keep untrusted headers from creating unbounded sleeps.
 fn retry_after_value(value: &str) -> Option<Duration> {
     const MAX_RETRY_AFTER: Duration = Duration::from_secs(3600);
+    if value.len() > 128 {
+        return None;
+    }
     let value = value.trim();
-    if value.is_empty() || value.len() > 128 {
+    if value.is_empty() {
         return None;
     }
 
