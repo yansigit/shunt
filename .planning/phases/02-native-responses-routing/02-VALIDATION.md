@@ -30,6 +30,11 @@ created: "2026-09-05"
 
 ## Per-Task Verification Map
 
+The ten rows below are the complete Phase 02 task map. Native-ingress documentation checks are
+source-only by design; implementation and transport behavior remain covered by the focused Rust
+commands in plans 02-01 through 02-03 and the final quality row 02-05-02. Final pass/fail values
+remain pending until the phase verifier runs.
+
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
 | 02-01-01 | 02-01 | 1 | ROUTE-01, ROUTE-02 | T-02-01-01 | Exact native HTTP tracer selects one Responses route with original body bytes | e2e | `cargo test routing:: --lib && cargo test --test inbound_codex_endpoint exact_native_route` | ✅ | ⬜ pending |
