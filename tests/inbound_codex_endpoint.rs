@@ -802,7 +802,7 @@ async fn no_mid_stream_hop() {
 }
 
 #[tokio::test]
-async fn rotates_on_429_then_relays_last_upstream_verbatim_on_exhaustion() {
+async fn hard_quota_rotates_without_revisit() {
     // Every Codex 429 rotates (no PauseSame). When both accounts are exhausted the
     // LAST upstream response is relayed verbatim — status AND body unchanged —
     // rather than re-shaped into an Anthropic rate_limit_error envelope.
@@ -823,7 +823,7 @@ async fn rotates_on_429_then_relays_last_upstream_verbatim_on_exhaustion() {
         .respond_with(
             ResponseTemplate::new(429)
                 .insert_header("retry-after", "0")
-                .set_body_string(r#"{"error":"first account exhausted"}"#),
+                .set_body_string(r#"{"error":{"code":"usage_limit_exceeded"}}"#),
         )
         .expect(1)
         .mount(&upstream)

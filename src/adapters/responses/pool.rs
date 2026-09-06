@@ -281,7 +281,7 @@ pub(super) async fn forward_chatgpt_oauth(
         state
             .accounts
             .note_codex_quota(&route.provider, account, upstream.headers());
-        match classify_first(&state, &route, account, upstream) {
+        match classify_first(&state, &route, account, upstream).await {
             FirstOutcome::Relay(upstream) => {
                 // A non-401/429/5xx response means the account itself is fine,
                 // whether or not this particular request succeeded (mirrors the
@@ -366,7 +366,7 @@ pub(super) async fn forward_chatgpt_oauth(
                 state
                     .accounts
                     .note_codex_quota(&route.provider, account, retry.headers());
-                match classify_retry(&state, &route, account, retry) {
+                match classify_retry(&state, &route, account, retry).await {
                     RetryOutcome::Relay(retry) => {
                         let retry_status = retry.status();
                         if retry_status.is_success() {
@@ -656,12 +656,13 @@ pub(super) enum FirstOutcome {
 /// A `Relay` account is left for the caller to mark healthy so it can render the
 /// response its own way (a translating path splits success vs a non-failover 4xx;
 /// the passthrough relays verbatim).
-pub(super) fn classify_first(
+pub(super) async fn classify_first(
     state: &AppState,
     route: &Route,
     account: &AccountConfig,
     upstream: reqwest::Response,
 ) -> FirstOutcome {
+    let (upstream, quota) = inspect_quota_response(upstream).await;
     let status = upstream.status();
     match accounts::classify_codex(status, upstream.headers()) {
         FailoverAction::Relay => FirstOutcome::Relay(upstream),
@@ -671,7 +672,11 @@ pub(super) fn classify_first(
                 &route.provider,
                 account,
                 cooldown,
-                accounts::rotation_reason(status, upstream.headers()),
+                if quota == accounts::QuotaDecision::HardExhaustion {
+                    "quota"
+                } else {
+                    accounts::rotation_reason(status, upstream.headers())
+                },
             );
             tracing::warn!(
                 provider = %route.provider,
@@ -701,12 +706,13 @@ pub(super) enum RetryOutcome {
 /// handed back for the caller to render. `classify_codex` returns `RefreshRetry`
 /// only for 401 (handled above) and never `PauseSame`, so only `Relay` and
 /// `Rotate` are live — the others ride `Rotate`'s arm as a defensive no-op.
-pub(super) fn classify_retry(
+pub(super) async fn classify_retry(
     state: &AppState,
     route: &Route,
     account: &AccountConfig,
     retry: reqwest::Response,
 ) -> RetryOutcome {
+    let (retry, quota) = inspect_quota_response(retry).await;
     let retry_status = retry.status();
     if retry_status == StatusCode::UNAUTHORIZED {
         state.accounts.cooldown(
@@ -730,7 +736,11 @@ pub(super) fn classify_retry(
                 &route.provider,
                 account,
                 cooldown,
-                accounts::rotation_reason(retry_status, retry.headers()),
+                if quota == accounts::QuotaDecision::HardExhaustion {
+                    "quota"
+                } else {
+                    accounts::rotation_reason(retry_status, retry.headers())
+                },
             );
             tracing::warn!(
                 provider = %route.provider,
@@ -742,6 +752,53 @@ pub(super) fn classify_retry(
         }
         FailoverAction::PauseSame => unreachable!("classify_codex never returns PauseSame"),
     }
+}
+
+const QUOTA_BODY_LIMIT: usize = 65_536;
+
+/// Buffer only bounded quota candidates before classification, rebuilding the
+/// response so the final pool failure can still relay its original body.
+async fn inspect_quota_response(
+    response: reqwest::Response,
+) -> (reqwest::Response, accounts::QuotaDecision) {
+    let status = response.status();
+    if status != StatusCode::TOO_MANY_REQUESTS && status != StatusCode::PAYMENT_REQUIRED {
+        return (response, accounts::QuotaDecision::Transient);
+    }
+    if response
+        .content_length()
+        .is_some_and(|length| length as usize > QUOTA_BODY_LIMIT)
+    {
+        return (response, accounts::QuotaDecision::Transient);
+    }
+    let headers = response.headers().clone();
+    let mut body = Vec::new();
+    let mut stream = response;
+    while let Ok(Some(chunk)) = stream.chunk().await {
+        if body.len().saturating_add(chunk.len()) > QUOTA_BODY_LIMIT {
+            return (
+                reqwest::Response::from(
+                    axum::http::Response::builder()
+                        .status(status)
+                        .body(reqwest::Body::from(body))
+                        .expect("valid buffered response"),
+                ),
+                accounts::QuotaDecision::Transient,
+            );
+        }
+        body.extend_from_slice(&chunk);
+    }
+    let decision = accounts::classify_quota_response(status, &body);
+    let mut builder = axum::http::Response::builder().status(status);
+    for (name, value) in &headers {
+        builder = builder.header(name, value);
+    }
+    let rebuilt = reqwest::Response::from(
+        builder
+            .body(reqwest::Body::from(body))
+            .expect("valid buffered response"),
+    );
+    (rebuilt, decision)
 }
 
 #[cfg(test)]

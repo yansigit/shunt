@@ -3062,6 +3062,68 @@ pub fn classify_codex(status: StatusCode, _headers: &HeaderMap) -> FailoverActio
     FailoverAction::Relay
 }
 
+/// Typed pre-stream quota decision shared by the Responses account pools.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuotaDecision {
+    HardExhaustion,
+    Transient,
+}
+
+/// Recognize only exact, structured quota discriminators in bounded JSON.
+/// Everything else (including malformed or ambiguous evidence) fails closed.
+pub fn classify_quota_response(status: StatusCode, body: &[u8]) -> QuotaDecision {
+    if status != StatusCode::TOO_MANY_REQUESTS && status != StatusCode::PAYMENT_REQUIRED {
+        return QuotaDecision::Transient;
+    }
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return QuotaDecision::Transient;
+    };
+    fn collect(value: &serde_json::Value, found: &mut Vec<String>) -> bool {
+        match value {
+            serde_json::Value::Object(map) => {
+                let mut seen = HashSet::new();
+                for (key, child) in map {
+                    if (key == "code" || key == "type") && !seen.insert(key) {
+                        return false;
+                    }
+                    if key == "code" || key == "type" {
+                        if let Some(text) = child.as_str() {
+                            found.push(text.to_string());
+                        } else {
+                            return false;
+                        }
+                    }
+                    if !collect(child, found) {
+                        return false;
+                    }
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    if !collect(item, found) {
+                        return false;
+                    }
+                }
+            }
+            _ => {}
+        }
+        true
+    }
+    let mut codes = Vec::new();
+    if !collect(&value, &mut codes) || codes.is_empty() {
+        return QuotaDecision::Transient;
+    }
+    let valid = codes
+        .iter()
+        .all(|code| matches!(code.as_str(), "usage_limit_exceeded" | "insufficient_quota"));
+    let consistent = codes.windows(2).all(|pair| pair[0] == pair[1]);
+    if valid && consistent {
+        QuotaDecision::HardExhaustion
+    } else {
+        QuotaDecision::Transient
+    }
+}
+
 pub fn retry_after(headers: &HeaderMap) -> Option<Duration> {
     let value = headers.get(reqwest::header::RETRY_AFTER)?.to_str().ok()?;
     // RFC 7231 allows two forms: delta-seconds or an HTTP-date. Try the cheap
@@ -7933,6 +7995,38 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(RETRY_AFTER, HeaderValue::from_static("not-a-date"));
         assert_eq!(retry_after(&headers), None);
+    }
+
+    #[test]
+    fn quota_classifier_requires_exact_structured_code() {
+        assert_eq!(
+            classify_quota_response(
+                StatusCode::TOO_MANY_REQUESTS,
+                br#"{"error":{"code":"usage_limit_exceeded"}}"#
+            ),
+            QuotaDecision::HardExhaustion
+        );
+        assert_eq!(
+            classify_quota_response(
+                StatusCode::TOO_MANY_REQUESTS,
+                br#"{"error":"quota exceeded"}"#
+            ),
+            QuotaDecision::Transient
+        );
+        assert_eq!(
+            classify_quota_response(
+                StatusCode::TOO_MANY_REQUESTS,
+                br#"{"error":{"code":"rate_limit_error"}}"#
+            ),
+            QuotaDecision::Transient
+        );
+        assert_eq!(
+            classify_quota_response(
+                StatusCode::PAYMENT_REQUIRED,
+                br#"{"type":"insufficient_quota"}"#
+            ),
+            QuotaDecision::HardExhaustion
+        );
     }
 
     fn unix_now() -> u64 {
