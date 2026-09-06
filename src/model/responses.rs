@@ -27,12 +27,36 @@ enum BlockKind {
     Reasoning,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TerminalState {
+    Open,
+    SuccessPending,
+    SuccessEmitted,
+    ProviderFailed,
+    ProtocolFailed,
+}
+
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
+#[error("{message}")]
+pub struct ResponsesProtocolError {
+    message: String,
+}
+
+impl ResponsesProtocolError {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AnthropicSseMachine {
     id: String,
     model: String,
     started: bool,
     stopped: bool,
+    terminal: TerminalState,
     index: usize,
     open: Option<OpenBlock>,
     saw_tool: bool,
@@ -115,6 +139,7 @@ impl AnthropicSseMachine {
             model: model.into(),
             started: false,
             stopped: false,
+            terminal: TerminalState::Open,
             index: 0,
             open: None,
             saw_tool: false,
@@ -156,11 +181,43 @@ impl AnthropicSseMachine {
     }
 
     pub fn apply(&mut self, event: ResponseEvent) -> Vec<String> {
-        if self.stopped {
-            return Vec::new();
+        let is_success_terminal = matches!(
+            event.event.as_deref(),
+            Some("response.completed" | "response.done" | "response.incomplete")
+        );
+        let mut out = self.apply_checked(event).unwrap_or_default();
+        // Compatibility entry point for fixture consumers that apply a complete
+        // transcript without an explicit transport-EOF step. Production relays
+        // use `apply_checked` and withhold the client terminal until EOF.
+        if is_success_terminal {
+            out.extend(self.finish_checked().unwrap_or_default());
         }
+        out
+    }
+
+    pub fn apply_checked(
+        &mut self,
+        event: ResponseEvent,
+    ) -> Result<Vec<String>, ResponsesProtocolError> {
         let name = event.event.as_deref().unwrap_or("");
-        match name {
+        if self.terminal != TerminalState::Open {
+            if self.terminal == TerminalState::ProviderFailed {
+                return Ok(Vec::new());
+            }
+            if is_semantic_response_event(name) {
+                self.terminal = TerminalState::ProtocolFailed;
+                self.stopped = true;
+                return Err(ResponsesProtocolError::new(
+                    if is_success_terminal_event(name) {
+                        "upstream Responses stream sent more than one terminal event"
+                    } else {
+                        "upstream Responses stream sent semantic data after its terminal event"
+                    },
+                ));
+            }
+            return Ok(Vec::new());
+        }
+        let out = match name {
             "response.created" | "response.in_progress" => self.start(&event.data),
             "response.output_item.added" => self.output_item_added(&event.data),
             "response.output_text.delta" => self.text_delta(&event.data),
@@ -172,21 +229,15 @@ impl AnthropicSseMachine {
             "response.function_call_arguments.delta" => self.arguments_delta(&event.data),
             "response.function_call_arguments.done" => self.close_current(BlockKind::Tool),
             "response.output_item.done" => self.output_item_done(&event.data),
-            // `response.incomplete` is a clean (if truncated) terminal, not a
-            // transport cut — mirrors the WebSocket transport's terminal set
-            // (`adapters::responses::codex_ws::TERMINAL_EVENTS`, also
-            // docs/m7-codex-websocket.md) and `stream_metrics::observe_responses`'s
-            // own terminal match. Routing it through the same `complete` path as
-            // `response.completed`/`response.done` sets `stopped`, so a stream
-            // that ends right after this event no longer hits `finish`'s
-            // cut-before-terminal fallback (`http.rs`'s `UPSTREAM_TRUNCATED_MARKER`
-            // injection) — and it keeps the existing `tool_use`/`end_turn`
-            // stop_reason convention rather than introducing a new one.
             "response.completed" | "response.done" | "response.incomplete" => {
-                self.complete(&event.data)
+                self.read_usage(&event.data);
+                let out = self.close_any();
+                self.terminal = TerminalState::SuccessPending;
+                out
             }
             "error" | "response.failed" => {
                 self.stopped = true;
+                self.terminal = TerminalState::ProviderFailed;
                 let status = backend_error_status(&event.data);
                 let value = map_error_value(&event.data, status);
                 // Build the SSE event first (borrowing `value`), then move
@@ -196,7 +247,8 @@ impl AnthropicSseMachine {
                 vec![sse_event]
             }
             _ => Vec::new(),
-        }
+        };
+        Ok(out)
     }
 
     /// Take the mapped Anthropic error envelope if a backend `error` /
@@ -209,18 +261,48 @@ impl AnthropicSseMachine {
     }
 
     pub fn finish(&mut self) -> Vec<String> {
-        if self.stopped {
-            return Vec::new();
+        self.finish_checked().unwrap_or_default()
+    }
+
+    pub fn finish_checked(&mut self) -> Result<Vec<String>, ResponsesProtocolError> {
+        match self.terminal {
+            TerminalState::SuccessPending => {
+                let stop_reason = if self.saw_tool {
+                    "tool_use"
+                } else {
+                    "end_turn"
+                };
+                self.terminal = TerminalState::SuccessEmitted;
+                Ok(self.stop_events(stop_reason))
+            }
+            TerminalState::SuccessEmitted => Ok(Vec::new()),
+            TerminalState::Open => {
+                self.terminal = TerminalState::ProtocolFailed;
+                self.stopped = true;
+                Err(ResponsesProtocolError::new(
+                    "upstream Responses stream ended before a terminal event",
+                ))
+            }
+            TerminalState::ProviderFailed => Err(ResponsesProtocolError::new(
+                "upstream Responses stream ended with a provider failure",
+            )),
+            TerminalState::ProtocolFailed => Err(ResponsesProtocolError::new(
+                "upstream Responses stream is already invalid",
+            )),
         }
-        let mut out = self.close_any();
-        out.extend(self.stop_events("end_turn"));
-        out
     }
 
     pub fn final_json(&mut self) -> Value {
-        if !self.stopped {
-            let _ = self.finish();
-        }
+        let _ = self.finish_checked();
+        self.final_json_value()
+    }
+
+    pub fn final_json_checked(&mut self) -> Result<Value, ResponsesProtocolError> {
+        let _ = self.finish_checked()?;
+        Ok(self.final_json_value())
+    }
+
+    fn final_json_value(&self) -> Value {
         json!({
             "id": self.id,
             "type": "message",
@@ -762,18 +844,6 @@ impl AnthropicSseMachine {
         )]
     }
 
-    fn complete(&mut self, data: &Value) -> Vec<String> {
-        self.read_usage(data);
-        let mut out = self.close_any();
-        let stop_reason = if self.saw_tool {
-            "tool_use"
-        } else {
-            "end_turn"
-        };
-        out.extend(self.stop_events(stop_reason));
-        out
-    }
-
     fn stop_events(&mut self, stop_reason: &str) -> Vec<String> {
         self.stopped = true;
         vec![
@@ -861,6 +931,35 @@ impl AnthropicSseMachine {
             .map(|block| block.index)
             .unwrap_or(self.index)
     }
+}
+
+fn is_success_terminal_event(name: &str) -> bool {
+    matches!(
+        name,
+        "response.completed" | "response.done" | "response.incomplete"
+    )
+}
+
+fn is_semantic_response_event(name: &str) -> bool {
+    matches!(
+        name,
+        "response.created"
+            | "response.in_progress"
+            | "response.output_item.added"
+            | "response.output_text.delta"
+            | "response.output_text.annotation.added"
+            | "response.output_text.done"
+            | "response.content_part.done"
+            | "response.reasoning_summary_text.delta"
+            | "response.function_call_arguments.delta"
+            | "response.function_call_arguments.done"
+            | "response.output_item.done"
+            | "response.completed"
+            | "response.done"
+            | "response.incomplete"
+            | "error"
+            | "response.failed"
+    )
 }
 
 pub fn parse_sse_events(input: &str) -> Vec<ResponseEvent> {

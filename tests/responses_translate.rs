@@ -40,6 +40,62 @@ fn responses_terminal_bare_eof_is_a_protocol_error() {
     );
 }
 
+#[test]
+fn responses_terminal_complete_finalizes_once() {
+    let mut machine = AnthropicSseMachine::new("gpt-5.2-codex", false, false);
+    let event = parse_sse_events(
+        "event: response.completed\ndata: {\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":2}}}\n\n",
+    )
+    .pop()
+    .unwrap();
+    assert!(machine.apply_checked(event).unwrap().is_empty());
+    let terminal = machine.finish_checked().unwrap().join("");
+    assert_eq!(terminal.matches("event: message_stop").count(), 1);
+    assert!(machine.finish_checked().unwrap().is_empty());
+}
+
+#[test]
+fn responses_terminal_duplicate_terminal_is_a_protocol_error() {
+    let mut events = parse_sse_events(concat!(
+        "event: response.completed\ndata: {}\n\n",
+        "event: response.done\ndata: {}\n\n",
+    ));
+    let mut machine = AnthropicSseMachine::new("gpt-5.2-codex", false, false);
+    assert!(machine.apply_checked(events.remove(0)).is_ok());
+    let error = machine.apply_checked(events.remove(0)).unwrap_err();
+    assert!(error.to_string().contains("more than one terminal"));
+    assert!(machine.finish_checked().is_err());
+}
+
+#[test]
+fn responses_terminal_post_terminal_semantic_event_is_a_protocol_error() {
+    let mut events = parse_sse_events(concat!(
+        "event: response.completed\ndata: {}\n\n",
+        "event: response.output_text.delta\ndata: {\"delta\":\"late\"}\n\n",
+    ));
+    let mut machine = AnthropicSseMachine::new("gpt-5.2-codex", false, false);
+    assert!(machine.apply_checked(events.remove(0)).is_ok());
+    let error = machine.apply_checked(events.remove(0)).unwrap_err();
+    assert!(error.to_string().contains("after its terminal"));
+    assert!(machine.finish_checked().is_err());
+}
+
+#[test]
+fn responses_terminal_unknown_well_formed_event_remains_compatible() {
+    let mut events = parse_sse_events(concat!(
+        "event: response.future_metadata\ndata: {\"value\":1}\n\n",
+        "event: response.completed\ndata: {}\n\n",
+    ));
+    let mut machine = AnthropicSseMachine::new("gpt-5.2-codex", false, false);
+    assert!(machine.apply_checked(events.remove(0)).unwrap().is_empty());
+    assert!(machine.apply_checked(events.remove(0)).is_ok());
+    assert!(machine
+        .finish_checked()
+        .unwrap()
+        .join("")
+        .contains("message_stop"));
+}
+
 fn translate(input: Value) -> Value {
     let body = serde_json::to_vec(&input).unwrap();
     // provider "openai" is the stock Responses API (not the ChatGPT backend).

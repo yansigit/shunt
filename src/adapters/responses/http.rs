@@ -9,11 +9,12 @@ use axum::{
     response::IntoResponse,
 };
 use futures_util::{stream, StreamExt};
+use serde_json::json;
 
 use crate::{
     adapters::AdapterError,
     auth::Credential,
-    model::responses::{parse_sse_events, ResponseEvent},
+    model::responses::{map_error_value, ResponseEvent, ResponsesProtocolError},
     routing::Route,
     server::AppState,
 };
@@ -22,6 +23,10 @@ use super::body::{prepare_body, PreparedBody};
 use super::context::{ForwardOptions, RelayOptions};
 use super::error::{backend_error, mapped_upstream_error, own_error, transport_error};
 use super::request::request_builder;
+
+const MAX_RESPONSES_SSE_EVENT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_RESPONSES_EVENTS_PER_FEED: usize = 256;
+const MAX_RESPONSES_JSON_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
 
 /// Send the upstream Responses HTTP request and return the raw response
 /// without judging its status. Split out of [`forward_http`] so the account
@@ -145,42 +150,59 @@ pub(super) fn stream_response(
         loop {
             match bytes.next().await {
                 Some(Ok(chunk)) => {
-                    let events = parser.push(&chunk);
-                    let data = events
-                        .into_iter()
-                        .flat_map(|event| machine.apply(event))
-                        .collect::<String>();
+                    let events = match parser.push(&chunk) {
+                        Ok(events) => events,
+                        Err(error) => {
+                            return Some((
+                                Ok::<_, std::convert::Infallible>(Bytes::from(protocol_error_sse(
+                                    &error,
+                                ))),
+                                (bytes, parser, machine, true),
+                            ));
+                        }
+                    };
+                    let mut data = String::new();
+                    for event in events {
+                        match machine.apply_checked(event) {
+                            Ok(frames) => data.extend(frames),
+                            Err(error) => {
+                                data.push_str(&protocol_error_sse(&error));
+                                finished = true;
+                                break;
+                            }
+                        }
+                    }
                     if !data.is_empty() {
                         return Some((
-                            Ok::<_, reqwest::Error>(Bytes::from(data)),
-                            (bytes, parser, machine, false),
+                            Ok::<_, std::convert::Infallible>(Bytes::from(data)),
+                            (bytes, parser, machine, finished),
                         ));
                     }
                 }
-                Some(Err(error)) => return Some((Err(error), (bytes, parser, machine, true))),
+                Some(Err(error)) => {
+                    let error = ResponsesProtocolError::new(format!(
+                        "failed to read upstream Responses stream: {error}"
+                    ));
+                    return Some((
+                        Ok(Bytes::from(protocol_error_sse(&error))),
+                        (bytes, parser, machine, true),
+                    ));
+                }
                 None => {
-                    let data = machine.finish().join("");
+                    let data = match parser.finish().and_then(|tail| {
+                        if let Some(event) = tail {
+                            machine.apply_checked(event)?;
+                        }
+                        machine.finish_checked()
+                    }) {
+                        Ok(frames) => frames.join(""),
+                        Err(error) => protocol_error_sse(&error),
+                    };
                     finished = true;
                     if data.is_empty() {
                         return None;
                     }
-                    // `machine.finish()` only produced output here because
-                    // the upstream connection ended before a real
-                    // terminal/error event (see `AnthropicSseMachine::finish`):
-                    // prefix the synthesized completion with an SSE comment
-                    // marker so `stream_metrics::observe_response` can still
-                    // classify this as an upstream cut instead of a normal
-                    // completion. Real clients ignore `:`-prefixed comment
-                    // lines per the WHATWG EventSource spec, so the
-                    // client-visible stream stays exactly as well-formed as
-                    // before.
-                    let mut marked = Vec::with_capacity(
-                        crate::stream_metrics::UPSTREAM_TRUNCATED_MARKER.len() + 2 + data.len(),
-                    );
-                    marked.extend_from_slice(crate::stream_metrics::UPSTREAM_TRUNCATED_MARKER);
-                    marked.extend_from_slice(b"\n\n");
-                    marked.extend_from_slice(data.as_bytes());
-                    return Some((Ok(Bytes::from(marked)), (bytes, parser, machine, finished)));
+                    return Some((Ok(Bytes::from(data)), (bytes, parser, machine, finished)));
                 }
             }
         }
@@ -208,18 +230,55 @@ pub(super) async fn json_response(
     upstream: reqwest::Response,
     relay: RelayOptions,
 ) -> Result<axum::response::Response, AdapterError> {
-    let body = upstream
-        .text()
-        .await
-        .map_err(|error| own_error(format!("failed to read Responses body: {error}")))?;
+    let mut bytes = upstream.bytes_stream();
+    let mut wire_bytes = 0usize;
+    let mut parser = SseParser::default();
     let mut machine = relay.machine();
-    for event in parse_sse_events(&body) {
-        let _ = machine.apply(event);
+    while let Some(chunk) = bytes.next().await {
+        let chunk =
+            chunk.map_err(|error| own_error(format!("failed to read Responses body: {error}")))?;
+        wire_bytes = wire_bytes
+            .checked_add(chunk.len())
+            .ok_or_else(|| own_error("upstream Responses body size overflow".to_string()))?;
+        if wire_bytes > MAX_RESPONSES_JSON_RESPONSE_BYTES {
+            return Err(own_error(format!(
+                "upstream Responses body exceeded {MAX_RESPONSES_JSON_RESPONSE_BYTES} bytes"
+            )));
+        }
+        let events = parser.push(&chunk).map_err(protocol_adapter_error)?;
+        for event in events {
+            let _ = machine
+                .apply_checked(event)
+                .map_err(protocol_adapter_error)?;
+            if let Some((status, error)) = machine.take_backend_error() {
+                return Err(backend_error(status, error));
+            }
+        }
+    }
+    if let Some(event) = parser.finish().map_err(protocol_adapter_error)? {
+        let _ = machine
+            .apply_checked(event)
+            .map_err(protocol_adapter_error)?;
     }
     if let Some((status, error)) = machine.take_backend_error() {
         return Err(backend_error(status, error));
     }
-    Ok((StatusCode::OK, axum::Json(machine.final_json())).into_response())
+    let message = machine
+        .final_json_checked()
+        .map_err(protocol_adapter_error)?;
+    Ok((StatusCode::OK, axum::Json(message)).into_response())
+}
+
+fn protocol_adapter_error(error: ResponsesProtocolError) -> AdapterError {
+    own_error(error.to_string())
+}
+
+fn protocol_error_sse(error: &ResponsesProtocolError) -> String {
+    let value = map_error_value(
+        &json!({ "message": error.to_string() }),
+        StatusCode::BAD_GATEWAY,
+    );
+    format!("event: error\ndata: {value}\n\n")
 }
 
 /// Frame-buffers the upstream SSE byte stream. Buffering raw bytes — rather than
@@ -228,43 +287,122 @@ pub(super) async fn json_response(
 /// trailing bytes stay in the buffer until the next chunk completes them. Frame
 /// boundaries are the ASCII `\n\n`, which can never fall inside a multi-byte
 /// sequence, so every extracted frame is already complete UTF-8.
-#[derive(Default)]
 struct SseParser {
     buffer: Vec<u8>,
-    scan_from: usize,
+    max_event_bytes: usize,
+    max_events_per_feed: usize,
+    disposed: bool,
+}
+
+impl Default for SseParser {
+    fn default() -> Self {
+        Self::with_limits(MAX_RESPONSES_SSE_EVENT_BYTES, MAX_RESPONSES_EVENTS_PER_FEED)
+    }
 }
 
 impl SseParser {
-    fn push(&mut self, chunk: &[u8]) -> Vec<ResponseEvent> {
-        self.buffer.extend_from_slice(chunk);
+    fn with_limits(max_event_bytes: usize, max_events_per_feed: usize) -> Self {
+        assert!(max_event_bytes > 0);
+        assert!(max_events_per_feed > 0);
+        Self {
+            buffer: Vec::new(),
+            max_event_bytes,
+            max_events_per_feed,
+            disposed: false,
+        }
+    }
 
-        let mut complete_end = None;
-        let mut scan = self.scan_from;
-        while scan + 1 < self.buffer.len() {
-            if self.buffer[scan] == b'\n' && self.buffer[scan + 1] == b'\n' {
-                complete_end = Some(scan + 2);
-                scan += 2;
-            } else {
-                scan += 1;
+    fn fail(&mut self, message: impl Into<String>) -> ResponsesProtocolError {
+        self.buffer.clear();
+        self.disposed = true;
+        ResponsesProtocolError::new(message)
+    }
+
+    fn push(&mut self, chunk: &[u8]) -> Result<Vec<ResponseEvent>, ResponsesProtocolError> {
+        if self.disposed {
+            return Err(ResponsesProtocolError::new(
+                "upstream Responses SSE parser is disposed",
+            ));
+        }
+        let mut events = Vec::new();
+        for &byte in chunk {
+            self.buffer.push(byte);
+            if let Some(delimiter_len) = terminal_delimiter_len(&self.buffer) {
+                let frame_len = self.buffer.len() - delimiter_len;
+                if frame_len > self.max_event_bytes {
+                    return Err(self.fail(format!(
+                        "upstream Responses SSE event exceeded {} bytes",
+                        self.max_event_bytes
+                    )));
+                }
+                if events.len() >= self.max_events_per_feed {
+                    return Err(self.fail(format!(
+                        "upstream Responses SSE chunk exceeded {} event limit",
+                        self.max_events_per_feed
+                    )));
+                }
+                let frame = self.buffer[..frame_len].to_vec();
+                self.buffer.clear();
+                if let Some(event) = parse_sse_frame(&frame)? {
+                    events.push(event);
+                }
+            } else if self.buffer.len() > self.max_event_bytes.saturating_add(3) {
+                return Err(self.fail(format!(
+                    "upstream Responses SSE event exceeded {} bytes",
+                    self.max_event_bytes
+                )));
             }
         }
-
-        let Some(complete_end) = complete_end else {
-            // The final byte may be the first half of a frame terminator, so scan
-            // it again after the next chunk arrives. Everything before it has
-            // already been ruled out.
-            self.scan_from = self.buffer.len().saturating_sub(1);
-            return Vec::new();
-        };
-
-        // Parse all complete frames in one UTF-8 decode, then compact the buffer
-        // once. Front-draining each frame shifts the same trailing bytes over and
-        // over when one transport chunk contains many SSE events.
-        let out = parse_sse_events(&String::from_utf8_lossy(&self.buffer[..complete_end]));
-        self.buffer.drain(..complete_end);
-        self.scan_from = self.buffer.len().saturating_sub(1);
-        out
+        Ok(events)
     }
+
+    fn finish(&mut self) -> Result<Option<ResponseEvent>, ResponsesProtocolError> {
+        if self.disposed {
+            return Err(ResponsesProtocolError::new(
+                "upstream Responses SSE parser is disposed",
+            ));
+        }
+        self.disposed = true;
+        if self.buffer.is_empty() {
+            return Ok(None);
+        }
+        if self.buffer.len() > self.max_event_bytes {
+            return Err(self.fail(format!(
+                "upstream Responses SSE event exceeded {} bytes",
+                self.max_event_bytes
+            )));
+        }
+        let frame = std::mem::take(&mut self.buffer);
+        parse_sse_frame(&frame)
+    }
+}
+
+fn terminal_delimiter_len(buffer: &[u8]) -> Option<usize> {
+    [b"\r\n\r\n".as_slice(), b"\n\r\n", b"\r\n\n", b"\n\n"]
+        .into_iter()
+        .find(|delimiter| buffer.ends_with(delimiter))
+        .map(<[u8]>::len)
+}
+
+fn parse_sse_frame(frame: &[u8]) -> Result<Option<ResponseEvent>, ResponsesProtocolError> {
+    let frame = std::str::from_utf8(frame)
+        .map_err(|_| ResponsesProtocolError::new("invalid UTF-8 in upstream Responses SSE"))?;
+    let mut event = None;
+    let mut data = Vec::new();
+    for line in frame.lines() {
+        if let Some(value) = line.strip_prefix("event:") {
+            event = Some(value.trim().to_string());
+        } else if let Some(value) = line.strip_prefix("data:") {
+            data.push(value.strip_prefix(' ').unwrap_or(value));
+        }
+    }
+    let data = data.join("\n");
+    if data.is_empty() || data == "[DONE]" {
+        return Ok(None);
+    }
+    let data = serde_json::from_str(&data)
+        .map_err(|_| ResponsesProtocolError::new("invalid JSON in upstream Responses SSE"))?;
+    Ok(Some(ResponseEvent { event, data }))
 }
 
 #[cfg(test)]
@@ -414,7 +552,7 @@ mod tests {
         let body = std::str::from_utf8(&bytes).expect("body is utf8");
         let marker = std::str::from_utf8(crate::stream_metrics::UPSTREAM_TRUNCATED_MARKER).unwrap();
 
-        assert!(body.contains(marker));
+        assert!(!body.contains(marker));
         assert!(body.contains("event: error"));
         assert!(!body.contains("event: message_stop"));
     }
@@ -470,9 +608,9 @@ mod tests {
         let mut parser = SseParser::default();
         // No frame boundary yet, and the incomplete byte must be held back
         // rather than decoded and corrupted.
-        assert!(parser.push(head).is_empty());
+        assert!(parser.push(head).unwrap().is_empty());
 
-        let events = parser.push(tail);
+        let events = parser.push(tail).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].event.as_deref(), Some("delta"));
         assert_eq!(events[0].data["text"], "안녕");
@@ -484,11 +622,13 @@ mod tests {
     #[test]
     fn sse_parser_retains_an_incomplete_trailing_frame() {
         let mut parser = SseParser::default();
-        let events = parser.push(b"event: a\ndata: {\"n\":1}\n\nevent: b\ndata: {\"n\":");
+        let events = parser
+            .push(b"event: a\ndata: {\"n\":1}\n\nevent: b\ndata: {\"n\":")
+            .unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].data["n"], 1);
 
-        let events = parser.push(b"2}\n\n");
+        let events = parser.push(b"2}\n\n").unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].event.as_deref(), Some("b"));
         assert_eq!(events[0].data["n"], 2);
@@ -499,9 +639,12 @@ mod tests {
     #[test]
     fn sse_parser_detects_terminator_split_across_chunks() {
         let mut parser = SseParser::default();
-        assert!(parser.push(b"event: a\ndata: {\"n\":1}\n").is_empty());
+        assert!(parser
+            .push(b"event: a\ndata: {\"n\":1}\n")
+            .unwrap()
+            .is_empty());
 
-        let events = parser.push(b"\n");
+        let events = parser.push(b"\n").unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].data["n"], 1);
     }
@@ -511,8 +654,11 @@ mod tests {
     #[test]
     fn sse_parser_emits_only_completed_frames() {
         let mut parser = SseParser::default();
-        assert!(parser.push(b"event: a\ndata: {\"n\":1}\n").is_empty());
-        let events = parser.push(b"\nevent: b\ndata: {\"n\":2}\n\n");
+        assert!(parser
+            .push(b"event: a\ndata: {\"n\":1}\n")
+            .unwrap()
+            .is_empty());
+        let events = parser.push(b"\nevent: b\ndata: {\"n\":2}\n\n").unwrap();
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].data["n"], 1);
         assert_eq!(events[1].data["n"], 2);
