@@ -578,3 +578,71 @@ fn gemini_semantic_strictness_accepts_signature_cap_and_rejects_cap_plus_one() {
         assert_eq!(result.is_ok(), accepted, "signature size {size}");
     }
 }
+
+#[test]
+fn gemini_tool_signature_roundtrip_preserves_exact_parallel_identities() {
+    let mut machine = GeminiSseMachine::new("gemini-3.1-pro-preview");
+    machine
+        .process_chunk_checked(&json!({
+            "candidates": [{
+                "content": {"role": "model", "parts": [
+                    {"functionCall": {"name": "read_file", "args": {"path": "a"}}, "thoughtSignature": "sig-a"},
+                    {"functionCall": {"name": "read_file", "args": {"path": "b"}}, "thoughtSignature": "sig-b"}
+                ]},
+                "finishReason": "STOP"
+            }]
+        }))
+        .unwrap();
+    machine.transport_close_checked().unwrap();
+    let assistant = machine.final_json_checked().unwrap()["content"].clone();
+    let ids: Vec<_> = assistant
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|block| block["id"].as_str().unwrap().to_string())
+        .collect();
+
+    let translated = translate_request_for_model(
+        &json!({"messages": [
+            {"role": "assistant", "content": assistant},
+            {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": ids[0], "content": "A"},
+                {"type": "tool_result", "tool_use_id": ids[1], "content": "B"}
+            ]}
+        ]}),
+        "gemini-3.1-pro-preview",
+    )
+    .unwrap();
+    assert_eq!(translated["contents"][0]["parts"][0]["thoughtSignature"], "sig-a");
+    assert_eq!(translated["contents"][0]["parts"][1]["thoughtSignature"], "sig-b");
+    assert_eq!(translated["contents"][1]["parts"][0]["functionResponse"]["name"], "read_file");
+    assert_eq!(translated["contents"][1]["parts"][1]["functionResponse"]["name"], "read_file");
+}
+
+#[test]
+fn gemini_tool_signature_roundtrip_rejects_invented_or_orphan_metadata() {
+    let invalid = [
+        json!({"messages": [{"role": "assistant", "content": [{
+            "type": "tool_use", "id": "toolu_foreign", "name": "read_file", "input": {}
+        }]}]}),
+        json!({"messages": [{"role": "assistant", "content": [{
+            "type": "tool_use", "id": "call_gemini_v1_not*base64", "name": "read_file", "input": {}
+        }]}]}),
+        json!({"messages": [{"role": "user", "content": [{
+            "type": "tool_result", "tool_use_id": "orphan", "content": "x"
+        }]}]}),
+        json!({"messages": [
+            {"role": "assistant", "content": [
+                {"type": "tool_use", "id": "call_gemini_v1_c2ln", "name": "first", "input": {}},
+                {"type": "tool_use", "id": "call_gemini_v1_c2ln", "name": "second", "input": {}}
+            ]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call_gemini_v1_c2ln", "content": "x"}]}
+        ]}),
+    ];
+    for request in invalid {
+        assert!(
+            translate_request_for_model(&request, "gemini-3.1-pro-preview").is_err(),
+            "accepted invented or orphan signature metadata: {request}"
+        );
+    }
+}
