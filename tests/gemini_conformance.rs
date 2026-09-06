@@ -110,6 +110,39 @@ async fn streaming_gateway_response(upstream_body: &[u8]) -> String {
     response.text().await.unwrap()
 }
 
+async fn unary_gateway_response(upstream_body: Vec<u8>) -> reqwest::Response {
+    let upstream = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1beta/models/gemini-2.5-pro:generateContent"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "application/json")
+                .set_body_bytes(upstream_body),
+        )
+        .expect(1)
+        .mount(&upstream)
+        .await;
+    let gateway = start_gateway(upstream.uri()).await;
+    reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .body(request(false))
+        .send()
+        .await
+        .unwrap()
+}
+
+fn padded_gemini_response(size: usize) -> Vec<u8> {
+    let prefix = br#"{"candidates":[{"content":{"parts":[{"text":"ok"}]},"finishReason":"STOP"}],"padding":""#;
+    let suffix = br#""}"#;
+    assert!(size >= prefix.len() + suffix.len());
+    let mut body = Vec::with_capacity(size);
+    body.extend_from_slice(prefix);
+    body.resize(size - suffix.len(), b'x');
+    body.extend_from_slice(suffix);
+    assert_eq!(body.len(), size);
+    body
+}
+
 #[tokio::test]
 async fn gemini_streaming_framing_rejects_malformed_json_once() {
     if !can_bind_loopback() {
@@ -248,4 +281,61 @@ async fn gemini_streaming_framing_late_data_invalidates_pending_success() {
     .await;
     assert_eq!(body.matches("event: error").count(), 1, "{body}");
     assert!(!body.contains("event: message_stop"), "{body}");
+}
+
+#[tokio::test]
+async fn gemini_unary_bounds_accepts_exact_cap_and_rejects_plus_one() {
+    if !can_bind_loopback() {
+        return;
+    }
+    const LIMIT: usize = 32 * 1024 * 1024;
+    let exact = unary_gateway_response(padded_gemini_response(LIMIT)).await;
+    assert_eq!(exact.status(), StatusCode::OK);
+    let exact_body: serde_json::Value = exact.json().await.unwrap();
+    assert_eq!(exact_body["content"][0]["text"], "ok");
+
+    let oversized = unary_gateway_response(padded_gemini_response(LIMIT + 1)).await;
+    assert_eq!(oversized.status(), StatusCode::BAD_GATEWAY);
+    let error: serde_json::Value = oversized.json().await.unwrap();
+    assert_eq!(error["type"], "error");
+}
+
+#[tokio::test]
+async fn gemini_unary_bounds_maps_embedded_provider_error_out_of_success() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let response = unary_gateway_response(
+        br#"{"response":{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"fixture quota"}}}"#.to_vec(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["type"], "error");
+    assert_eq!(body["error"]["type"], "rate_limit_error");
+    assert!(!body.to_string().contains("fixture-key"));
+}
+
+#[tokio::test]
+async fn gemini_unary_bounds_direct_and_wrapped_have_semantic_parity() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let direct = json!({
+        "candidates": [{
+            "content": {"parts": [{"text": "same"}]},
+            "finishReason": "STOP"
+        }],
+        "usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 1}
+    });
+    let wrapped = json!({"response": direct.clone()});
+    let direct_response = unary_gateway_response(serde_json::to_vec(&direct).unwrap()).await;
+    let wrapped_response = unary_gateway_response(serde_json::to_vec(&wrapped).unwrap()).await;
+    assert_eq!(direct_response.status(), StatusCode::OK);
+    assert_eq!(wrapped_response.status(), StatusCode::OK);
+    let direct_body: serde_json::Value = direct_response.json().await.unwrap();
+    let wrapped_body: serde_json::Value = wrapped_response.json().await.unwrap();
+    assert_eq!(direct_body["content"], wrapped_body["content"]);
+    assert_eq!(direct_body["stop_reason"], wrapped_body["stop_reason"]);
+    assert_eq!(direct_body["usage"], wrapped_body["usage"]);
 }
