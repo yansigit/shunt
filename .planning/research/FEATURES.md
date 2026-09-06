@@ -1,124 +1,162 @@
-# Feature Landscape
+# Feature Research
 
-**Domain:** Multi-Provider AI API Gateway & Responses Protocol Ingress
-**Researched:** 2026-09-05
+**Domain:** Lean protocol-translation gateway for coding-agent providers
+**Milestone:** Shunt v2 Provider Compatibility
+**Researched:** 2026-09-06
+**Confidence:** HIGH for current Shunt and OpenCodex `upstream/main`; MEDIUM for proprietary behavior still requiring live/captured verification
 
-## Table Stakes
+## Scope and Product Standard
 
-Features that clients (specifically OpenAI Codex CLI / ChatGPT Responses clients) strictly expect. Missing any of these causes client hangs, protocol errors, connection aborts, or broken turn lifecycles.
+The v2 acceptance unit is an **exact provider + authentication path + model + wire protocol**, not a provider name. A tuple is supported only when normal prompts, streaming, complex tools, subagents/continuation, long context, authentication, errors, and edge cases are observable and tested without silent loss, unbounded buffering, or mid-stream replay.
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| **Inbound Responses WebSocket Ingress (`GET /v1/responses` upgrade)** | Modern Codex CLI clients use WebSocket transport (`wss://.../codex/responses` or `/v1/responses`) to avoid HTTP request overhead and connection drops on long sessions. | Med | Matches paths configured in `[server.codex_endpoint]` (`/backend-api/codex/responses`, `/responses`, `/v1/responses`). Axum WebSocket upgrade with identical auth rules. |
-| **Handshake Authentication & Origin/Header Filtering** | Unauthenticated WS upgrades must be rejected at handshake before socket open. Forward headers must strip hop-by-hop/cookies while retaining turn state and auth. | Low | Reuses `inbound_auth` / token checks. Header sanitization matches `selectForwardHeaders` / `safeResponseHeaders`. |
-| **Deterministic Local Warmup (`generate: false`)** | Codex CLI sends `generate: false` probe frames on session init to establish connectivity without triggering upstream model invocation. Must complete locally. | Low | Generates synthetic `response.created` (`sequence_number: 0`, `in_progress`) followed by `response.completed` (`sequence_number: 1`, `completed`), `output: []`, `id: ""`. No upstream dispatch. |
-| **Text `response.create` Ingress & Ack Handling** | Client drives turns over WS by sending JSON text frames of type `response.create`. Client may also send `response.processed` acknowledgements. | Low | Parse text frames into Responses requests. Ignore `response.processed` as no-op ack. Reject binary or non-text frames with protocol error. |
-| **Single Active Turn per Socket with Cancellation** | Codex protocol permits only one active turn per socket at a time. A replacement `response.create` on an active socket cancels the in-flight turn immediately. | Med | Monotonic `turn_id` per socket. Replacement aborts upstream fetch/stream and invalidates stale pump frames before starting new turn. Disconnect also aborts upstream turn. |
-| **Faithful Terminal Framing (`completed`, `incomplete`, `failed`, `error`)** | Codex clients require exact terminal event semantics to finalize the UI/CLI turn state. Premature EOF without terminal must emit synthetic error. | Med | Re-frames upstream SSE into WS text frames. Terminal events (`response.completed`, `response.incomplete`, `response.failed`) finalize the turn and close pump. Stream ending before terminal emits 502 `error` frame. |
-| **Non-2xx HTTP / Upstream Error Framing** | When upstream returns an error status (e.g. 429, 500), WS client expects an OpenAI Responses `type: "error"` JSON frame with status code and safe headers (`Retry-After`). | Low | Standalone error frame: `{"type":"error","status":code,"error":{...},"headers":{...}}`. Gateway-owned errors must also follow OpenAI shape. |
-| **Application/JSON 200 Translation to Events** | Upstream or cached responses returned as buffered `application/json` must be reframed as an event sequence (`response.created`, `output_item.done`, `response.completed`). | Low | Required if upstream does not stream SSE or returns complete JSON. |
-| **Bounded Frame Buffering & Backpressure** | Slow WS clients or fast upstream SSE streams must not cause unbounded memory buffering. | Med | Bounded frame parsing, bounded outbound queue, explicit `max_payload_length` (e.g. 4MB), and backpressure drain handling. |
-| **Lease & Admission Teardown Lifecycle** | Account pool lease and concurrency slots must be held during the active turn and guaranteed to release on terminal event, client cancel, or error. | Low | RAII guard ensures pool leases and concurrency permits are returned promptly, preventing lease leakage across replacement turns. |
+Vercel AI Gateway already works through Shunt's Anthropic-compatible route and needs preservation, not a new transport. Google AI Studio Web is excluded completely.
 
-## Differentiators
+## Feature Landscape
 
-Features that set Shunt apart from heavier platforms (like OpenCodex's full SQLite-backed multi-tier architecture) while providing high-value protocol resilience and performance.
+### Table Stakes (Users Expect These)
+
+| Feature | Why Expected | Complexity | Observable acceptance behavior |
+|---|---|---:|---|
+| ChatGPT/Codex preservation | This mature subscription path cannot regress as providers are added. | HIGH | Native Responses stays opaque over HTTP/SSE and outbound WS v2; OAuth pools, quota admission, continuation, compression, pre-output HTTP fallback, terminals, cancellation, compaction/collaboration policy, and Codex-ingress OpenAI errors retain existing behavior. Never hop after output. |
+| Gemini / Google Code Assist verification | Shunt already exposes Code Assist, but existence is not conformance. | MEDIUM | Google OAuth and project envelope are correct; `v1internal:streamGenerateContent?alt=sse` relays incrementally; text/reasoning/functions/usage and multi-round tool history translate; errors are classified without buffering the stream. |
+| Antigravity protocol fidelity | Its Cloud Code Assist destination adds contracts beyond the shared Gemini translator. | HIGH | Envelope includes project, request/session identity, model and request metadata; response wrapper/usage unwraps; model/effort mapping is exact; signed tool history survives; OAuth 401 receives at most one account-bound refresh/replay before output; approved HTTPS destinations are enforced. |
+| Cursor native-agent hardening | Connect/protobuf framing, continuation and tool schemas are drift-prone. | HIGH | Exact model mapping, incremental text/tool stream, stable continuation, callable executable/freeform schemas, safe image behavior, one terminal outcome, cancellation, EOF/error handling, and evidence-backed pre-output retry. |
+| Generic OpenAI Chat Completions | Many API-key gateways expose `/v1/chat/completions`, not Responses or Messages. | HIGH | `/v1/messages` maps system/roles, text/images, tools/results/choice, controls, finish reasons, usage, JSON and SSE. Interleaved tool arguments assemble by stable index/id under explicit bounds. |
+| Command Code subscription/OAuth | Subscription users require proprietary `/alpha/generate`, not an OpenAI approximation. | HIGH | Existing login bearer is read without new writeback; bounded live models; required proprietary headers/config; opaque conversation affinity; incremental NDJSON text/reasoning/tools/usage; error finish is failure. |
+| Command Code API key | API customers need the same proven wire and capability facts. | MEDIUM | OAuth and key differ only in credential acquisition/pool behavior; both use canonical model IDs, `/alpha/generate`, verified efforts, identical translation and the same conformance suite. |
+| Exact-model OpenCode Go evaluation | Go spans Chat and Responses wires and has model-specific regressions. | HIGH | Each enabled tuple records exact ID, endpoint, context, modalities, effort mapping, tool policy, required headers and evidence. Unknown tuples remain unsupported/experimental. |
+| Bounded resources | Long agent turns and malformed streams must not degrade the daemon. | HIGH | Request/decompression sizes, SSE/NDJSON residuals, tool assemblies, replay state, discovery, queues, retries and timeouts are bounded; cancel/drop releases permits and credentials. |
+| Strict terminal/error fidelity | Clients distinguish invalid, truncated, quota, transient and malformed outcomes. | HIGH | Explicit errors never become clean completion; received usage survives failure; retry/failover is pre-output only; non-Codex gateway errors retain Anthropic shape. |
+| Cross-provider fixtures | Proprietary transports regress beyond happy paths. | MEDIUM | Every supported tuple has sanitized JSON/SSE/NDJSON/protobuf fixtures with revision/capture provenance and no secrets/user content. |
+
+### Provider-Specific Contracts
+
+| Provider path | Preserve / implement | Fail-closed boundary |
+|---|---|---|
+| ChatGPT/Codex OAuth → Responses | Opaque request/stream, OAuth pools/quota, WS v2 continuation/reuse, compression, collaboration passthrough when enabled, HTTP fallback only before output. | Never rewrite opaque reasoning, agent-task, or compaction state; never replay an accepted/billable turn after output. |
+| Gemini OAuth → Code Assist | Project envelope, Google OAuth refresh, stream URL, request/response conversion, functions, usage and Google error mapping; replay thought signatures only if verified. | Do not reuse Antigravity OAuth or hosts; make no Google AI Studio Web claim. |
+| Antigravity OAuth → Cloud Code Assist | Fixed HTTPS hosts, project-bound token, stable session, exact models/efforts, signed sequential tool history, one account-bound 401 replay. | Reject redirect/off-origin, missing project, invalid signature state and unsupported Claude rewrites before dispatch. |
+| Cursor OAuth → AgentService | Connect/protobuf stream, exact catalog, continuation, call IDs/arguments, executable/freeform schemas, verified images, EOF/error/cancel/retry. | No speculative repetition/no-progress killer; open issue #3506 shows model behavior is not a safe generic signal. |
+| API key → OpenAI Chat | Correct `/chat/completions` join, bearer/optional-key policy, role/tool/image mapping, streaming usage, structured output and explicitly configured capability gates. | Malformed choices/tool deltas, incomplete arguments and premature EOF fail closed unless an exact provider has captured EOF-tolerance evidence. |
+| Command Code OAuth/key → `/alpha/generate` | Canonical IDs, bounded workspace/git config, required headers, stable opaque session, filtered tools, paired call/result history, efforts, bounded NDJSON, usage/finish semantics. | No inferred effort for unknown models; close missing calls with synthetic error results, carry orphan results as user text; no credential writeback change. |
+| OpenCode Go key → exact Chat/Responses wire | `x-opencode-session`, exact wire defaults, context/modalities/effort/tool restrictions, operator header override. | Never infer wire by family. Current upstream Responses candidates (`gpt-5.6-luna`, `grok-4.6`, Muse Spark Contributor 1.2/1.3) require independent Shunt verification. |
+| Vercel → Anthropic Messages | Preserve configurable Anthropic-compatible auth/header safety, JSON/SSE and errors. | No Vercel-specific adapter or new Chat/Responses claim. |
+
+### Observable Behavior Matrix
+
+| Scenario | Required behavior | Edge cases to prove |
+|---|---|---|
+| Normal prompt | System/developer/user order and Unicode survive; exact wire model is used; text, stop reason and usage agree between streamed/buffered modes. | Empty/multipart text, aliases, unknown optional fields, wrapped JSON response. |
+| Streaming | First useful delta is relayed incrementally; order is stable; padding/heartbeats do not corrupt output; exactly one terminal occurs; disconnect cancels upstream. | Split UTF-8/JSON/SSE lines, CRLF/comments, `data:` NDJSON, explicit error then terminal, duplicate terminal, premature EOF. |
+| Complex tools | Schemas, names, descriptions and choice survive; parallel calls retain identity; JSON arguments assemble losslessly; results pair; images are preserved or explicitly rejected. | Null padding, late id/name/index, duplicate IDs, 24+ interleaved calls, freeform string tools, executable policy fields, empty/error/missing/orphan results. |
+| Subagents / continuation | Native Codex remains opaque; translated providers receive supported plaintext only; affinity is stable across tool rounds, recovery and changed compacted history. | Encrypted task, lone seeded tool result without call ID, replacement, recovered history, shared cache cohort, same prompt in different threads. Unsupported encryption fails before dispatch. |
+| Long context | Advertised limit equals verified usable limit; local memory stays bounded; truncation maps to incomplete/max-token; continuation needs no durable Shunt history. | Exact boundary, oversized request/decompression, large args/images, 1M metadata, 413/context-length errors. |
+| Authentication | Credential type is injected only to approved origin; refresh is bounded; account/project stay paired; key/subscription paths are visible operationally. | Blank/expired token, first/second 401, redirect/host spoof, resolution failure, rotation. |
+| Errors/retry | Invalid/policy/context errors are terminal; quota and transient rate limits differ; safe `Retry-After` survives; failed-stream usage survives. | HTML/secret-bearing errors, reset edge cases, 429 vs hard quota, 5xx/529, error finish, malformed/no-event body. |
+| Model capability | Only exact verified models expose reasoning, vision, parallel tools, structured output or web search; supported operator override wins. | Retired/new IDs, prototype-like ID, unsupported effort, partial tiers, Chat-vs-Responses mismatch. |
+
+### Differentiators (Competitive Advantage)
 
 | Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| **Zero-Copy Byte-Preserving Passthrough on Native Responses Upstreams** | Minimizes CPU overhead and latency. Eliminates serialization drift or subtle field drops (e.g., encrypted reasoning, client metadata, multi-agent coordination payloads). | Low | Pass upstream bytes directly to client without JSON deserialization/reserialization unless re-framing SSE to WS text. |
-| **Exact Model Routing to Heterogeneous Responses-Native Upstreams** | Allows routing specific models (e.g. OpenAI official, xAI, Azure) directly to native endpoints without running through translation pipelines. | Med | Extracted `model` route lookup with fail-closed validation if provider adapter is not Responses-compatible. |
-| **Standards-Compliant `Retry-After` Parsing (HTTP-Date & Seconds)** | Differentiates transient burst limits from hard quota exhaustion; honors provider cooldown periods accurately across providers. | Low | Parses both delta-seconds (`120`) and RFC 7231 IMF-fixdate strings into monotonic deadlines. |
-| **Granular Quota vs Rate-Limit Classification** | Prevents dead loops rotating through accounts that hit hard account-level quota caps while handling transient 429s gracefully. | Low | Inspects error codes/messages (`insufficient_quota` vs `rate_limit_exceeded`) to mark account exhaustion accurately. |
-| **Native `/v1/responses/compact` Opaque Forwarding** | Supports long Codex sessions that utilize OpenAI/ChatGPT compaction without requiring local storage or decrypting opaque tokens. | Med | Forwards compaction endpoint directly to compatible native Responses provider. |
-| **Bounded Graceful Drain on Shutdown** | Prevents runaway SSE/WS streams from blocking server restart indefinitely without abrupt drops. | Low | Fixed shutdown deadline (e.g. 15–30s) cancels remaining active turns cleanly and releases pool leases. |
-| **Responses-to-Anthropic Bidirectional Translation Vertical Slice** | Allows Codex CLI to run against Anthropic Claude models with full tool calling, streaming text, and reasoning preservation. | High | Dedicated isolated translator module with strict input validation, distinct from Messages-to-Responses translator. |
+|---|---|---:|---|
+| Evidence-gated exact compatibility | “Supported” means reproducible wire contract, not marketing label. | MEDIUM | Essential for OpenCode Go and changing subscription backends. |
+| One lean conformance harness | Finds semantic drift across SSE, NDJSON, protobuf and Responses WS without OpenCodex's platform. | HIGH | Golden semantic assertions plus event-order assertions. |
+| Streaming-first translation | Preserves latency and bounded memory on translated providers. | HIGH | Buffer only non-stream output or minimal bounded fragments. |
+| Destination-bound credentials | Couples subscription tokens to protocol kind, TLS origin and provider identity. | MEDIUM | Google, Antigravity, Cursor and ChatGPT tokens fail before off-origin egress. |
+| Evidence-scoped repair | Improves compatibility without a global mutation engine. | LOW | Every normalization cites a captured failure and exact tuple. |
+| Honest degradation | Explicit unsupported errors replace silent loss or optimistic catalog rows. | MEDIUM | Filter before credential lookup/network dispatch. |
 
-## Protocol Conformance Tests
+### Anti-Features
 
-To verify compliance with OpenCodex behaviors without importing platform complexity, the following conformance test suite must be implemented:
+| Feature | Why Requested | Why Problematic | Alternative |
+|---|---|---|---|
+| Provider-wide OpenCode Go | One toggle is convenient. | Models span wires; recent bugs were exact-model specific. | Exact allowlisted tuples. |
+| Google AI Studio Web | Another apparent Google path. | Cookie/SAPISIDHASH, extension/daemon/parser/session dependencies are known nonfunctional and out of scope. | Verified Gemini Code Assist only. |
+| General repair framework | Seems to absorb all quirks. | Masks regressions and mutates unrelated tuples. | Small transcript-backed normalizations. |
+| Cursor no-progress killer | Could stop loops. | Semantic progress is model-dependent; #3506 remains open after mitigation. | Transport fidelity, user cancellation/timeouts, proven signals only. |
+| Mid-stream retry/hop | Looks resilient. | Duplicates output/side effects and billing. | Retry/fail over before first output only. |
+| Durable history/signature database | Simplifies replay in theory. | Adds migrations, privacy and lifecycle burden. | Bounded in-memory state only when proven necessary. |
+| New credential writeback | Could unify stores. | Outside authorization and risks provider-owned credentials. | Read existing approved sources unchanged. |
+| Catalog/dashboard/pricing platform | Broad discoverability. | Recreates unrelated OpenCodex machinery. | Bounded required discovery, typed config, existing status. |
+| Duplicate pools/retry/WS stacks | Local module convenience. | Divergent ownership leaks leases and semantics. | Reuse Shunt primitives. |
+| New Vercel transport | Vercel is named. | Existing Messages route already fits. | Regression-test it. |
 
-| Test Scenario | Focus / Assertion | Source Reference |
-|---------------|-------------------|------------------|
-| **WS Upgrade & Handshake Auth** | Verify GET upgrade succeeds on configured paths; rejects unauthorized or missing bearer token with 401/403. | OpenCodex `ws-bridge.ts`, `inbound_codex_endpoint.rs` |
-| **Warmup Frame Generation** | Send `{"type":"response.create","model":"gpt-5.5","generate":false}`; verify local emission of `response.created` and `response.completed` with no upstream call. | OpenCodex `ws-endpoint.test.ts` ("generate=false warmup") |
-| **SSE Re-Framing to WS Text** | Stream upstream SSE events; verify reframing into WS text frames in identical sequence, stopping at terminal. | OpenCodex `ws-endpoint.test.ts` ("re-frames SSE data payloads") |
-| **Terminal Fidelity (`completed`, `failed`, `incomplete`)** | Verify SSE ending with `response.completed`, `response.failed`, or truncated stream correctly emits respective event or 502 error frame. | OpenCodex `ws-endpoint.test.ts` ("reports failed terminal status", "reports incomplete") |
-| **Client Disconnect / Replacement Turn Cancellation** | Send replacement `response.create` or close client socket during active stream; assert upstream request is aborted and old pump emits nothing. | OpenCodex `ws-endpoint.test.ts` ("wires a cancel hook", "does not emit stale frames") |
-| **Frame Size Bounds & Malformed Frames** | Verify frames > max payload (4MB) emit 413 error frame and close with 1009; verify binary/unparseable frames do not crash session. | OpenCodex `ws-endpoint.test.ts`, `server/index.ts` |
-| **Backpressure & Drain Handling** | Slow consumer stalls socket write; verify buffer limits hold and pumping pauses until write drain without dropping frames. | OpenCodex `ws-endpoint.test.ts` ("backpressured websocket sends are accepted") |
-| **Header Filtering on Ingress/Egress** | Forward headers drop cookies, keep auth and turn-state; egress headers strip `set-cookie`, preserve `retry-after` and rate limits. | OpenCodex `ws-endpoint.test.ts` ("stores only allowlisted inbound headers") |
-| **JSON 200 Response Re-Framing** | Non-streaming upstream JSON response is reframed into `response.created`, `output_item.done`, and `response.completed`. | OpenCodex `ws-endpoint.test.ts` ("converts application/json 200 responses into event sequence") |
+## Dependencies and Delivery
 
-## Anti-Features
+```text
+[Preserve Codex + shared limits/errors/cancellation]
+    └──enables──> [Conformance harness]
+                     ├──> [Gemini] ──> [Antigravity deltas]
+                     ├──> [Cursor]
+                     ├──> [OpenAI Chat]
+                     └──> [Command Code OAuth + key]
 
-Features from OpenCodex or general gateways to explicitly NOT build in Shunt.
+[OpenAI Chat] ──enables──> [OpenCode Go Chat tuples]
+[Native Responses] ──────> [OpenCode Go Responses tuples]
+[Exact evidence] ─requires─> [Any Go tuple]
 
-| Anti-Feature | Why Avoid | What to Do Instead |
-|--------------|-----------|-------------------|
-| **SQLite Request-History & Generalized Database** | Adds disk I/O, schema migrations, lock contention, and operational bloat in Shunt's high-throughput proxy hot path. | Keep in-memory transient stream state; rely on client-side session management and connection-scoped state. |
-| **Compatibility Lab, Management Web GUI & Dashboard** | Shunt is a lean CLI-managed daemon / headless gateway, not a full admin SaaS platform. | Expose simple status endpoints (`/health`, `/status`, admin tokens) and CLI check tools. |
-| **Dynamic Manifest Platform & Plugin Framework** | Dynamic plugin engines and manifest evaluators add runtime unpredictability and security attack surface. | Use typed Rust configuration (`config.toml`) with compile-time checked adapters and validation. |
-| **Wholesale / Speculative Response Repair Modules** | Arbitrary patching of upstream payloads masks upstream breakage and adds brittle regex/AST rewrites. | Add targeted repairs ONLY when backed by a verified captured failing transcript fixture. |
-| **Durable Continuation Spill to Disk** | Storing continuation responses on disk adds complex invalidation, encryption, and lifecycle management. | Keep continuation strictly connection-scoped and in-memory as implemented in `codex_ws.rs` / `codex_continuation.rs`. |
-| **Duplicated Connection / Account Pooling Stacks** | Shunt already has robust M10 account pooling, quota tracking, and outbound WS connection reuse. | Reuse existing `AccountPool` and `InboundAuth` primitives rather than creating a second WS-specific pool. |
-| **Decrypting Opaque Payloads on Native Route** | Parsing/decrypting OpenAI agent tasks, reasoning tokens, or compaction payloads risks corruption and violates privacy. | Treat native Responses traffic as opaque byte-preserving passthrough. |
-
-## Feature Dependencies
-
-```
-Inbound Responses WebSocket Ingress (Handshake & Upgrade)
-  │
-  ├──► Inbound Auth & Header Filtering (Table Stakes)
-  │
-  ├──► Local Warmup (generate: false) (Table Stakes)
-  │
-  ├──► Frame Parsing & Single-Turn Lifecycle (Table Stakes)
-  │      │
-  │      ├──► Replacement Turn & Disconnect Cancellation (Table Stakes)
-  │      │
-  │      └──► SSE Re-framing & Terminal Fidelity (Table Stakes)
-  │             │
-  │             ├──► Backpressure & Bounded Buffering (Table Stakes)
-  │             │
-  │             └──► Exact Native Responses Routing (Differentiator)
-  │                    │
-  │                    ├──► /v1/responses/compact Native Forwarding (Differentiator)
-  │                    │
-  │                    └──► Responses-to-Anthropic Translation Slice (Differentiator)
+[Mid-stream hop] ─conflicts─> [stream/tool fidelity]
+[Google AI Studio Web] ─conflicts─> [scope]
 ```
 
-- **Inbound WebSocket Ingress** requires existing **Axum server routing** and **InboundAuth**.
-- **Turn Execution** requires existing **AccountPool** (for ChatGPT accounts) or HTTP client dispatch.
-- **Exact Native Responses Routing** requires **Inbound WebSocket** + **Model Extraction** without translation.
-- **Responses-to-Anthropic Translation** requires **Turn Execution** + dedicated bidirectional translation module.
+### P1 — Preservation and Verification
 
-## MVP Recommendation
+- [ ] Freeze ChatGPT/Codex transport, auth, quota, continuation, collaboration and error fixtures.
+- [ ] Run the full matrix against Gemini; preserve Vercel via the Messages suite.
+- [ ] Add bounded reusable SSE/NDJSON/protobuf fixture helpers.
 
-Prioritize for Immediate Delivery (Phase 0 & Phase 1):
-1. **Conformance Test Harness & Fixtures (Phase 0)**:
-   - Import focused test transcripts from OpenCodex for warmup, terminal variants, replacement turn cancellation, malformed frames, and header filtering.
-2. **Inbound Responses WebSocket Parity (Phase 1)**:
-   - Implement Axum WebSocket upgrade on `[server.codex_endpoint]` paths.
-   - Local warmup (`generate: false`) evaluation.
-   - SSE-to-WS text re-framing with terminal state enforcement (`completed`, `incomplete`, `failed`, `error`).
-   - Replacement turn cancellation and disconnect abort.
-   - Reuse existing AccountPool and raw passthrough.
+### P1 — Provider Hardening and Missing Wires
 
-Follow-up Priorities (Phase 2 & Phase 3):
-1. **Exact Native Responses Routing (Phase 2)**: Route by `model` to native Responses upstreams with byte-preserving passthrough.
-2. **Resilience Primitives (Phase 3)**: Granular quota classification and RFC 7231 `Retry-After` date parsing.
+- [ ] Antigravity exact envelope/stream/model/signature/401/destination contracts.
+- [ ] Cursor exact model/continuation/tool/error/EOF/retry contracts; no progress heuristic.
+- [ ] Generic OpenAI Chat text → streaming → usage/errors → images/complex tools.
+- [ ] Command Code proprietary headers/config, NDJSON, discovery, pairing, affinity and error finishes for OAuth and API key.
 
-Defer:
-- **Native Compaction Forwarding (Phase 4)**: Defer until basic WS session streaming is verified in production.
-- **Responses-to-Anthropic Translation (Phase 5)**: Defer until native transport parity is solid.
-- **Routed Collaboration V2 / Agent State Recovery (Phase 7)**: Defer; opt-in only.
+### P2 — Exact OpenCode Go
+
+- [ ] Evaluate the live/captured roster one tuple at a time.
+- [ ] Require/derive stable opaque `x-opencode-session`, honoring operator override.
+- [ ] Verify context, modalities, efforts and tool/web-search restrictions; leave all unverified tuples unsupported.
+
+## Prioritization
+
+| Feature | Value | Cost | Priority |
+|---|---:|---:|---:|
+| ChatGPT/Codex preservation | HIGH | MEDIUM | P1 |
+| Gemini verification | HIGH | MEDIUM | P1 |
+| Antigravity hardening | HIGH | HIGH | P1 |
+| Cursor hardening | HIGH | HIGH | P1 |
+| Generic OpenAI Chat | HIGH | HIGH | P1 |
+| Command Code OAuth + API key | HIGH | HIGH | P1 |
+| Exact OpenCode Go | MEDIUM | HIGH | P2 |
+| Vercel preservation | MEDIUM | LOW | P1 |
+
+## Evidence and Confidence
+
+| Finding | Confidence | Evidence |
+|---|---|---|
+| Shunt has ChatGPT/Codex, Gemini, Antigravity, Cursor, Responses and Anthropic paths; Chat and Command Code kinds are missing. | HIGH | Shunt `e029ae2f`: `src/config.rs`, adapters/models/tests, README. |
+| Antigravity needs exact envelope/session/signature and account-bound recovery. | HIGH upstream; MEDIUM live | OpenCodex current wire/replay tests; merged #3691, #3799. |
+| Cursor schemas must retain executable controls and freeform guidance. | HIGH | Merged #3707, #3715 and current tests. |
+| Command Code is proprietary NDJSON with tool pairing and affinity. | HIGH | Current adapter/tests; merged #1411, #3692. |
+| OpenCode Go needs a session header and exact wire/tool policy. | HIGH | Issues #3344/#3378; merged #3394/#3405; registry exact defaults. |
+| Routed subagent seeds/recovery need dedicated tests. | MEDIUM/HIGH | Open issues #3661 and #3807. |
 
 ## Sources
 
-- `.planning/PROJECT.md` (Shunt OpenCodex Behavior Port specification and constraints)
-- `.planning/notes/opencodex-port-audit.md` (Port/adapt/reject matrix and audit against OpenCodex revision `566debc729bfa20b6ce109ae86b96888e1bdff89`)
-- `.planning/codebase/TESTING.md` (Existing test architecture, Wiremock patterns, and test runner configurations)
-- `tests/inbound_codex_endpoint.rs` (Existing Shunt raw passthrough and account pool integration tests)
-- `/Volumes/PortableSSD/Projects/opencodex/tests/ws-endpoint.test.ts` (OpenCodex inbound WebSocket bridge conformance test cases)
-- `/Volumes/PortableSSD/Projects/opencodex/src/server/ws-bridge.ts` (OpenCodex WebSocket bridge implementation and framing contracts)
+### Local primary evidence
+
+- Shunt at `e029ae2fb35eee9149855769a779343d7139d209`: `src/config.rs`, `src/proxy.rs`, `src/adapters/`, `src/model/`, and `tests/`.
+- OpenCodex `upstream/main` at `07b48da8fd63881e848d26e0bd50087864f5573e`: `openai-chat.ts`, `command-code.ts`, Antigravity wire/replay/tools, Cursor modules, `opencode-go.ts`, Go transport, registry and tests.
+- `.planning/PROJECT.md` and `.planning/notes/opencodex-port-audit.md`.
+
+### GitHub issues and merged changes
+
+- [Antigravity account-bound OAuth recovery #3691](https://github.com/lidge-jun/opencodex/pull/3691); [fixed-destination quota transport #3799](https://github.com/lidge-jun/opencodex/pull/3799)
+- [Cursor executable/freeform schemas #3707](https://github.com/lidge-jun/opencodex/pull/3707); [freeform guidance #3715](https://github.com/lidge-jun/opencodex/pull/3715); [open no-progress recurrence #3506](https://github.com/lidge-jun/opencodex/issues/3506)
+- [Command Code tool-result pairing #1411](https://github.com/lidge-jun/opencodex/pull/1411); [recovery affinity #3692](https://github.com/lidge-jun/opencodex/pull/3692)
+- [OpenCode Go wire issue #3378](https://github.com/lidge-jun/opencodex/issues/3378); [Grok Responses #3394](https://github.com/lidge-jun/opencodex/pull/3394); [session/tool policy #3405](https://github.com/lidge-jun/opencodex/pull/3405)
+- [Encrypted routed subagent recovery #3661](https://github.com/lidge-jun/opencodex/issues/3661); [Codex desktop seed incompatibility #3807](https://github.com/lidge-jun/opencodex/issues/3807)
+
+---
+*Feature research for Shunt v2 Provider Compatibility; researched 2026-09-06.*
