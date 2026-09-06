@@ -3075,6 +3075,21 @@ pub fn classify_quota_response(status: StatusCode, body: &[u8]) -> QuotaDecision
     if status != StatusCode::TOO_MANY_REQUESTS && status != StatusCode::PAYMENT_REQUIRED {
         return QuotaDecision::Transient;
     }
+    // serde_json::Value keeps only the last duplicate object member. Reject
+    // repeated discriminator keys before parsing so an attacker cannot hide a
+    // transient value behind a later hard-quota value.
+    let mut code_keys = 0usize;
+    let mut type_keys = 0usize;
+    for window in body.windows(7) {
+        if window == br#"\"code\":"# {
+            code_keys += 1;
+        } else if window == br#"\"type\":"# {
+            type_keys += 1;
+        }
+    }
+    if code_keys > 1 || type_keys > 1 {
+        return QuotaDecision::Transient;
+    }
     let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
         return QuotaDecision::Transient;
     };
