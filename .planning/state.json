@@ -6,7 +6,7 @@
     {
       "number": "1",
       "name": "Inbound Responses WebSocket",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "2",
@@ -46,8 +46,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (verify)",
-    "reason": "Phase 01 of 8 · 0% · ready to verify"
+    "label": "Advance to the next step (plan phase 2)",
+    "reason": "Phase 2 of 8 — needs a plan"
   },
-  "updated_at": "2026-09-05T23:56:36.385Z"
+  "updated_at": "2026-09-06T00:10:58.739Z"
 }
