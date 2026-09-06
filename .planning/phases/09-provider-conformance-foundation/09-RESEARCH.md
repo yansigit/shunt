@@ -436,13 +436,13 @@ Gemini, Antigravity, and Cursor have similar terminal/bounds defects, but their 
 
 These exclusions are locked by Phase 9 context and milestone scope. [VERIFIED: `.planning/phases/09-provider-conformance-foundation/09-CONTEXT.md:10-65`; `.planning/REQUIREMENTS.md:105-119`]
 
-## Open Questions for Planning
+## Resolved Planning Questions
 
-1. **Exact cap values:** code inspection proves which state is unbounded, but not the correct numeric limit for every Responses aggregate. The plan should require named constants, rationale from existing protocol/config limits, and boundary tests rather than silently choosing arbitrary values.
-2. **Generic response credential-like headers:** current passthrough can relay upstream `set-cookie`, `authorization`, or `x-api-key`. Changing that is security-relevant but observable; treat it as a separately approved decision, not an implicit Phase 9 change. [VERIFIED: `src/headers.rs:1-40`; `src/adapters/anthropic/mod.rs:1011-1035`]
-3. **Unkeyed historical reasoning metadata:** structural decode is not cryptographic provenance. Phase 9 should stop generating empty/invented metadata and preserve accepted opaque bytes, while deferring a new signing system unless separately authorized. [VERIFIED: `src/model/responses_request.rs:263-280`; `src/model/responses.rs:425-466`]
+1. **RESOLVED — Internal cap values:** Phase 9 uses crate-private defaults derived from existing Shunt limits rather than public configuration: 8 MiB per Responses SSE event/residual, 256 events per feed, 32 MiB accumulated non-streaming/translated response state, 10,000 continuation items, 32 MiB serialized continuation transcript, and 64 KiB each for response ID and opaque turn-state metadata. Tests inject smaller limits and cover below-limit, exact-limit, and limit-plus-one. **Authority:** D-07 permits bounded internal helpers, D-14 permits repairs demonstrated by failing regressions, and the milestone forbids new public configuration.
+2. **RESOLVED — Generic response headers and public URL semantics:** Preserve current generic Anthropic response-header passthrough and configured-URL validation exactly in Phase 9. Test request-side configured-origin credential binding and off-origin stripping, but do not add a Vercel hostname allowlist, global URL restriction, or new response-header stripping. **Authority:** D-01/D-02 preserve existing behavior, D-14 limits production changes to demonstrated Phase 9 violations, and public provider semantics require separate approval. [VERIFIED: `src/headers.rs:1-40`; `src/adapters/anthropic/mod.rs:1011-1035`; `src/config.rs:4021-4046`]
+3. **RESOLVED — Opaque historical reasoning metadata:** Treat existing accepted reasoning metadata as opaque continuation bytes, preserve it byte-for-byte only when a non-empty reasoning identity and the existing append-only/session checks are present, and reject empty or invented identity. Do not describe structural acceptance as cryptographic authenticity and do not add signing or provenance machinery. **Authority:** D-11 forbids invented signatures while requiring opaque preservation, and durable/signing infrastructure is explicitly outside Phase 9. [VERIFIED: `src/model/responses_request.rs:263-280`; `src/model/responses.rs:425-466`]
 
-These questions do not block planning: each has a conservative default that stays inside the locked boundary.
+All planning questions are resolved within the locked Phase 9 authority; none requires a public semantic or credential-persistence change.
 
 ## Assumptions
 

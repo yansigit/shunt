@@ -1,75 +1,91 @@
 ---
 phase: "09"
 slug: "provider-conformance-foundation"
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: ready
+nyquist_compliant: true
+wave_0_complete: true
 created: "2026-09-06"
+updated: "2026-09-06"
 ---
 
 # Phase 09 — Validation Strategy
 
-> Per-phase validation contract for feedback sampling during execution.
-
----
+> Executable validation contract for all eleven planned tasks.
 
 ## Test Infrastructure
 
 | Property | Value |
 |----------|-------|
-| **Framework** | Rust built-in test harness + Tokio/Axum integration tests |
+| **Framework** | Rust built-in test harness + Tokio/Axum real-gateway integration tests |
+| **Mock boundary** | Wiremock or raw loopback server for external provider endpoints only |
 | **Config file** | `Cargo.toml` |
-| **Quick run command** | `cargo test --test failover --test retry --test passthrough` |
-| **Full suite command** | `cargo test --all-features --workspace` |
-| **Estimated runtime** | ~120 seconds |
-
----
+| **Focused baseline** | `cargo test --all-features --test failover --test retry --test codex_websocket_fallback` |
+| **Full suite** | `cargo test --all-features --workspace` |
+| **Final quality gates** | format, warnings-denied Clippy, full all-features workspace suite |
 
 ## Sampling Rate
 
-- **After every task commit:** Run the task's focused `cargo test` target or module filter.
-- **After every plan wave:** Run `cargo test --all-features --workspace`.
-- **Before `/gsd:verify-work`:** Format, clippy, and the full suite must be green.
-- **Max feedback latency:** 120 seconds for the full suite; focused task checks should stay below 60 seconds.
-
----
+- After every task: run its exact focused command below.
+- After Wave 1: run the commitment, failover, retry, and WebSocket-fallback suites.
+- After Wave 2: run the Responses/Codex-ingress suites and the passthrough/failover/account suites.
+- After Wave 3: run native Codex HTTP/SSE, inbound and outbound WebSocket v2, compression, continuation, cancellation, and terminal suites, then all repository quality gates.
+- Focused checks should complete within 60 seconds; the full workspace gate may take up to 120 seconds.
 
 ## Per-Task Verification Map
 
-| Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
-|---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 09-01-01 | 01 | 1 | PRES-01, SAFE-04 | T-09-01 | Redispatch is monotonic and closes before visible output or replay-unsafe tool activity | unit + integration | `cargo test redispatch` | ❌ W0 | ⬜ pending |
-| 09-01-02 | 01 | 1 | SAFE-01, SAFE-03 | T-09-02 | Bounded parsing fails closed on malformed, oversized, duplicate-terminal, and cut streams | unit + integration | `cargo test --test failover truncated` | ✅ | ⬜ pending |
-| 09-02-01 | 02 | 2 | PRES-02, SAFE-06 | T-09-03 | Tool pairs and authentic continuation metadata survive only safe replay | integration | `cargo test --test codex_websocket_fallback` | ✅ | ⬜ pending |
-| 09-02-02 | 02 | 2 | SAFE-02, SAFE-07 | T-09-04 | Cancellation releases response-owned permits and upstream work | unit + integration | `cargo test cancellation` | ✅ | ⬜ pending |
-| 09-03-01 | 03 | 2 | PRES-03, PRES-04, PRES-05 | T-09-05 | Existing Codex and Vercel behavior remains byte- and shape-compatible | integration | `cargo test --test passthrough --test inbound_codex_endpoint` | ✅ | ⬜ pending |
-| 09-03-02 | 03 | 2 | SAFE-05 | T-09-06 | Credentials remain provider/destination bound and redact in diagnostics | unit + integration | `cargo test credential` | ✅ | ⬜ pending |
+| Task ID | Plan | Wave | Requirements | Threats | Secure behavior | Test type | Automated command | Target exists | Status |
+|---------|------|------|--------------|---------|-----------------|-----------|-------------------|---------------|--------|
+| 09-01-01 | 01 | 1 | PRES-03, SAFE-04 | T-09-01, T-09-02 | Monotonic commitment permits pre-commit fallback and blocks post-text/post-tool fallback | unit + real gateway | `cargo test --all-features replay_commitment` | ✅ | ⬜ pending |
+| 09-01-02 | 01 | 1 | PRES-03, SAFE-04 | T-09-01, T-09-03 | Same-provider retry and route failover consume one predicate without broadening eligibility | unit + integration | `cargo test --all-features redispatch_gate` | ✅ | ⬜ pending |
+| 09-02-01 | 02 | 2 | PRES-01, PRES-04, SAFE-03 | T-09-05, T-09-06 | Native HTTP/SSE and inbound WebSocket reject incomplete/conflicting terminals with ingress-correct errors | unit + real gateway | `cargo test --all-features responses_terminal` | ✅ | ⬜ pending |
+| 09-02-02 | 02 | 2 | SAFE-01, SAFE-02, SAFE-03 | T-09-04, T-09-05 | Byte-strict parser and non-streaming accumulator enforce below/exact/plus-one bounds | unit + integration | `cargo test --all-features responses_bounds` | ✅ | ⬜ pending |
+| 09-02-03 | 02 | 2 | PRES-01, SAFE-03 | T-09-05 | HTTP and defensive WebSocket transports share one trustworthy-terminal rule | adapter | `cargo test --all-features responses_transport_terminal` | ✅ | ⬜ pending |
+| 09-03-01 | 03 | 3 | PRES-02, SAFE-04, SAFE-06 | T-09-08, T-09-09 | One-shot recovery preserves paired tools and opaque metadata and consumes the shared commitment predicate | real gateway | `cargo test --all-features continuation_recovery` | ✅ | ⬜ pending |
+| 09-03-02 | 03 | 3 | SAFE-01, SAFE-06 | T-09-10 | Continuation items, transcript bytes, and metadata are bounded and overflow disables reuse atomically | unit | `cargo test --all-features continuation_bounds` | ✅ | ⬜ pending |
+| 09-03-03 | 03 | 3 | PRES-02, SAFE-06 | T-09-08, T-09-11 | Missing/invented tool or reasoning identity fails closed while valid opaque values remain exact; final repository gates pass | unit + integration + release gates | `cargo test --all-features authentic_tool_identity`, then format, Clippy, and full workspace commands below | ✅ | ⬜ pending |
+| 09-04-01 | 04 | 2 | PRES-05, SAFE-05 | T-09-12, T-09-14 | Generic Anthropic Vercel route preserves request/SSE/error behavior and strips inbound credential slots | real gateway | `cargo test --all-features --test passthrough vercel_anthropic` | ✅ | ⬜ pending |
+| 09-04-02 | 04 | 2 | SAFE-05 | T-09-13, T-09-14 | Credential diagnostics redact secrets and cross-origin failover rebinds credentials | unit + integration | `cargo test --all-features credential_redaction` | ✅ | ⬜ pending |
+| 09-04-03 | 04 | 2 | SAFE-07 | T-09-15 | Client drop observably cancels upstream work and releases global/account capacity within a timeout | unit + real gateway | `cargo test --all-features response_drop_releases` | ✅ | ⬜ pending |
 
-*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+## Executable Preservation Sweep
 
----
+PRES-01 is accepted only when this complete native Codex command passes:
 
-## Wave 0 Requirements
+`cargo test --all-features --test inbound_codex_endpoint --test inbound_codex_websocket --test codex_websocket_fallback --test codex_multi_account`
 
-- [ ] The first plan creates the focused redispatch-state regression module before implementation.
-- [ ] Each plan adds its own missing focused fixtures before changing production behavior.
-- [ ] Existing Rust test infrastructure covers all other phase requirements; no framework installation is needed.
+Together with `cargo test --all-features responses_transport_terminal` and the full workspace suite, this executes native HTTP/SSE, inbound WebSocket, outbound WebSocket v2, compression, continuation, cancellation, and terminal behavior.
 
----
+PRES-02 additionally requires:
+
+`cargo test --all-features --test codex_multi_account --test inbound_codex_endpoint --test inbound_anthropic_translation`
+
+## Wave 0 Status
+
+- [x] Every task has a focused automated command.
+- [x] All referenced test targets exist before execution.
+- [x] Failing-first cases are created inside the owning task before any production repair.
+- [x] No test framework, runtime dependency, public configuration, live credential, or provider-specific later-phase fixture is required.
+
+## Final Wave Release Gates
+
+Run in Plan 09-03 after all earlier dependencies and Task 09-03-03 complete:
+
+1. `cargo fmt --all --check`
+2. `cargo clippy --all-targets --all-features -- -D warnings`
+3. `cargo test --all-features --workspace`
 
 ## Manual-Only Verifications
 
-All phase behaviors have automated verification. Live provider credentials are not required for this conformance foundation.
-
----
+None. Live provider credentials are intentionally unnecessary for Phase 9.
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 120s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All 11 tasks map to an automated check.
+- [x] All 12 assigned requirements map to behavioral evidence.
+- [x] PRES-01 names and executes every required native Codex transport/property suite, including `tests/inbound_codex_websocket.rs`.
+- [x] SAFE-04 covers same-provider retry, route failover, WebSocket fallback, and continuation recovery through one commitment predicate.
+- [x] Sampling continuity has no three-task gap.
+- [x] Final format, Clippy, and full-suite gates are executable in the final wave.
+- [x] `nyquist_compliant: true` and `wave_0_complete: true` reflect the complete planned verification graph.
 
-**Approval:** pending
+**Approval:** ready for execution; task results remain pending.
