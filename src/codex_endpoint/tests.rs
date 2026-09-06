@@ -253,6 +253,7 @@ mod ws_tests {
         });
         config.server.codex_endpoint = Some(CodexEndpointConfig {
             provider: "codex".to_string(),
+            collaboration: false,
         });
         (config, env)
     }

@@ -437,6 +437,12 @@ pub(crate) async fn forward_turn(
     }
     let provider = route.provider.clone();
     let model = route.model.clone();
+    let collaboration_enabled = state
+        .config
+        .server
+        .codex_endpoint
+        .as_ref()
+        .is_some_and(|endpoint| endpoint.collaboration);
 
     let result = match route.adapter {
         crate::routing::AdapterKind::Responses => {
@@ -475,6 +481,7 @@ pub(crate) async fn forward_turn(
             let translated = crate::model::inbound_responses::request::translate(
                 translation_body,
                 &route.upstream_model,
+                collaboration_enabled,
             )
             .map_err(translation_adapter_error)?;
             headers.remove(axum::http::header::CONTENT_ENCODING);
@@ -495,6 +502,7 @@ pub(crate) async fn forward_turn(
                 requested_stream,
                 &response_model,
                 max_body_bytes,
+                translated.collaboration,
             )
             .await;
             Ok((response.status(), response))

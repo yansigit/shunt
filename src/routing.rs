@@ -766,6 +766,7 @@ mod tests {
         let mut config = Config::default();
         config.server.codex_endpoint = Some(crate::config::CodexEndpointConfig {
             provider: "codex".into(),
+            collaboration: false,
         });
         config.models = vec![mapped_model("native", "codex", "native")];
         config.routes = vec![RouteConfig {
@@ -811,6 +812,7 @@ mod tests {
         let mut config = Config::default();
         config.server.codex_endpoint = Some(crate::config::CodexEndpointConfig {
             provider: "codex".into(),
+            collaboration: false,
         });
         config.models = vec![ModelConfig {
             id: "ambiguous".into(),
@@ -839,6 +841,7 @@ mod tests {
         let mut config = Config::default();
         config.server.codex_endpoint = Some(crate::config::CodexEndpointConfig {
             provider: "codex".into(),
+            collaboration: false,
         });
         config.routes = vec![
             RouteConfig {
@@ -867,6 +870,7 @@ mod tests {
         let mut config = Config::default();
         config.server.codex_endpoint = Some(crate::config::CodexEndpointConfig {
             provider: "codex".into(),
+            collaboration: false,
         });
         config.routes = vec![RouteConfig {
             model: "gpt-5.6-sol".into(),

@@ -4,6 +4,8 @@ use serde_json::{json, Map, Value};
 
 use crate::request::RequestBody;
 
+use super::collaboration::{self, Authority};
+
 const DEFAULT_MAX_TOKENS: u64 = 8_192;
 const OUTPUT_HEADROOM: u64 = 4_096;
 
@@ -11,9 +13,14 @@ const OUTPUT_HEADROOM: u64 = 4_096;
 pub(crate) struct TranslatedRequest {
     pub(crate) body: RequestBody,
     pub(crate) stream: bool,
+    pub(crate) collaboration: Authority,
 }
 
-pub(crate) fn translate(raw: Vec<u8>, upstream_model: &str) -> Result<TranslatedRequest, String> {
+pub(crate) fn translate(
+    raw: Vec<u8>,
+    upstream_model: &str,
+    collaboration_enabled: bool,
+) -> Result<TranslatedRequest, String> {
     let parsed =
         RequestBody::parse(raw).map_err(|error| format!("invalid Responses JSON: {error}"))?;
     let request = parsed
@@ -21,6 +28,13 @@ pub(crate) fn translate(raw: Vec<u8>, upstream_model: &str) -> Result<Translated
         .as_object()
         .ok_or_else(|| "Responses request must be a JSON object".to_string())?;
     reject_unsupported_top_level(request)?;
+    if collaboration_enabled
+        && collaboration::has_unreadable_encrypted_agent_task(request.get("input"))
+    {
+        return Err("encrypted agent task cannot be translated without plaintext recovery".into());
+    }
+
+    let (tools, collaboration) = translate_tools(request, collaboration_enabled)?;
 
     let stream = bool_field(request, "stream")?.unwrap_or(false);
     let mut messages = Vec::<Value>::new();
@@ -32,7 +46,12 @@ pub(crate) fn translate(raw: Vec<u8>, upstream_model: &str) -> Result<Translated
             return Err("`instructions` must not be empty".to_string());
         }
     }
-    translate_input(request.get("input"), &mut messages)?;
+    translate_input(
+        request.get("input"),
+        &mut messages,
+        collaboration_enabled,
+        &collaboration,
+    )?;
     if messages.is_empty() {
         return Err("`input` must contain at least one message or item".to_string());
     }
@@ -56,17 +75,44 @@ pub(crate) fn translate(raw: Vec<u8>, upstream_model: &str) -> Result<Translated
     copy_number(request, &mut out, "temperature", "temperature")?;
     copy_number(request, &mut out, "top_p", "top_p")?;
 
-    let tools = translate_tools(request.get("tools"))?;
     if !tools.is_empty() {
         out.insert("tools".into(), Value::Array(tools));
     }
-    translate_tool_choice(request, &mut out)?;
+    translate_tool_choice(request, &mut out, &collaboration)?;
     translate_reasoning(request.get("reasoning"), &mut out, requested_max)?;
+    if collaboration_enabled {
+        translate_collaboration_metadata(request.get("metadata"), &mut out)?;
+    }
 
     let bytes = serde_json::to_vec(&Value::Object(out))
         .expect("translated serde_json::Value always serializes");
     let body = RequestBody::parse(bytes).expect("translated request has unique object keys");
-    Ok(TranslatedRequest { body, stream })
+    Ok(TranslatedRequest {
+        body,
+        stream,
+        collaboration,
+    })
+}
+
+fn translate_collaboration_metadata(
+    metadata: Option<&Value>,
+    out: &mut Map<String, Value>,
+) -> Result<(), String> {
+    let Some(metadata) = metadata.filter(|value| !value.is_null()) else {
+        return Ok(());
+    };
+    let metadata = metadata
+        .as_object()
+        .ok_or_else(|| "`metadata` must be an object or null".to_string())?;
+    let Some(task_id) = metadata.get("task_id") else {
+        return Ok(());
+    };
+    let task_id = task_id
+        .as_str()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "`metadata.task_id` must be a non-empty string".to_string())?;
+    out.insert("metadata".into(), json!({"user_id":task_id}));
+    Ok(())
 }
 
 fn reject_unsupported_top_level(request: &Map<String, Value>) -> Result<(), String> {
@@ -144,7 +190,12 @@ fn reject_unsupported_top_level(request: &Map<String, Value>) -> Result<(), Stri
     Ok(())
 }
 
-fn translate_input(input: Option<&Value>, messages: &mut Vec<Value>) -> Result<(), String> {
+fn translate_input(
+    input: Option<&Value>,
+    messages: &mut Vec<Value>,
+    collaboration_enabled: bool,
+    collaboration: &Authority,
+) -> Result<(), String> {
     let Some(input) = input else {
         return Err("Responses request is missing `input`".into());
     };
@@ -163,6 +214,15 @@ fn translate_input(input: Option<&Value>, messages: &mut Vec<Value>) -> Result<(
             .ok_or_else(|| format!("`input[{index}]` must be an object"))?;
         let kind = required_string(item, "type", &format!("input[{index}]"))?;
         match kind {
+            "additional_tools" if collaboration_enabled => continue,
+            "agent_message" if collaboration_enabled => {
+                let content = translate_content(
+                    item.get("content"),
+                    true,
+                    &format!("input[{index}].content"),
+                )?;
+                push_message(messages, "user", content);
+            }
             "message" => {
                 let role = required_string(item, "role", &format!("input[{index}]"))?;
                 if !matches!(role, "user" | "assistant") {
@@ -180,7 +240,20 @@ fn translate_input(input: Option<&Value>, messages: &mut Vec<Value>) -> Result<(
                 if !calls.insert(call_id.to_string()) {
                     return Err(format!("duplicate function call id `{call_id}`"));
                 }
-                let name = required_string(item, "name", &format!("input[{index}]"))?;
+                let logical_name = required_string(item, "name", &format!("input[{index}]"))?;
+                let name = match item.get("namespace") {
+                    Some(Value::String(namespace)) if collaboration_enabled => collaboration
+                        .wire_name(namespace, logical_name)
+                        .ok_or_else(|| {
+                            format!("input[{index}] references an unauthorized collaboration tool")
+                        })?,
+                    Some(_) => {
+                        return Err(format!(
+                            "unsupported `input[{index}].namespace` for Anthropic translation"
+                        ))
+                    }
+                    None => logical_name,
+                };
                 let arguments = required_string(item, "arguments", &format!("input[{index}]"))?;
                 let arguments: Value = serde_json::from_str(arguments).map_err(|_| {
                     format!("`input[{index}].arguments` must contain a JSON object")
@@ -294,54 +367,135 @@ fn translate_tool_output(value: Option<&Value>, path: &str) -> Result<Value, Str
     }
 }
 
-fn translate_tools(value: Option<&Value>) -> Result<Vec<Value>, String> {
-    let Some(value) = value else {
-        return Ok(Vec::new());
-    };
-    let tools = value
-        .as_array()
-        .ok_or_else(|| "`tools` must be an array".to_string())?;
-    let mut names = HashSet::new();
-    let mut out = Vec::with_capacity(tools.len());
-    for (index, tool) in tools.iter().enumerate() {
-        let tool = tool
-            .as_object()
-            .ok_or_else(|| format!("`tools[{index}]` must be an object"))?;
-        if tool.get("type").and_then(Value::as_str) != Some("function") {
-            return Err(format!("`tools[{index}]` must be a function tool"));
-        }
-        let definition = tool
-            .get("function")
-            .and_then(Value::as_object)
-            .unwrap_or(tool);
-        let name = required_string(definition, "name", &format!("tools[{index}]"))?;
-        if !names.insert(name.to_string()) {
-            return Err(format!("duplicate tool name `{name}`"));
-        }
-        let schema = definition
-            .get("parameters")
-            .cloned()
-            .unwrap_or_else(|| json!({"type":"object","properties":{}}));
-        if !schema.is_object() {
-            return Err(format!("`tools[{index}].parameters` must be an object"));
-        }
-        let mut translated = json!({"name":name, "input_schema":schema});
-        if let Some(description) = definition.get("description") {
-            translated["description"] = Value::String(
-                description
-                    .as_str()
-                    .ok_or_else(|| format!("`tools[{index}].description` must be a string"))?
-                    .to_string(),
-            );
-        }
-        out.push(translated);
+fn translate_tools(
+    request: &Map<String, Value>,
+    collaboration_enabled: bool,
+) -> Result<(Vec<Value>, Authority), String> {
+    let mut lists = Vec::new();
+    if let Some(value) = request.get("tools") {
+        lists.push(
+            value
+                .as_array()
+                .ok_or_else(|| "`tools` must be an array".to_string())?,
+        );
     }
-    Ok(out)
+    if collaboration_enabled {
+        if let Some(input) = request.get("input").and_then(Value::as_array) {
+            for (index, item) in input.iter().enumerate() {
+                if item.get("type").and_then(Value::as_str) == Some("additional_tools") {
+                    lists.push(
+                        item.get("tools")
+                            .and_then(Value::as_array)
+                            .ok_or_else(|| format!("`input[{index}].tools` must be an array"))?,
+                    );
+                }
+            }
+        }
+    }
+    let mut names = HashSet::new();
+    let mut out = Vec::new();
+    let mut authority = Authority::default();
+    for (list_index, tools) in lists.into_iter().enumerate() {
+        for (index, tool) in tools.iter().enumerate() {
+            let tool = tool.as_object().ok_or_else(|| {
+                format!("tool catalog {list_index} item {index} must be an object")
+            })?;
+            if tool.get("type").and_then(Value::as_str) == Some("namespace") {
+                if !collaboration_enabled
+                    || tool.get("name").and_then(Value::as_str) != Some("collaboration")
+                {
+                    return Err(format!("`tools[{index}]` must be a function tool"));
+                }
+                let children = tool
+                    .get("tools")
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| format!("`tools[{index}].tools` must be an array"))?;
+                for (child_index, child) in children.iter().enumerate() {
+                    let child = child.as_object().ok_or_else(|| {
+                        format!("`tools[{index}].tools[{child_index}]` must be an object")
+                    })?;
+                    if child.get("type").and_then(Value::as_str) != Some("function") {
+                        return Err(format!(
+                            "`tools[{index}].tools[{child_index}]` must be a function tool"
+                        ));
+                    }
+                    let name = required_string(
+                        child,
+                        "name",
+                        &format!("tools[{index}].tools[{child_index}]"),
+                    )?;
+                    let (wire, newly_authorized) = authority.authorize(name)?;
+                    if !newly_authorized {
+                        continue;
+                    }
+                    if !names.insert(wire.clone()) {
+                        return Err(format!("duplicate tool name `{wire}`"));
+                    }
+                    out.push(translate_tool_definition(
+                        child,
+                        &wire,
+                        true,
+                        &format!("tools[{index}].tools[{child_index}]"),
+                    )?);
+                }
+                continue;
+            }
+            if tool.get("type").and_then(Value::as_str) != Some("function") {
+                return Err(format!("`tools[{index}]` must be a function tool"));
+            }
+            let definition = tool
+                .get("function")
+                .and_then(Value::as_object)
+                .unwrap_or(tool);
+            let name = required_string(definition, "name", &format!("tools[{index}]"))?;
+            if !names.insert(name.to_string()) {
+                return Err(format!("duplicate tool name `{name}`"));
+            }
+            out.push(translate_tool_definition(
+                definition,
+                name,
+                false,
+                &format!("tools[{index}]"),
+            )?);
+        }
+    }
+    Ok((out, authority))
+}
+
+fn translate_tool_definition(
+    definition: &Map<String, Value>,
+    name: &str,
+    sanitize: bool,
+    path: &str,
+) -> Result<Value, String> {
+    let schema = definition
+        .get("parameters")
+        .cloned()
+        .unwrap_or_else(|| json!({"type":"object","properties":{}}));
+    if !schema.is_object() {
+        return Err(format!("`{path}.parameters` must be an object"));
+    }
+    let schema = if sanitize {
+        collaboration::sanitize_schema(&schema)?
+    } else {
+        schema
+    };
+    let mut translated = json!({"name":name, "input_schema":schema});
+    if let Some(description) = definition.get("description") {
+        translated["description"] = Value::String(
+            description
+                .as_str()
+                .ok_or_else(|| format!("`{path}.description` must be a string"))?
+                .to_string(),
+        );
+    }
+    Ok(translated)
 }
 
 fn translate_tool_choice(
     request: &Map<String, Value>,
     out: &mut Map<String, Value>,
+    collaboration: &Authority,
 ) -> Result<(), String> {
     let choice = request.get("tool_choice");
     let mut translated = match choice {
@@ -353,6 +507,15 @@ fn translate_tool_choice(
             if object.get("type").and_then(Value::as_str) == Some("function") =>
         {
             let name = required_string(object, "name", "tool_choice")?;
+            let name = match object.get("namespace") {
+                Some(Value::String(namespace)) => {
+                    collaboration.wire_name(namespace, name).ok_or_else(|| {
+                        "tool_choice references an unauthorized collaboration tool".to_string()
+                    })?
+                }
+                Some(_) => return Err("`tool_choice.namespace` must be a string".into()),
+                None => name,
+            };
             json!({"type":"tool", "name":name})
         }
         _ => return Err("unsupported `tool_choice` for Anthropic translation".into()),
@@ -488,7 +651,12 @@ mod tests {
     use serde_json::{json, Value};
 
     fn translated(value: Value) -> Value {
-        let result = translate(serde_json::to_vec(&value).unwrap(), "claude-sonnet-4-6").unwrap();
+        let result = translate(
+            serde_json::to_vec(&value).unwrap(),
+            "claude-sonnet-4-6",
+            false,
+        )
+        .unwrap();
         result.body.json().clone()
     }
 
@@ -536,7 +704,47 @@ mod tests {
             json!({"model":"claude","input":[{"type":"function_call","call_id":"c","name":"x","arguments":"{}"}]}),
             json!({"model":"claude","input":"hi","tools":[{"type":"web_search"}]}),
         ] {
-            assert!(translate(serde_json::to_vec(&value).unwrap(), "claude").is_err());
+            assert!(translate(serde_json::to_vec(&value).unwrap(), "claude", false).is_err());
         }
+    }
+
+    #[test]
+    fn enabled_collaboration_flattens_catalog_and_preserves_agent_message() {
+        let value = json!({
+            "model":"claude",
+            "input":[
+                {"type":"additional_tools","role":"developer","tools":[{
+                    "type":"namespace","name":"collaboration","tools":[{
+                        "type":"function","name":"spawn_agent","description":"spawn",
+                        "parameters":{"type":"object","properties":{"message":{"type":"string","encrypted":true}}}
+                    }]
+                }]},
+                {"type":"agent_message","author":"/root","recipient":"/root/worker","content":[
+                    {"type":"input_text","text":"Message Type: NEW_TASK\nTask name: /root/worker\nSender: /root\nPayload:\nImplement it"}
+                ]}
+            ],
+            "stream":false,"store":false
+            ,"metadata":{"task_id":"task_42","subagent":"collab_spawn"}
+        });
+        let result = translate(serde_json::to_vec(&value).unwrap(), "claude", true).unwrap();
+        let body = result.body.json();
+        assert_eq!(body["messages"][0]["role"], "user");
+        assert!(body["messages"][0]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Task name: /root/worker"));
+        assert_eq!(body["tools"][0]["name"], "shunt_collaboration__spawn_agent");
+        assert!(body["tools"][0]["input_schema"]["properties"]["message"]
+            .get("encrypted")
+            .is_none());
+        assert_eq!(body["metadata"]["user_id"], "task_42");
+        assert_eq!(
+            result
+                .collaboration
+                .logical_name("shunt_collaboration__spawn_agent"),
+            Some("spawn_agent")
+        );
+
+        assert!(translate(serde_json::to_vec(&value).unwrap(), "claude", false).is_err());
     }
 }

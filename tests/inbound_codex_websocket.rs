@@ -169,6 +169,7 @@ async fn start_native_gateway(
     openai.api_key_env = Some(api_env.clone());
     config.server.codex_endpoint = Some(CodexEndpointConfig {
         provider: "codex".to_string(),
+        collaboration: false,
     });
     config.server.auth = Some(InboundAuthConfig {
         header: "x-shunt-token".to_string(),
@@ -217,6 +218,7 @@ async fn start_gateway(upstream: &RunningServer, suffix: &str) -> (RunningServer
     }];
     config.server.codex_endpoint = Some(CodexEndpointConfig {
         provider: "codex".to_string(),
+        collaboration: false,
     });
     config.server.auth = Some(InboundAuthConfig {
         header: "x-shunt-token".to_string(),
@@ -488,6 +490,7 @@ async fn missing_model_websocket_uses_pinned_fallback_even_when_unknown_route_ex
     openai.api_key_env = Some(api_env.to_string());
     config.server.codex_endpoint = Some(CodexEndpointConfig {
         provider: "codex".to_string(),
+        collaboration: false,
     });
     config.server.auth = Some(InboundAuthConfig {
         header: "x-shunt-token".to_string(),
@@ -566,6 +569,7 @@ async fn hot_reload_snapshot_routes_each_websocket_turn_once() {
     openai.api_key_env = Some(api_env.to_string());
     config.server.codex_endpoint = Some(CodexEndpointConfig {
         provider: "codex".to_string(),
+        collaboration: false,
     });
     config.server.auth = Some(InboundAuthConfig {
         header: "x-shunt-token".to_string(),

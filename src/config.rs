@@ -1237,6 +1237,10 @@ pub struct CodexEndpointConfig {
     /// `codex` provider.
     #[serde(default = "default_codex_endpoint_provider")]
     pub provider: String,
+    /// Enables the bounded Codex V2 collaboration bridge for exact Anthropic
+    /// translation routes. Native Responses routes remain opaque regardless.
+    #[serde(default)]
+    pub collaboration: bool,
 }
 
 fn default_codex_endpoint_provider() -> String {
@@ -5304,8 +5308,24 @@ mod tests {
         let mut config = Config::default();
         config.server.codex_endpoint = Some(CodexEndpointConfig {
             provider: "codex".to_string(),
+            collaboration: false,
         });
         config.validate().unwrap();
+    }
+
+    #[test]
+    fn codex_endpoint_collaboration_is_explicit_and_defaults_off() {
+        let absent: CodexEndpointConfig =
+            figment::Figment::from(figment::providers::Toml::string("provider = \"codex\""))
+                .extract()
+                .unwrap();
+        assert!(!absent.collaboration);
+        let enabled: CodexEndpointConfig = figment::Figment::from(
+            figment::providers::Toml::string("provider = \"codex\"\ncollaboration = true"),
+        )
+        .extract()
+        .unwrap();
+        assert!(enabled.collaboration);
     }
 
     #[test]
@@ -5313,6 +5333,7 @@ mod tests {
         let mut config = Config::default();
         config.server.codex_endpoint = Some(CodexEndpointConfig {
             provider: "nope".to_string(),
+            collaboration: false,
         });
         assert!(matches!(
             config.validate().unwrap_err(),
@@ -5328,6 +5349,7 @@ mod tests {
         let mut config = Config::default();
         config.server.codex_endpoint = Some(CodexEndpointConfig {
             provider: "anthropic".to_string(),
+            collaboration: false,
         });
         assert!(matches!(
             config.validate().unwrap_err(),

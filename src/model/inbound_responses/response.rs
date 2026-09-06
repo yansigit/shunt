@@ -3,6 +3,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
+use super::collaboration::Authority;
+
 const MAX_TOOL_ARGUMENT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_TRANSLATED_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_OUTPUT_ITEMS: usize = 4_096;
@@ -62,6 +64,7 @@ enum OpenBlock {
         id: String,
         call_id: String,
         name: String,
+        collaboration: bool,
         output_index: usize,
         arguments: String,
     },
@@ -81,6 +84,7 @@ pub(crate) struct StreamTranslator {
     saw_message_start: bool,
     retained_bytes: usize,
     failure: Option<String>,
+    collaboration: Authority,
 }
 
 impl StreamTranslator {
@@ -98,6 +102,14 @@ impl StreamTranslator {
             saw_message_start: false,
             retained_bytes: 0,
             failure: None,
+            collaboration: Authority::default(),
+        }
+    }
+
+    pub(crate) fn with_collaboration(model: impl Into<String>, collaboration: Authority) -> Self {
+        Self {
+            collaboration,
+            ..Self::new(model)
         }
     }
 
@@ -188,18 +200,35 @@ impl StreamTranslator {
                         let Some(call_id) = block.get("id").and_then(Value::as_str).filter(|v| !v.is_empty()) else {
                             return self.fail("Anthropic tool_use is missing a usable id");
                         };
-                        let Some(name) = block.get("name").and_then(Value::as_str).filter(|v| !v.is_empty()) else {
+                        let Some(wire_name) = block.get("name").and_then(Value::as_str).filter(|v| !v.is_empty()) else {
                             return self.fail("Anthropic tool_use is missing a usable name");
                         };
+                        let logical_name = self
+                            .collaboration
+                            .logical_name(wire_name)
+                            .map(ToOwned::to_owned);
+                        let (name, collaboration) = logical_name
+                            .as_deref()
+                            .map(|name| (name, true))
+                            .unwrap_or((wire_name, false));
                         let id = item_id("fc");
-                        out.push(self.emit("response.output_item.added", json!({
-                            "output_index":output_index,
-                            "item":{"type":"function_call","id":id,"call_id":call_id,"name":name,"arguments":"","status":"in_progress"}
-                        })));
+                        let item = function_call_item(
+                            &id,
+                            call_id,
+                            name,
+                            "",
+                            "in_progress",
+                            collaboration,
+                        );
+                        out.push(self.emit(
+                            "response.output_item.added",
+                            json!({"output_index":output_index,"item":item}),
+                        ));
                         self.open = Some(OpenBlock::Tool {
                             id,
                             call_id: call_id.to_string(),
                             name: name.to_string(),
+                            collaboration,
                             output_index,
                             arguments: String::new(),
                         });
@@ -395,6 +424,7 @@ impl StreamTranslator {
                 id,
                 call_id,
                 name,
+                collaboration,
                 output_index,
                 arguments,
             } => {
@@ -408,12 +438,16 @@ impl StreamTranslator {
                 if !valid {
                     return self.fail("Anthropic tool_use arguments were not a JSON object");
                 }
-                let item = json!({"type":"function_call","id":id,"call_id":call_id,"name":name,"arguments":args,"status":"completed"});
+                let item =
+                    function_call_item(&id, &call_id, &name, &args, "completed", collaboration);
+                let mut arguments_done = json!({
+                    "item_id":id,"output_index":output_index,"arguments":args
+                });
+                if collaboration {
+                    arguments_done["encrypted_function_args"] = json!([]);
+                }
                 let events = vec![
-                    self.emit(
-                        "response.function_call_arguments.done",
-                        json!({"item_id":id,"output_index":output_index,"arguments":args}),
-                    ),
+                    self.emit("response.function_call_arguments.done", arguments_done),
                     self.emit(
                         "response.output_item.done",
                         json!({"output_index":output_index,"item":item}),
@@ -474,7 +508,16 @@ impl StreamTranslator {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn translate_json(bytes: &[u8], requested_model: &str) -> Result<Vec<u8>, String> {
+    translate_json_with_collaboration(bytes, requested_model, Authority::default())
+}
+
+pub(crate) fn translate_json_with_collaboration(
+    bytes: &[u8],
+    requested_model: &str,
+    collaboration: Authority,
+) -> Result<Vec<u8>, String> {
     let value: Value = serde_json::from_slice(bytes)
         .map_err(|_| "Anthropic response was not valid JSON".to_string())?;
     let object = value
@@ -484,7 +527,7 @@ pub(crate) fn translate_json(bytes: &[u8], requested_model: &str) -> Result<Vec<
         .get("content")
         .and_then(Value::as_array)
         .ok_or_else(|| "Anthropic response `content` must be an array".to_string())?;
-    let mut translator = StreamTranslator::new(requested_model);
+    let mut translator = StreamTranslator::with_collaboration(requested_model, collaboration);
     translator.saw_message_start = true;
     translator.usage.update(object.get("usage"));
     for block in content {
@@ -540,6 +583,25 @@ pub(crate) fn translate_json(bytes: &[u8], requested_model: &str) -> Result<Vec<
         response["incomplete_details"] = json!({"reason":"max_output_tokens"});
     }
     serde_json::to_vec(&response).map_err(|error| error.to_string())
+}
+
+fn function_call_item(
+    id: &str,
+    call_id: &str,
+    name: &str,
+    arguments: &str,
+    status: &str,
+    collaboration: bool,
+) -> Value {
+    let mut item = json!({
+        "type":"function_call","id":id,"call_id":call_id,"name":name,
+        "arguments":arguments,"status":status
+    });
+    if collaboration {
+        item["namespace"] = Value::String("collaboration".into());
+        item["encrypted_function_args"] = json!([]);
+    }
+    item
 }
 
 fn item_id(prefix: &str) -> String {
@@ -637,5 +699,61 @@ mod tests {
         let terminal = stream.apply("message_stop", json!({})).join("");
         assert!(terminal.contains("response.failed"));
         assert!(!terminal.contains("response.completed"));
+    }
+
+    #[test]
+    fn restores_only_request_authorized_collaboration_calls() {
+        let mut authority = Authority::default();
+        authority.authorize("spawn_agent").unwrap();
+        let body = json!({
+            "content":[
+                {"type":"tool_use","id":"call_1","name":"shunt_collaboration__spawn_agent","input":{"message":"work"}},
+                {"type":"tool_use","id":"call_2","name":"shunt_collaboration__forged","input":{}}
+            ],
+            "stop_reason":"tool_use",
+            "usage":{"input_tokens":1,"output_tokens":1}
+        });
+        let translated: Value = serde_json::from_slice(
+            &translate_json_with_collaboration(body.to_string().as_bytes(), "alias", authority)
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(translated["output"][0]["name"], "spawn_agent");
+        assert_eq!(translated["output"][0]["namespace"], "collaboration");
+        assert_eq!(
+            translated["output"][0]["encrypted_function_args"],
+            json!([])
+        );
+        assert_eq!(
+            translated["output"][1]["name"],
+            "shunt_collaboration__forged"
+        );
+        assert!(translated["output"][1].get("namespace").is_none());
+    }
+
+    #[test]
+    fn stream_restores_authorized_collaboration_call_lifecycle() {
+        let mut authority = Authority::default();
+        authority.authorize("spawn_agent").unwrap();
+        let mut translator = StreamTranslator::with_collaboration("alias", authority);
+        translator.start();
+        translator.apply("message_start", json!({"message":{}}));
+        let mut events = translator.apply(
+            "content_block_start",
+            json!({"content_block":{
+                "type":"tool_use","id":"call_1",
+                "name":"shunt_collaboration__spawn_agent"
+            }}),
+        );
+        events.extend(translator.apply(
+            "content_block_delta",
+            json!({"delta":{"type":"input_json_delta","partial_json":"{}"}}),
+        ));
+        events.extend(translator.apply("content_block_stop", json!({})));
+        let joined = events.join("");
+        assert!(joined.contains("\"namespace\":\"collaboration\""));
+        assert!(joined.contains("\"name\":\"spawn_agent\""));
+        assert!(joined.contains("\"encrypted_function_args\":[]"));
+        assert!(!joined.contains("shunt_collaboration__spawn_agent"));
     }
 }

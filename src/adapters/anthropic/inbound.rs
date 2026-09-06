@@ -11,7 +11,10 @@ use futures_util::{stream, Stream, StreamExt};
 
 use crate::{
     codex_endpoint::frame::{parse_sse_block, BoundedSseFrameBuffer, MAX_CLIENT_SSE_FRAME_BYTES},
-    model::inbound_responses::response::{translate_json, StreamTranslator},
+    model::inbound_responses::{
+        collaboration::Authority,
+        response::{translate_json_with_collaboration, StreamTranslator},
+    },
 };
 
 type InputStream = Pin<Box<dyn Stream<Item = Result<Bytes, axum::Error>> + Send + 'static>>;
@@ -30,6 +33,7 @@ pub(crate) async fn translate(
     requested_stream: bool,
     model: &str,
     max_body_bytes: usize,
+    collaboration: Authority,
 ) -> axum::response::Response {
     if !status.is_success() {
         return translate_upstream_error(response).await;
@@ -40,12 +44,12 @@ pub(crate) async fn translate(
         .and_then(|value| value.to_str().ok())
         .is_some_and(|value| value.starts_with("text/event-stream"));
     if requested_stream || is_sse {
-        return translate_stream(response, model);
+        return translate_stream(response, model, collaboration);
     }
 
     let (mut parts, body) = response.into_parts();
     match axum::body::to_bytes(body, max_body_bytes).await {
-        Ok(bytes) => match translate_json(&bytes, model) {
+        Ok(bytes) => match translate_json_with_collaboration(&bytes, model, collaboration) {
             Ok(translated) => {
                 parts.headers.remove(header::CONTENT_LENGTH);
                 parts.headers.remove(header::CONTENT_ENCODING);
@@ -106,7 +110,11 @@ async fn translate_upstream_error(response: axum::response::Response) -> axum::r
     Response::from_parts(parts, Body::from(body)).into_response()
 }
 
-fn translate_stream(response: axum::response::Response, model: &str) -> axum::response::Response {
+fn translate_stream(
+    response: axum::response::Response,
+    model: &str,
+    collaboration: Authority,
+) -> axum::response::Response {
     let (mut parts, body) = response.into_parts();
     parts.headers.insert(
         header::CONTENT_TYPE,
@@ -114,7 +122,7 @@ fn translate_stream(response: axum::response::Response, model: &str) -> axum::re
     );
     parts.headers.remove(header::CONTENT_LENGTH);
     parts.headers.remove(header::CONTENT_ENCODING);
-    let mut translator = StreamTranslator::new(model);
+    let mut translator = StreamTranslator::with_collaboration(model, collaboration);
     let pending = translator
         .start()
         .into_iter()

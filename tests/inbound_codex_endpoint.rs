@@ -181,6 +181,7 @@ fn test_config(upstream_base_url: &str, accounts: Vec<AccountConfig>) -> Config 
     provider.accounts = accounts;
     config.server.codex_endpoint = Some(CodexEndpointConfig {
         provider: "codex".to_string(),
+        collaboration: false,
     });
     config
 }
@@ -673,6 +674,42 @@ async fn forwards_body_verbatim_and_injects_pool_credential() {
     upstream.verify().await;
 
     std::env::remove_var("SHUNT_TEST_INBOUND_A");
+}
+
+#[tokio::test]
+async fn collaboration_opt_in_never_mutates_native_opaque_state() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let token = chatgpt_token(FAR_FUTURE_EXP, "acct-collab-native");
+    let token_env = format!("SHUNT_TEST_COLLAB_NATIVE_{}", std::process::id());
+    std::env::set_var(&token_env, &token);
+    let raw = r#"{"model":"gpt-5.6-sol","previous_response_id":"resp_parent","input":[{"type":"agent_message","author":"/root","recipient":"/root/worker","content":[{"type":"encrypted_content","encrypted_content":"opaque-native-task"}]}],"stream":false}"#;
+    let upstream = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/codex/responses"))
+        .and(body_bytes(raw.as_bytes()))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            r#"{"id":"resp_native","status":"completed","output":[]}"#,
+            "application/json",
+        ))
+        .expect(1)
+        .mount(&upstream)
+        .await;
+    let mut config = test_config(&upstream.uri(), vec![account("native", &token_env)]);
+    config.server.codex_endpoint.as_mut().unwrap().collaboration = true;
+    let gateway = start_gateway_with(config).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/responses", gateway.base_url))
+        .header("content-type", "application/json")
+        .body(raw)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    upstream.verify().await;
+    std::env::remove_var(token_env);
 }
 
 #[tokio::test]

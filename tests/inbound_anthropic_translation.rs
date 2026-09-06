@@ -2,6 +2,7 @@
 
 use std::{net::SocketAddr, time::Duration};
 
+use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use futures_util::{SinkExt, StreamExt};
 use reqwest::StatusCode;
 use serde_json::{json, Value};
@@ -43,6 +44,25 @@ impl Match for TranslatedRequest {
             && body["messages"][2]["content"][0]["tool_use_id"] == "call_1"
             && body["tools"][0]["name"] == "lookup"
             && body["stream"] == false
+    }
+}
+
+struct CollaborationRequest;
+
+impl Match for CollaborationRequest {
+    fn matches(&self, request: &Request) -> bool {
+        let Ok(body) = serde_json::from_slice::<Value>(&request.body) else {
+            return false;
+        };
+        body["messages"][0]["role"] == "user"
+            && body["messages"][0]["content"][0]["text"]
+                .as_str()
+                .is_some_and(|text| text.contains("Task name: /root/worker"))
+            && body["tools"][0]["name"] == "shunt_collaboration__spawn_agent"
+            && body["tools"][0]["input_schema"]["properties"]["message"]
+                .get("encrypted")
+                .is_none()
+            && body["metadata"]["user_id"] == "task_42"
     }
 }
 
@@ -119,6 +139,13 @@ async fn upstream_error_is_openai_shaped_and_preserves_retry_headers() {
 }
 
 async fn start_gateway(upstream: &MockServer) -> TestGateway {
+    start_gateway_with_collaboration(upstream, false).await
+}
+
+async fn start_gateway_with_collaboration(
+    upstream: &MockServer,
+    collaboration: bool,
+) -> TestGateway {
     let mut config = Config::default();
     let anthropic = config.providers.get_mut("anthropic").unwrap();
     anthropic.base_url = upstream.uri();
@@ -132,6 +159,7 @@ async fn start_gateway(upstream: &MockServer) -> TestGateway {
     });
     config.server.codex_endpoint = Some(CodexEndpointConfig {
         provider: "codex".into(),
+        collaboration,
     });
     config.server.bind = "127.0.0.1:0".into();
     let listener = tokio::net::TcpListener::bind(config.server.bind_addr().unwrap())
@@ -144,6 +172,25 @@ async fn start_gateway(upstream: &MockServer) -> TestGateway {
         base_url: format!("http://{addr}"),
         task,
     }
+}
+
+fn collaboration_body(stream: bool) -> Value {
+    json!({
+        "model":"claude-via-responses",
+        "input":[
+            {"type":"additional_tools","role":"developer","tools":[{
+                "type":"namespace","name":"collaboration","tools":[{
+                    "type":"function","name":"spawn_agent","description":"spawn child",
+                    "parameters":{"type":"object","properties":{"message":{"type":"string","encrypted":true}}}
+                }]
+            }]},
+            {"type":"agent_message","author":"/root","recipient":"/root/worker","content":[{
+                "type":"input_text","text":"Message Type: NEW_TASK\nTask name: /root/worker\nSender: /root\nPayload:\nImplement the fixture"
+            }]}
+        ],
+        "stream":stream,"store":false,
+        "metadata":{"task_id":"task_42","subagent":"collab_spawn"}
+    })
 }
 
 fn request_body() -> Value {
@@ -195,6 +242,69 @@ async fn request_exact_anthropic_route_translates_before_dispatch() {
     assert_eq!(body["usage"]["input_tokens"], 10);
     assert_eq!(body["usage"]["total_tokens"], 12);
     upstream.verify().await;
+}
+
+#[tokio::test]
+async fn enabled_collaboration_translates_and_restores_json_tool_call() {
+    let upstream = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .and(CollaborationRequest)
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id":"msg_collab", "type":"message", "role":"assistant",
+            "model":"claude-sonnet-upstream",
+            "content":[{"type":"tool_use","id":"call_spawn","name":"shunt_collaboration__spawn_agent","input":{"message":"child work"}}],
+            "stop_reason":"tool_use", "usage":{"input_tokens":2,"output_tokens":1}
+        })))
+        .expect(1)
+        .mount(&upstream)
+        .await;
+    let gateway = start_gateway_with_collaboration(&upstream, true).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/responses", gateway.base_url))
+        .header("x-api-key", "client-anthropic-key")
+        .json(&collaboration_body(false))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["output"][0]["name"], "spawn_agent");
+    assert_eq!(body["output"][0]["namespace"], "collaboration");
+    assert_eq!(body["output"][0]["encrypted_function_args"], json!([]));
+    upstream.verify().await;
+}
+
+#[tokio::test]
+async fn encrypted_collaboration_task_fails_without_network_or_disclosure() {
+    let upstream = MockServer::start().await;
+    let gateway = start_gateway_with_collaboration(&upstream, true).await;
+    let mut raw = vec![0x5a; 73];
+    raw[0] = 0x80;
+    let ciphertext = URL_SAFE.encode(raw);
+    let mut body = collaboration_body(false);
+    body["input"] = json!([{
+        "type":"agent_message","author":"/root","recipient":"/root/worker","content":[
+            {"type":"input_text","text":"Message Type: NEW_TASK\nTask name: /root/worker\nSender: /root\nPayload:\n"},
+            {"type":"encrypted_content","encrypted_content":ciphertext}
+        ]
+    }]);
+
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/responses", gateway.base_url))
+        .header("x-api-key", "client-anthropic-key")
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let text = response.text().await.unwrap();
+    assert!(text.contains("encrypted agent task"));
+    assert!(!text.contains(&ciphertext));
+    assert!(upstream.received_requests().await.unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -368,6 +478,71 @@ async fn response_translated_websocket_turn_uses_the_same_event_stream() {
         event_types.last().map(String::as_str),
         Some("response.completed")
     );
+}
+
+#[tokio::test]
+async fn websocket_restores_collaboration_tool_call_events() {
+    let upstream = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .and(CollaborationRequest)
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(concat!(
+                    "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{}}\n\n",
+                    "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"tool_use\",\"id\":\"call_spawn\",\"name\":\"shunt_collaboration__spawn_agent\"}}\n\n",
+                    "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"message\\\":\\\"work\\\"}\"}}\n\n",
+                    "event: content_block_stop\ndata: {\"type\":\"content_block_stop\"}\n\n",
+                    "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"}}\n\n",
+                    "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+                )),
+        )
+        .expect(1)
+        .mount(&upstream)
+        .await;
+    let gateway = start_gateway_with_collaboration(&upstream, true).await;
+    let mut request = format!(
+        "{}/v1/responses",
+        gateway.base_url.replacen("http://", "ws://", 1)
+    )
+    .into_client_request()
+    .unwrap();
+    request
+        .headers_mut()
+        .insert("x-api-key", "client-anthropic-key".parse().unwrap());
+    let (mut socket, _) = connect_async(request).await.unwrap();
+    let mut body = collaboration_body(true);
+    body["type"] = Value::String("response.create".into());
+    body["generate"] = Value::Bool(true);
+    socket
+        .send(Message::Text(body.to_string().into()))
+        .await
+        .unwrap();
+
+    let mut frames = Vec::new();
+    loop {
+        let frame = tokio::time::timeout(Duration::from_secs(5), socket.next())
+            .await
+            .expect("collaboration websocket response timed out")
+            .expect("collaboration websocket closed early")
+            .unwrap();
+        let value: Value = serde_json::from_str(frame.to_text().unwrap()).unwrap();
+        let terminal = matches!(
+            value["type"].as_str(),
+            Some("response.completed" | "response.failed" | "response.incomplete")
+        );
+        frames.push(value);
+        if terminal {
+            break;
+        }
+    }
+    let joined = serde_json::to_string(&frames).unwrap();
+    assert!(joined.contains("\"namespace\":\"collaboration\""));
+    assert!(joined.contains("\"name\":\"spawn_agent\""));
+    assert!(joined.contains("\"encrypted_function_args\":[]"));
+    assert!(!joined.contains("shunt_collaboration__spawn_agent"));
+    upstream.verify().await;
 }
 
 #[tokio::test]
