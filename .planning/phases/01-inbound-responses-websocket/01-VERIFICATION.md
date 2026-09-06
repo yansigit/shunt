@@ -1,6 +1,6 @@
 ---
 phase: 01-inbound-responses-websocket
-verified: 2026-09-06T00:09:54Z
+verified: 2026-09-06T03:26:06Z
 status: passed
 score: 9/9 must-haves verified
 covered_files:
@@ -32,14 +32,14 @@ covered_files:
   - src/codex_endpoint/websocket.rs
   - src/server.rs
   - tests/inbound_codex_websocket.rs
-covered_digest: "v1:sha256:79bb7be14cf432b4e4f9041fa2bbd3ab0b373ab86323c536710f936e04da3e56"
+covered_digest: "v1:sha256:12a12da7f7d30d259e7e30ca880ea4b6f0113c0fb5d3b6cabf8bc1b4027b5d69"
 behavior_unverified: 0
 ---
 
 # Phase 1: Inbound Responses WebSocket Verification Report
 
 **Phase Goal:** Deliver authenticated, bounded, cancellable WebSocket transport with focused conformance coverage.
-**Verified:** 2026-09-06T00:09:54Z
+**Verified:** 2026-09-06T03:26:06Z
 **Status:** passed
 
 ## Goal Achievement
@@ -98,6 +98,10 @@ behavior_unverified: 0
 
 **Coverage:** 9/9 requirements satisfied
 
+### Advisory (New Scope, Unevidenced)
+
+None. Re-verification found no new-scope concern requiring advisory treatment.
+
 ## Anti-Patterns Found
 
 None in the Phase 1 implementation.
@@ -114,10 +118,10 @@ None — all Phase 1 behaviors are exercised programmatically.
 
 ## Verification Notes
 
-- `cargo test --test inbound_codex_websocket -- --test-threads=1`: 7 passed.
+- `cargo test --test inbound_codex_websocket -- --test-threads=1`: 11 passed.
 - `cargo fmt --all --check`: passed.
 - `cargo clippy --all-targets --all-features -- -D warnings`: passed.
-- The all-feature workspace suite passed before the UTF-8-only gap closure. Its post-fix rerun passed all 2,022 library and 37 binary tests, then encountered the unrelated, pre-existing nondeterministic timeout `tests/antigravity_process.rs::streaming_finishes_when_a_descendant_holds_stdout_open`; isolated reruns produced both passes and a failure. This test does not exercise or import the Phase 1 transport and is recorded as repository risk, not a phase blocker.
+- `cargo test --all-features --workspace`: passed (2,024 library tests, 37 binary tests, all integration suites, 2 ignored).
 - The Nimbus site build was not run because `site/node_modules` is absent. All localized source files were inspected and synchronized.
 
 ## Verification Metadata
@@ -129,4 +133,4 @@ None — all Phase 1 behaviors are exercised programmatically.
 **Verifier:** Independent fallback subagent
 
 ---
-*Verified: 2026-09-06T00:09:54Z*
+*Verified: 2026-09-06T03:26:06Z*
