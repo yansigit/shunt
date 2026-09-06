@@ -12,6 +12,7 @@ Implemented the Responses pool quota tracer. A shared typed classifier now recog
 
 - `6198361` feat(responses): classify bounded quota rejections
 - `a117ad0` test(responses): name exhausted pool fidelity fixture
+- `c8d6100` fix(quota): reject duplicate discriminator keys
 
 ## Verification
 
