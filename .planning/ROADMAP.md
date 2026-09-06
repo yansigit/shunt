@@ -11,7 +11,7 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
 
 - [x] **Phase 1: Inbound Responses WebSocket** - Deliver authenticated, bounded, cancellable WS transport with focused conformance coverage. (completed 2026-09-05)
 - [x] **Phase 2: Native Responses Routing** - Route exact models to compatible Responses-native providers without translation. **Requires user approval before implementation because it changes documented provider semantics.** (completed 2026-09-05)
-- [ ] **Phase 3: Quota-Aware Resilience** - Distinguish transient throttling from exhausted quota and honor standards-compliant retry timing.
+- [x] **Phase 3: Quota-Aware Resilience** - Distinguish transient throttling from exhausted quota and honor standards-compliant retry timing. (completed 2026-09-05)
 - [ ] **Phase 4: Native Compaction** - Forward Responses compaction opaquely without local history persistence.
 - [ ] **Phase 5: Anthropic Translation** - Add a dedicated Responses-to-Anthropic vertical translation subsystem.
 - [ ] **Phase 6: Capability-Aware Fallback** - Exclude incompatible targets before heterogeneous dispatch.
@@ -32,7 +32,7 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
   3. Replaced turns and disconnected sockets stop upstream work and never emit stale events.
   4. Tests demonstrate explicit frame/event/backpressure bounds and pass all repository quality gates.
 
-**Plans**: TBD
+**Plans**: 4 plans
 
 - [x] 01-01-PLAN.md
 - [x] 01-02-PLAN.md
@@ -50,7 +50,7 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
   2. Ambiguous or incompatible targets fail before dispatch with an actionable Responses error.
   3. Existing pinned ChatGPT endpoint configurations continue to behave identically.
 
-**Plans**: TBD — approval gated
+**Plans**: 5 plans
 
 - [x] 02-01-PLAN.md
 - [x] 02-02-PLAN.md
@@ -69,7 +69,11 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
   2. Delta-seconds and supported HTTP-date `Retry-After` values resolve to safe bounded deadlines.
   3. Existing failover behavior for unrelated statuses remains covered and unchanged.
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+- [x] 03-01-PLAN.md
+- [x] 03-02-PLAN.md
+- [x] 03-03-PLAN.md
 
 ### Phase 4: Native Compaction
 
@@ -141,7 +145,7 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
 |-------|----------------|--------|-----------|
 | 1. Inbound Responses WebSocket | 4/4 | Complete    | 2026-09-05 |
 | 2. Native Responses Routing | 5/5 | Complete    | 2026-09-05 |
-| 3. Quota-Aware Resilience | 0/TBD | Not started | - |
+| 3. Quota-Aware Resilience | 3/3 | Complete    | 2026-09-05 |
 | 4. Native Compaction | 0/TBD | Not started | - |
 | 5. Anthropic Translation | 0/TBD | Not started | - |
 | 6. Capability-Aware Fallback | 0/TBD | Not started | - |

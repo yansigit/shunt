@@ -1,36 +1,36 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 3
-current_phase_name: Quota-Aware Resilience
+current_phase: 4
+current_phase_name: Native Compaction
 status: ready_to_plan
-stopped_at: Phase 02 complete, ready to plan Phase 3
-last_updated: "2026-09-06T03:30:00Z"
+stopped_at: Phase 03 complete, ready to plan Phase 4
+last_updated: "2026-09-06T05:13:05.679Z"
 last_activity: 2026-09-05
-last_activity_desc: Phase 02 completed and verified
-state_head: 8ace501
+last_activity_desc: Phase 03 complete, transitioned to Phase 4
+state_head: 00d143948a82bacfa396c2c3551dae0b2646f780
 progress:
   total_phases: 8
-  completed_phases: 2
-  total_plans: 9
-  completed_plans: 9
-  percent: 25
+  completed_phases: 3
+  total_plans: 12
+  completed_plans: 12
+  percent: 38
 ---
 
 # Project State
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-09-05 after Phase 2)
+See: `.planning/PROJECT.md` (updated 2026-09-05 after Phase 3)
 
 **Core value:** Protocol-faithful, streaming-safe client behavior in a bounded, lean gateway.
-**Current focus:** Phase 3 — Quota-Aware Resilience
+**Current focus:** Phase 4 — Native Compaction
 
 ## Current Position
 
-Phase: 3 — Quota-Aware Resilience
+Phase: 4 — Native Compaction
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-09-05 — Phase 02 complete, transitioned to Phase 3
+Last activity: 2026-09-05 — Phase 03 complete, transitioned to Phase 4
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -38,7 +38,7 @@ Progress: [░░░░░░░░░░] 0%
 
 **Velocity:**
 
-- Total plans completed: 9
+- Total plans completed: 12
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -48,6 +48,7 @@ Progress: [░░░░░░░░░░] 0%
 |-------|-------|-------|----------|
 | 01 | 4 | - | - |
 | 02 | 5 | - | - |
+| 03 | 3 | - | - |
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
@@ -71,6 +72,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 02]: WebSocket live turns refresh the runtime snapshot at turn start so each turn keeps one immutable native route while later turns observe reloads.
 - [Phase 02]: All maintained locales state exact compatible native selection, pinned fallback, pre-dispatch rejection, and no post-output hop consistently.
 - [Phase 02]: Missing or malformed models retain pinned compatibility routing; only unique exact compatible declarations select a native provider.
+- [Phase 03]: Hard quota requires bounded exact structured evidence; status-only and ambiguous failures stay transient.
+- [Phase 03]: Retry-After parsing is centralized, strictly bounded, and supports decimal seconds plus HTTP dates.
+- [Phase 03]: Quota inspection is capped by bytes and total time while preserving the downstream response stream.
 
 ### Pending Todos
 
@@ -90,5 +94,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-09-06T03:30:00Z
-Stopped at: Phase 02 complete, ready to plan Phase 3
+Stopped at: Phase 03 complete, ready to plan Phase 4
 Resume file: None

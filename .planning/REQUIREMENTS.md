@@ -22,13 +22,13 @@
 
 ### Native Responses Routing
 
-- [ ] **ROUTE-01**: An inbound Responses request can resolve an exact configured model route to a Responses-native provider without altering the request body.
-- [ ] **ROUTE-02**: Native Responses passthrough rejects ambiguous, translated-only, or incompatible targets before dispatch and preserves the existing pinned ChatGPT endpoint behavior as the compatibility default.
+- [x] **ROUTE-01**: An inbound Responses request can resolve an exact configured model route to a Responses-native provider without altering the request body.
+- [x] **ROUTE-02**: Native Responses passthrough rejects ambiguous, translated-only, or incompatible targets before dispatch and preserves the existing pinned ChatGPT endpoint behavior as the compatibility default.
 
 ### Resilience
 
-- [ ] **RES-01**: Shunt distinguishes transient request-rate limiting from hard quota exhaustion using provider status, codes, and bounded body inspection.
-- [ ] **RES-02**: Retry scheduling honors both delta-seconds and standards-compliant HTTP-date `Retry-After` values without wall-clock underflow or unbounded cooldowns.
+- [x] **RES-01**: Shunt distinguishes transient request-rate limiting from hard quota exhaustion using provider status, codes, and bounded body inspection.
+- [x] **RES-02**: Retry scheduling honors both delta-seconds and standards-compliant HTTP-date `Retry-After` values without wall-clock underflow or unbounded cooldowns.
 
 ### Compaction
 
@@ -79,10 +79,10 @@
 | WS-07 | Phase 1 | Complete |
 | CONF-01 | Phase 1 | Complete |
 | CONF-02 | Phase 1 | Complete |
-| ROUTE-01 | Phase 2 | Pending — approval gate |
-| ROUTE-02 | Phase 2 | Pending — approval gate |
-| RES-01 | Phase 3 | Pending |
-| RES-02 | Phase 3 | Pending |
+| ROUTE-01 | Phase 2 | Complete |
+| ROUTE-02 | Phase 2 | Complete |
+| RES-01 | Phase 3 | Complete |
+| RES-02 | Phase 3 | Complete |
 | COMP-01 | Phase 4 | Pending |
 | TRANS-01 | Phase 5 | Pending |
 | TRANS-02 | Phase 5 | Pending |
