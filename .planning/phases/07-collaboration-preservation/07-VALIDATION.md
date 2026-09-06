@@ -1,6 +1,7 @@
 ---
 phase: 07-collaboration-preservation
-status: passed
+status: validated
+nyquist_compliant: true
 wave_0_complete: true
 created: 2026-09-06
 ---
@@ -31,3 +32,9 @@ cargo test --all-features --workspace
 git diff --check
 test -z "$(git status --short -- wiki/)"
 ```
+
+## Validation Audit 2026-09-06
+
+All task rows have automated commands, COLLAB-01 is covered across unit,
+HTTP/SSE, and WebSocket fixtures, and the full workspace gate passed. Gaps
+found: 0; escalated: 0.
