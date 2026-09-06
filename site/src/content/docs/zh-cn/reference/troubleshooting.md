@@ -5,6 +5,7 @@ description: 常见的 shunt 错误及其修复方法。
 
 | 症状 | 原因 / 修复 |
 | :-- | :-- |
+| Sentry: `upstream SSE stream was cut before a terminal event` | 流式响应在没有终止事件的情况下结束。查看 `cut_kind` 判断原因:`transport_error` 表示正文读取失败,`eof` 表示上游在消息中途关闭连接,`marker` 表示 shunt 已检测到断流并发出 fail-closed 流错误,且不会发送正常完成事件。 |
 | `ChatGPT auth not found; run codex login` | shunt 无法读取 `~/.codex/auth.json`。运行 `codex login`。 |
 | 映射模型上的 `authentication_error` | 提供方凭据过期/缺失 —— 重新运行 `codex login`,或 export `OPENAI_API_KEY`。shunt 会透出后端真实的 `detail` 消息。 |
 | `400 … model is not supported when using Codex with a ChatGPT account` | 你用了一个 `-codex` slug(或一个你账户未被授权的 slug)。使用 [models.json](https://github.com/openai/codex/blob/main/codex-rs/models-manager/models.json) 中一个已授权的 slug(例如 `gpt-5.6-sol`、`gpt-5.5`),或设置 `upstream_model`。 |

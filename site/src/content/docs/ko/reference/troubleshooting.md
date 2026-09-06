@@ -5,6 +5,7 @@ description: 흔한 shunt 오류와 해결 방법.
 
 | 증상 | 원인 / 해결 |
 | :-- | :-- |
+| Sentry: `upstream SSE stream was cut before a terminal event` | 스트리밍 응답이 터미널 이벤트 없이 끝났습니다. `cut_kind`에서 원인을 확인하세요: `transport_error`는 본문 읽기 실패, `eof`는 업스트림이 메시지 도중 연결을 닫은 경우, `marker`는 shunt가 끊김을 감지해 정상 완료 없이 페일클로즈 스트림 오류를 내보낸 경우입니다. |
 | `ChatGPT auth not found; run codex login` | shunt가 `~/.codex/auth.json`을 읽을 수 없습니다. `codex login`을 실행하세요. |
 | 매핑된 모델에서 `authentication_error` | 만료/부재한 프로바이더 자격 증명 — `codex login`을 다시 실행하거나 `OPENAI_API_KEY`를 export하세요. shunt는 백엔드의 실제 `detail` 메시지를 노출합니다. |
 | `400 … model is not supported when using Codex with a ChatGPT account` | `-codex` 슬러그(또는 계정에 부여되지 않은 것)를 사용했습니다. [models.json](https://github.com/openai/codex/blob/main/codex-rs/models-manager/models.json)에서 부여된 슬러그(예: `gpt-5.6-sol`, `gpt-5.5`)를 사용하거나 `upstream_model`을 설정하세요. |
