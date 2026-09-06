@@ -774,31 +774,44 @@ async fn inspect_quota_response(
     let headers = response.headers().clone();
     let mut body = Vec::new();
     let mut stream = response;
-    while let Ok(Some(chunk)) = stream.chunk().await {
+    loop {
+        let chunk = match stream.chunk().await {
+            Ok(Some(chunk)) => chunk,
+            Ok(None) => break,
+            Err(_) => {
+                return (
+                    rebuild_buffered_response(status, &headers, body),
+                    accounts::QuotaDecision::Transient,
+                );
+            }
+        };
         if body.len().saturating_add(chunk.len()) > QUOTA_BODY_LIMIT {
             return (
-                reqwest::Response::from(
-                    axum::http::Response::builder()
-                        .status(status)
-                        .body(reqwest::Body::from(body))
-                        .expect("valid buffered response"),
-                ),
+                rebuild_buffered_response(status, &headers, body),
                 accounts::QuotaDecision::Transient,
             );
         }
         body.extend_from_slice(&chunk);
     }
     let decision = accounts::classify_quota_response(status, &body);
+    let rebuilt = rebuild_buffered_response(status, &headers, body);
+    (rebuilt, decision)
+}
+
+fn rebuild_buffered_response(
+    status: StatusCode,
+    headers: &reqwest::header::HeaderMap,
+    body: Vec<u8>,
+) -> reqwest::Response {
     let mut builder = axum::http::Response::builder().status(status);
-    for (name, value) in &headers {
+    for (name, value) in headers {
         builder = builder.header(name, value);
     }
-    let rebuilt = reqwest::Response::from(
+    reqwest::Response::from(
         builder
             .body(reqwest::Body::from(body))
             .expect("valid buffered response"),
-    );
-    (rebuilt, decision)
+    )
 }
 
 #[cfg(test)]

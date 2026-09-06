@@ -8,7 +8,7 @@ use std::{
 };
 
 use reqwest::{header::HeaderMap, StatusCode};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -3069,69 +3069,119 @@ pub enum QuotaDecision {
     Transient,
 }
 
+#[derive(Default)]
+struct QuotaEvidence {
+    discriminators: Vec<(usize, String)>,
+    duplicate: bool,
+    depth: usize,
+}
+
+struct QuotaSeed<'a>(&'a mut QuotaEvidence);
+
+impl<'de, 'a> serde::de::DeserializeSeed<'de> for QuotaSeed<'a> {
+    type Value = ();
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(QuotaVisitor(self.0))
+    }
+}
+
+struct QuotaVisitor<'a>(&'a mut QuotaEvidence);
+
+impl<'de, 'a> serde::de::Visitor<'de> for QuotaVisitor<'a> {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("a JSON value")
+    }
+
+    fn visit_map<M>(self, mut map: M) -> Result<(), M::Error>
+    where
+        M: serde::de::MapAccess<'de>,
+    {
+        let depth = self.0.depth;
+        self.0.depth += 1;
+        let mut keys = HashSet::new();
+        while let Some(key) = map.next_key::<String>()? {
+            if !keys.insert(key.clone()) {
+                self.0.duplicate = true;
+            }
+            if key == "code" || key == "type" {
+                let value = map.next_value::<String>()?;
+                self.0.discriminators.push((depth, value));
+            } else {
+                map.next_value_seed(QuotaSeed(self.0))?;
+            }
+        }
+        self.0.depth -= 1;
+        Ok(())
+    }
+
+    fn visit_seq<S>(self, mut sequence: S) -> Result<(), S::Error>
+    where
+        S: serde::de::SeqAccess<'de>,
+    {
+        self.0.depth += 1;
+        while sequence.next_element_seed(QuotaSeed(self.0))?.is_some() {}
+        self.0.depth -= 1;
+        Ok(())
+    }
+
+    fn visit_bool<E>(self, _: bool) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_i64<E>(self, _: i64) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_u64<E>(self, _: u64) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_f64<E>(self, _: f64) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_str<E>(self, _: &str) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_string<E>(self, _: String) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_none<E>(self) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_unit<E>(self) -> Result<(), E> {
+        Ok(())
+    }
+}
+
 /// Recognize only exact, structured quota discriminators in bounded JSON.
 /// Everything else (including malformed or ambiguous evidence) fails closed.
 pub fn classify_quota_response(status: StatusCode, body: &[u8]) -> QuotaDecision {
     if status != StatusCode::TOO_MANY_REQUESTS && status != StatusCode::PAYMENT_REQUIRED {
         return QuotaDecision::Transient;
     }
-    // serde_json::Value keeps only the last duplicate object member. Reject
-    // repeated discriminator keys before parsing so an attacker cannot hide a
-    // transient value behind a later hard-quota value.
-    let mut code_keys = 0usize;
-    let mut type_keys = 0usize;
-    for window in body.windows(7) {
-        if window == br#"\"code\":"# {
-            code_keys += 1;
-        } else if window == br#"\"type\":"# {
-            type_keys += 1;
-        }
-    }
-    if code_keys > 1 || type_keys > 1 {
+    let mut evidence = QuotaEvidence::default();
+    let mut deserializer = serde_json::Deserializer::from_slice(body);
+    if deserializer
+        .deserialize_any(QuotaVisitor(&mut evidence))
+        .and_then(|_| deserializer.end().map_err(serde::de::Error::custom))
+        .is_err()
+    {
         return QuotaDecision::Transient;
     }
-    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
-        return QuotaDecision::Transient;
-    };
-    fn collect(value: &serde_json::Value, found: &mut Vec<String>) -> bool {
-        match value {
-            serde_json::Value::Object(map) => {
-                let mut seen = HashSet::new();
-                for (key, child) in map {
-                    if (key == "code" || key == "type") && !seen.insert(key) {
-                        return false;
-                    }
-                    if key == "code" || key == "type" {
-                        if let Some(text) = child.as_str() {
-                            found.push(text.to_string());
-                        } else {
-                            return false;
-                        }
-                    }
-                    if !collect(child, found) {
-                        return false;
-                    }
-                }
-            }
-            serde_json::Value::Array(items) => {
-                for item in items {
-                    if !collect(item, found) {
-                        return false;
-                    }
-                }
-            }
-            _ => {}
-        }
-        true
-    }
-    let mut codes = Vec::new();
-    if !collect(&value, &mut codes) || codes.is_empty() {
+    if evidence.duplicate || evidence.discriminators.is_empty() {
         return QuotaDecision::Transient;
     }
-    let valid = codes
+    let valid = evidence
+        .discriminators
         .iter()
-        .all(|code| matches!(code.as_str(), "usage_limit_exceeded" | "insufficient_quota"));
-    let consistent = codes.windows(2).all(|pair| pair[0] == pair[1]);
+        .all(|(_, code)| matches!(code.as_str(), "usage_limit_exceeded" | "insufficient_quota"));
+    let consistent = evidence
+        .discriminators
+        .windows(2)
+        .all(|pair| pair[0].1 == pair[1].1 && pair[0].0 == pair[1].0);
     if valid && consistent {
         QuotaDecision::HardExhaustion
     } else {
@@ -3141,20 +3191,41 @@ pub fn classify_quota_response(status: StatusCode, body: &[u8]) -> QuotaDecision
 
 pub fn retry_after(headers: &HeaderMap) -> Option<Duration> {
     let value = headers.get(reqwest::header::RETRY_AFTER)?.to_str().ok()?;
-    // RFC 7231 allows two forms: delta-seconds or an HTTP-date. Try the cheap
-    // numeric form first, then fall back to the date form — a server that sends
-    // `Retry-After: <HTTP-date>` would otherwise be silently ignored.
-    if let Ok(seconds) = value.trim().parse::<u64>() {
-        return Some(Duration::from_secs(seconds));
+    retry_after_value(value)
+}
+
+/// Parse one bounded `Retry-After` value.  Delta-seconds are rounded upward
+/// to whole seconds so a fractional value can never cause an early retry;
+/// dates in the past retain their zero-delay policy meaning.  Both forms are
+/// capped to keep untrusted headers from creating unbounded sleeps.
+fn retry_after_value(value: &str) -> Option<Duration> {
+    const MAX_RETRY_AFTER: Duration = Duration::from_secs(3600);
+    let value = value.trim();
+    if value.is_empty() || value.len() > 128 {
+        return None;
     }
-    let deadline = httpdate::parse_http_date(value.trim()).ok()?;
-    // Honor the wait until that instant; a deadline already in the past means
-    // "retry now" (zero wait) rather than falling through to computed backoff.
-    Some(
-        deadline
-            .duration_since(SystemTime::now())
-            .unwrap_or(Duration::ZERO),
-    )
+
+    // RFC delta-seconds are decimal digits; accepting only this grammar avoids
+    // f64's exponent and sign forms while still supporting provider decimals.
+    if value
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || byte == b'.')
+        && value.bytes().filter(|&byte| byte == b'.').count() <= 1
+        && !value.starts_with('.')
+        && !value.ends_with('.')
+    {
+        let (whole, fraction) = value.split_once('.').unwrap_or((value, ""));
+        let seconds = whole.parse::<u64>().ok()?;
+        let has_fraction = !fraction.is_empty() && fraction.bytes().any(|byte| byte != b'0');
+        let rounded = seconds.checked_add(u64::from(has_fraction))?;
+        return Some(Duration::from_secs(rounded).min(MAX_RETRY_AFTER));
+    }
+
+    let deadline = httpdate::parse_http_date(value).ok()?;
+    let wait = deadline
+        .duration_since(SystemTime::now())
+        .unwrap_or(Duration::ZERO);
+    Some(wait.min(MAX_RETRY_AFTER))
 }
 
 #[cfg(test)]
@@ -7975,6 +8046,29 @@ mod tests {
     }
 
     #[test]
+    fn parses_decimal_retry_after_with_upward_rounding_and_clamp() {
+        let mut headers = HeaderMap::new();
+        headers.insert(RETRY_AFTER, HeaderValue::from_static(" 1.01 "));
+        assert_eq!(retry_after(&headers), Some(Duration::from_secs(2)));
+        headers.insert(RETRY_AFTER, HeaderValue::from_static("999999999999"));
+        assert_eq!(retry_after(&headers), Some(Duration::from_secs(3600)));
+        headers.insert(RETRY_AFTER, HeaderValue::from_static("0"));
+        assert_eq!(retry_after(&headers), Some(Duration::ZERO));
+    }
+
+    #[test]
+    fn rejects_malformed_and_overlong_retry_after() {
+        let mut headers = HeaderMap::new();
+        for value in ["1e3", ".5", "1.", "-1", "nan"] {
+            headers.insert(RETRY_AFTER, HeaderValue::from_static(value));
+            assert_eq!(retry_after(&headers), None, "{value} must be rejected");
+        }
+        let long = "1".repeat(129);
+        headers.insert(RETRY_AFTER, HeaderValue::from_str(&long).unwrap());
+        assert_eq!(retry_after(&headers), None);
+    }
+
+    #[test]
     fn parses_http_date_retry_after() {
         // RFC 7231 date form: a deadline ~1h in the future is honored as a
         // positive wait rather than silently ignored (which would fall through
@@ -8042,6 +8136,26 @@ mod tests {
             ),
             QuotaDecision::HardExhaustion
         );
+    }
+
+    #[test]
+    fn quota_classifier_fails_closed_on_ambiguous_or_invalid_json() {
+        let cases: &[&[u8]] = &[
+            br#"{"code":"usage_limit_exceeded","code":"rate_limit_error"}"#,
+            br#"{"error":{"code":"usage_limit_exceeded"},"code":"usage_limit_exceeded"}"#,
+            br#"{"code":"usage_limit_exceeded","type":"insufficient_quota"}"#,
+            br#"{"error":{"code":"usage_limit_exceeded","message":"x","message":"y"}}"#,
+            br#"{"code":"usage_limit_exceeded""#,
+            b"\xff\xfe\xfd",
+            br#""#,
+        ];
+        for body in cases {
+            assert_eq!(
+                classify_quota_response(StatusCode::TOO_MANY_REQUESTS, body),
+                QuotaDecision::Transient,
+                "ambiguous body must not cool down an account"
+            );
+        }
     }
 
     fn unix_now() -> u64 {
