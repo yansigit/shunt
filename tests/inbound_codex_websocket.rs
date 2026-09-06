@@ -681,7 +681,7 @@ async fn no_mid_stream_hop() {
 }
 
 #[tokio::test]
-async fn premature_done_and_malformed_sse_become_protocol_errors() {
+async fn responses_terminal_premature_done_and_malformed_sse_become_protocol_errors() {
     let _env = ENV_LOCK.lock().await;
     let replies = vec![
         Reply::Static {

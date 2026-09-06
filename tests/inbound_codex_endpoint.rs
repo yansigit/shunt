@@ -2027,7 +2027,7 @@ fn assert_openai_error_shape(body: &serde_json::Value, expected_type: &str) {
 }
 
 #[tokio::test]
-async fn gateway_owned_401_body_is_openai_shaped() {
+async fn responses_terminal_gateway_owned_401_body_is_openai_shaped() {
     // A gateway-owned auth failure (bad/missing client token) must reach an OpenAI
     // Responses client in its own error envelope, not the Anthropic one, so the
     // Codex CLI surfaces a meaningful message. Status stays 401.
@@ -2069,7 +2069,7 @@ async fn gateway_owned_401_body_is_openai_shaped() {
 }
 
 #[tokio::test]
-async fn gateway_owned_502_body_is_openai_shaped() {
+async fn responses_terminal_gateway_owned_502_body_is_openai_shaped() {
     // When every pooled account fails to resolve *before* any upstream response,
     // there is no upstream body to relay, so shunt returns its own 502 — which must
     // be OpenAI-shaped on this endpoint, not the Anthropic envelope.

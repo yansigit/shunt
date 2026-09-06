@@ -20,6 +20,26 @@ fn route(model: &str) -> Route {
     }
 }
 
+#[test]
+fn responses_terminal_bare_eof_is_a_protocol_error() {
+    let fixture = concat!(
+        "event: response.created\n",
+        "data: {\"response\":{\"id\":\"resp_cut\"}}\n\n",
+        "event: response.output_text.delta\n",
+        "data: {\"delta\":\"partial\"}\n\n",
+    );
+    let mut machine = AnthropicSseMachine::new("gpt-5.2-codex", false, false);
+    for event in parse_sse_events(fixture) {
+        let _ = machine.apply(event);
+    }
+
+    let eof = machine.finish().join("");
+    assert!(
+        eof.is_empty(),
+        "EOF without a provider terminal must not synthesize success: {eof}"
+    );
+}
+
 fn translate(input: Value) -> Value {
     let body = serde_json::to_vec(&input).unwrap();
     // provider "openai" is the stock Responses API (not the ChatGPT backend).

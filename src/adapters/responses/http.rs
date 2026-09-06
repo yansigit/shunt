@@ -392,7 +392,7 @@ mod tests {
     /// still classify the stream as an upstream cut instead of a normal
     /// completion (see that constant's doc comment for the full rationale).
     #[tokio::test]
-    async fn stream_response_marks_a_synthesized_completion_from_a_truncated_upstream() {
+    async fn responses_terminal_stream_rejects_a_truncated_upstream() {
         let sse = concat!(
             "event: response.created\n",
             "data: {\"response\":{\"id\":\"resp_1\"}}\n\n",
@@ -414,16 +414,9 @@ mod tests {
         let body = std::str::from_utf8(&bytes).expect("body is utf8");
         let marker = std::str::from_utf8(crate::stream_metrics::UPSTREAM_TRUNCATED_MARKER).unwrap();
 
-        // The marker sits immediately before the synthesized completion
-        // `AnthropicSseMachine::finish` builds once the mock body ends
-        // without a `response.completed` — not at the very start of the
-        // stream, since the real `content_block_delta` already flowed.
-        let expected_synthetic_completion = format!("{marker}\n\nevent: content_block_stop");
-        assert!(
-            body.contains(&expected_synthetic_completion),
-            "truncated stream must carry the marker right before the synthesized completion, got: {body}"
-        );
-        assert!(body.contains("event: message_stop"));
+        assert!(body.contains(marker));
+        assert!(body.contains("event: error"));
+        assert!(!body.contains("event: message_stop"));
     }
 
     /// A clean turn that reaches `response.completed` must not carry the
