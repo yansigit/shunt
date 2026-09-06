@@ -1048,7 +1048,7 @@ async fn a_429_always_rotates_unlike_the_anthropic_pause_same_case() {
 }
 
 #[tokio::test]
-async fn exhausted_pool_relays_translated_error_envelope() {
+async fn exhausted_pool_preserves_final_body() {
     // Unlike the Anthropic adapter's byte-verbatim relay, the Responses
     // adapter always re-shapes an upstream failure into an Anthropic-style
     // error envelope (see build_upstream_error). When every account is
