@@ -16,14 +16,21 @@ translation, capability-aware fallback, opt-in collaboration preservation, and
 finite process shutdown. All 20 v1 requirements and the repository-wide quality
 gate passed.
 
-## Next Milestone Goals
+## Current Milestone: v2 Provider Compatibility
 
-- Gather production evidence for the deferred `REPAIR-01` and `RECOVERY-01`
-  requirements before designing either subsystem.
-- Preserve the v1 boundaries: native opacity, no post-output replay, bounded
-  resources, and no credential writeback changes without explicit approval.
-- Start a new milestone only when a concrete failing transcript or operational
-  need establishes scope.
+**Goal:** Make Shunt's useful OpenCodex-backed providers protocol-faithful and
+streaming-safe while adding the missing transport families without importing
+OpenCodex's broader platform complexity.
+
+**Target features:**
+
+- Preserve and verify ChatGPT/Codex plus Gemini / Google Code Assist behavior.
+- Harden native Antigravity and Cursor using current upstream evidence.
+- Add generic OpenAI Chat Completions compatibility.
+- Add Command Code subscription and API-key paths without changing credential
+  writeback behavior.
+- Evaluate exact OpenCode Go model contracts and implement only the clean,
+  testable subset supported by live or captured evidence.
 
 ## Core Value
 
@@ -53,7 +60,19 @@ behavior while Shunt stays bounded, predictable, and operationally lean.
 
 ### Active
 
-- None — all v1 requirements are validated.
+- [ ] ChatGPT/Codex and Gemini retain their verified streaming, tool-call,
+  authentication, and error behavior.
+- [ ] Antigravity implements the proven Cloud Code Assist request, stream,
+  signature, tool-history, model, and destination-security contracts.
+- [ ] Cursor's existing provider gains evidence-backed model, continuation,
+  tool, error, and retry hardening without speculative no-progress heuristics.
+- [ ] OpenAI Chat Completions-compatible upstreams can serve Anthropic Messages
+  clients with bounded streaming and tool-call translation.
+- [ ] Command Code subscription and API-key users can run normal, streaming,
+  tool-heavy, subagent, long-context, and error-path turns without new
+  credential persistence behavior.
+- [ ] OpenCode Go support is limited to exact model/wire combinations whose
+  behavior can be cleanly implemented and verified.
 
 ### Out of Scope
 
@@ -63,6 +82,11 @@ behavior while Shunt stays bounded, predictable, and operationally lean.
 - Duplicate account pools, retry stacks, compression, keepalive, or WebSocket pools — Shunt already owns these concerns
 - Durable continuation spill or request-history persistence — deferred until measurements justify it
 - Credential-file writeback changes — require a separate explicit approval
+- Google AI Studio Web, its cookie/SAPISIDHASH authentication, browser
+  extension, daemon, MakerSuite parser, and session-file dependencies — known
+  nonfunctional and explicitly excluded
+- Whole-provider OpenCode Go claims based on family inference — its models span
+  multiple protocols and require exact evidence
 
 ## Context
 
@@ -73,6 +97,14 @@ covers many transcript edge cases on its outbound WebSocket and existing
 translation path. The highest-value missing boundary is inbound WebSocket
 support; model routing, compaction, translated providers, and collaboration
 should be layered behind that stable ingress.
+
+The v2 provider audit compared current Shunt behavior with OpenCodex provider
+implementations and GitHub issue/PR history. It found that ChatGPT/Codex,
+Gemini, Antigravity, Cursor, OpenAI Responses, and Vercel's Anthropic-compatible
+path already exist in Shunt. The missing transport families are generic OpenAI
+Chat Completions and proprietary Command Code; OpenCode Go remains an
+exact-model compatibility evaluation because its catalog spans Chat,
+Responses, and Anthropic wires.
 
 Directly translated substantial OpenCodex code must retain its MIT notice.
 Clean Rust implementations based on observed behavior and independently
@@ -107,6 +139,10 @@ written tests are preferred.
 | Collaboration translation is opt-in and fails closed without plaintext | Hidden recovery would be sensitive, billable, and unnecessary for native ChatGPT traffic | ✓ Validated in Phase 7 |
 | Shutdown uses one process deadline and runtime cancellation | Bounds drain without adding a global active-turn registry | ✓ Validated in Phase 8 |
 | No persistence or repair layer without evidence | Keeps Shunt bounded and avoids speculative complexity | ✓ Validated for v1; deferred requirements remain in v2 |
+| Port OpenCodex provider behavior selectively | Its issue history provides valuable wire invariants and fixtures, while its generalized infrastructure does not fit Shunt | — Pending |
+| Keep existing credential writeback behavior unchanged | Provider compatibility does not justify expanding persistence authority | — Pending |
+| Treat OpenCode Go as exact-model compatibility | The provider spans three wire protocols and has recent model-specific regressions | — Pending |
+| Exclude Google AI Studio Web completely | It is known nonfunctional and unrelated to the supported Code Assist transport | — Pending |
 
 ## Evolution
 
@@ -125,4 +161,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Revisit deferred work only with evidence from usage or failing transcripts.
 
 ---
-*Last updated: 2026-09-06 after v1 milestone completion*
+*Last updated: 2026-09-06 after starting v2 Provider Compatibility*
