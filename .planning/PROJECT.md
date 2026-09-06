@@ -24,12 +24,12 @@ behavior while Shunt stays bounded, predictable, and operationally lean.
 - ✓ Anthropic-to-Responses request and Responses-to-Anthropic response translation — existing
 - ✓ Bounded request, decompression, concurrency, and WebSocket resources — existing
 - ✓ OpenAI-shaped gateway-owned errors on the inbound Codex endpoint — existing
+- ✓ Codex clients can use inbound Responses WebSocket transport with faithful terminal, error, cancellation, warmup, and backpressure semantics — Phase 1
+- ✓ Missing OpenCodex protocol transcript cases are represented as focused Rust fixtures without duplicating existing Shunt coverage — Phase 1
+- ✓ Inbound Responses can route exactly to compatible native Responses providers while preserving byte-level passthrough behavior — Phase 2
 
 ### Active
 
-- [ ] Codex clients can use inbound Responses WebSocket transport with faithful terminal, error, cancellation, warmup, and backpressure semantics
-- [ ] Missing OpenCodex protocol transcript cases are represented as focused Rust fixtures without duplicating existing Shunt coverage
-- [ ] Inbound Responses can route exactly to compatible native Responses providers while preserving byte-level passthrough behavior
 - [ ] Shunt distinguishes transient rate limiting from hard quota exhaustion and honors standards-compliant `Retry-After` values
 - [ ] Native Responses compaction works without adding general request-history persistence
 - [ ] A dedicated inbound Responses translation path can target Anthropic with tools, images, reasoning, usage, and terminal fidelity
@@ -76,10 +76,10 @@ written tests are preferred.
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Port behavior and tests, not the TypeScript architecture | Preserves proven semantics without importing generalized infrastructure | — Pending |
-| Inbound WebSocket is the first delivery slice | It is the clearest missing Codex transport boundary and reuses Shunt primitives | — Pending |
-| Native passthrough and cross-provider translation stay separate | Native encrypted/opaque traffic must remain untouched | — Pending |
-| Exact Responses-native routing precedes universal translation | Delivers provider choice with a smaller failure surface | — Pending |
+| Port behavior and tests, not the TypeScript architecture | Preserves proven semantics without importing generalized infrastructure | ✓ Validated in Phases 1–2 |
+| Inbound WebSocket is the first delivery slice | It is the clearest missing Codex transport boundary and reuses Shunt primitives | ✓ Validated in Phase 1 |
+| Native passthrough and cross-provider translation stay separate | Native encrypted/opaque traffic must remain untouched | ✓ Validated in Phase 2 |
+| Exact Responses-native routing precedes universal translation | Delivers provider choice with a smaller failure surface | ✓ Validated in Phase 2 |
 | Anthropic translation is a dedicated vertical subsystem | Current translation direction cannot be safely inverted through ad-hoc mutation | — Pending |
 | Collaboration recovery is opt-in and last | It is sensitive, billable, and unnecessary for native ChatGPT traffic | — Pending |
 | No persistence or repair layer without evidence | Keeps Shunt bounded and avoids speculative complexity | — Pending |
@@ -101,4 +101,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Revisit deferred work only with evidence from usage or failing transcripts.
 
 ---
-*Last updated: 2026-09-05 after OpenCodex port audit initialization*
+*Last updated: 2026-09-05 after Phase 2*

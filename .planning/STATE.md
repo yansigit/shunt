@@ -1,29 +1,29 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 02
-current_phase_name: Native Responses Routing
-status: executing
-stopped_at: Completed 02-04-PLAN.md
-last_updated: "2026-09-06T01:42:00Z"
+current_phase: 3
+current_phase_name: Quota-Aware Resilience
+status: ready_to_plan
+stopped_at: Phase 02 complete, ready to plan Phase 3
+last_updated: "2026-09-06T03:30:00Z"
 last_activity: 2026-09-05
-last_activity_desc: Phase 02 plan 02 execution completed
-state_head: 832325979eaa5c717929b4943b36efdec58548ca
+last_activity_desc: Phase 02 completed and verified
+state_head: 8ace501
 progress:
   total_phases: 8
-  completed_phases: 0
+  completed_phases: 2
   total_plans: 9
-completed_plans: 8
-  percent: 0
+  completed_plans: 9
+  percent: 25
 ---
 
 # Project State
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-09-05)
+See: `.planning/PROJECT.md` (updated 2026-09-05 after Phase 2)
 
 **Core value:** Protocol-faithful, streaming-safe client behavior in a bounded, lean gateway.
-**Current focus:** Phase 02 — Native Responses Routing
+**Current focus:** Phase 3 — Quota-Aware Resilience
 
 ## Current Position
 
@@ -70,6 +70,7 @@ Progress: [░░░░░░░░░░] 0%
 - Phase 2 provider-semantics work requires explicit user approval.
 - [Phase 02]: WebSocket live turns refresh the runtime snapshot at turn start so each turn keeps one immutable native route while later turns observe reloads.
 - [Phase 02]: All maintained locales state exact compatible native selection, pinned fallback, pre-dispatch rejection, and no post-output hop consistently.
+- [Phase 02]: Missing or malformed models retain pinned compatibility routing; only unique exact compatible declarations select a native provider.
 
 ### Pending Todos
 
@@ -77,7 +78,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- Phase 2 is approval-gated by repository policy.
+None.
 
 ## Deferred Items
 
@@ -88,6 +89,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-06T01:49:41.199Z
+Last session: 2026-09-06T03:30:00Z
 Stopped at: Phase 02 complete, ready to plan Phase 3
 Resume file: None
