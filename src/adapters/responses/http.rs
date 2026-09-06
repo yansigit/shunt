@@ -378,14 +378,19 @@ impl SseParser {
         if self.buffer.is_empty() {
             return Ok(None);
         }
+        if self.buffer.iter().all(u8::is_ascii_whitespace) {
+            self.buffer.clear();
+            return Ok(None);
+        }
         if self.buffer.len() > self.max_event_bytes {
             return Err(self.fail(format!(
                 "upstream Responses SSE event exceeded {} bytes",
                 self.max_event_bytes
             )));
         }
-        let frame = std::mem::take(&mut self.buffer);
-        parse_sse_frame(&frame)
+        Err(self.fail(
+            "upstream Responses SSE ended with an unterminated event frame",
+        ))
     }
 }
 
@@ -751,6 +756,43 @@ mod tests {
         let error = json_response_with_limit(oversized, relay_opts(), sse.len() - 1)
             .await
             .expect_err("exact limit plus one should fail");
+        assert_eq!(error.response.status(), StatusCode::BAD_GATEWAY);
+    }
+
+    #[test]
+    fn responses_terminal_rejects_unterminated_success_frame() {
+        let mut parser = SseParser::default();
+        assert!(parser
+            .push(b"event: response.completed\ndata: {}")
+            .unwrap()
+            .is_empty());
+        let error = parser.finish().unwrap_err();
+        assert!(error.to_string().contains("unterminated event frame"));
+    }
+
+    #[tokio::test]
+    async fn streaming_rejects_unterminated_success_terminal() {
+        let sse = "event: response.completed\ndata: {}";
+        let upstream = upstream_response(200, sse).await;
+        let response = stream_response(
+            upstream,
+            relay_opts(),
+            0,
+            std::time::Duration::from_secs(30),
+        );
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = std::str::from_utf8(&bytes).unwrap();
+        assert_eq!(body.matches("event: error").count(), 1);
+        assert!(!body.contains("event: message_stop"));
+    }
+
+    #[tokio::test]
+    async fn non_streaming_rejects_unterminated_success_terminal() {
+        let sse = "event: response.completed\ndata: {}";
+        let upstream = upstream_response(200, sse).await;
+        let error = json_response(upstream, relay_opts())
+            .await
+            .expect_err("unterminated terminal must not become success");
         assert_eq!(error.response.status(), StatusCode::BAD_GATEWAY);
     }
 }
