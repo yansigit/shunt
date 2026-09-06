@@ -10,7 +10,7 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
 ## Phases
 
 - [x] **Phase 1: Inbound Responses WebSocket** - Deliver authenticated, bounded, cancellable WS transport with focused conformance coverage. (completed 2026-09-05)
-- [ ] **Phase 2: Native Responses Routing** - Route exact models to compatible Responses-native providers without translation. **Requires user approval before implementation because it changes documented provider semantics.**
+- [x] **Phase 2: Native Responses Routing** - Route exact models to compatible Responses-native providers without translation. **Requires user approval before implementation because it changes documented provider semantics.** (completed 2026-09-05)
 - [ ] **Phase 3: Quota-Aware Resilience** - Distinguish transient throttling from exhausted quota and honor standards-compliant retry timing.
 - [ ] **Phase 4: Native Compaction** - Forward Responses compaction opaquely without local history persistence.
 - [ ] **Phase 5: Anthropic Translation** - Add a dedicated Responses-to-Anthropic vertical translation subsystem.
@@ -140,7 +140,7 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Inbound Responses WebSocket | 4/4 | Complete    | 2026-09-05 |
-| 2. Native Responses Routing | 5/5 | In Progress|  |
+| 2. Native Responses Routing | 5/5 | Complete    | 2026-09-05 |
 | 3. Quota-Aware Resilience | 0/TBD | Not started | - |
 | 4. Native Compaction | 0/TBD | Not started | - |
 | 5. Anthropic Translation | 0/TBD | Not started | - |
