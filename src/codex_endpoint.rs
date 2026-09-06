@@ -43,6 +43,10 @@ pub(crate) const PATHS: [&str; 3] = [
     "/v1/responses",
 ];
 
+/// Remote compaction is HTTP-only and therefore registered separately from
+/// [`PATHS`], whose entries also accept inbound WebSocket upgrades.
+pub(crate) const COMPACT_PATH: &str = "/v1/responses/compact";
+
 /// Minimal view of the inbound Responses body: the `model` is read only for
 /// metrics/logging labels — the body itself forwards upstream byte-for-byte, so
 /// a missing or malformed model never blocks the request (the upstream rejects it).
@@ -158,6 +162,44 @@ pub async fn post(
     headers: HeaderMap,
     body: Body,
 ) -> axum::response::Response {
+    post_operation(
+        state,
+        method,
+        uri,
+        headers,
+        body,
+        responses::inbound::InboundOperation::Responses,
+    )
+    .await
+}
+
+/// HTTP-only native Responses compaction entry point.
+pub async fn compact(
+    State(state): State<AppState>,
+    method: Method,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+    body: Body,
+) -> axum::response::Response {
+    post_operation(
+        state,
+        method,
+        uri,
+        headers,
+        body,
+        responses::inbound::InboundOperation::Compact,
+    )
+    .await
+}
+
+async fn post_operation(
+    state: AppState,
+    method: Method,
+    uri: axum::http::Uri,
+    headers: HeaderMap,
+    body: Body,
+    operation: responses::inbound::InboundOperation,
+) -> axum::response::Response {
     let state = state.refreshed();
     let started_at = Instant::now();
     let path = uri.path().to_string();
@@ -187,7 +229,7 @@ pub async fn post(
     );
 
     async move {
-        match forward(state, session_id, headers, body, started_at).await {
+        match forward(state, session_id, headers, body, started_at, operation).await {
             Ok((status, response)) => {
                 tracing::info!(
                     upstream_status = status.as_u16(),
@@ -247,6 +289,7 @@ async fn forward(
     headers: HeaderMap,
     body: Body,
     started_at: Instant,
+    operation: responses::inbound::InboundOperation,
 ) -> Result<(StatusCode, axum::response::Response), ForwardError> {
     // The routes are only registered when `[server.codex_endpoint]` is set, but
     // read the snapshot defensively; config validation guarantees the named
@@ -289,13 +332,29 @@ async fn forward(
             response,
         })?;
 
-    // Read the model for metrics/logging only; the body forwards verbatim.
-    let label = model_label(&headers, &body, max_request_bytes).await;
-    let model = (label != UNKNOWN_MODEL).then_some(label.clone());
+    // Ordinary Responses treats the model as a best-effort routing label for
+    // compatibility. Compact must fail before network dispatch unless a valid,
+    // unique, non-empty model can be routed to a verified native endpoint.
+    let (label, model) = if operation == responses::inbound::InboundOperation::Compact {
+        let model = compact_model(&headers, &body, max_request_bytes)
+            .await
+            .map_err(|message| ForwardError {
+                message: message.clone(),
+                response: Box::new(
+                    ShuntError::new(StatusCode::BAD_REQUEST, "invalid_request_error", message)
+                        .into_response(),
+                ),
+            })?;
+        (model.clone(), Some(model))
+    } else {
+        let label = model_label(&headers, &body, max_request_bytes).await;
+        let model = (label != UNKNOWN_MODEL).then_some(label.clone());
+        (label, model)
+    };
     crate::observability::record_requested_model(&label);
     let pool_key = pool_sticky_key(inbound_client.as_deref(), session_id);
 
-    forward_turn(state, model, pool_key, headers, body, started_at).await
+    forward_turn(state, model, pool_key, headers, body, started_at, operation).await
 }
 
 pub(crate) fn extract_session_id(headers: &HeaderMap) -> Option<String> {
@@ -343,6 +402,7 @@ pub(crate) async fn forward_turn(
     headers: HeaderMap,
     body: Bytes,
     started_at: Instant,
+    operation: responses::inbound::InboundOperation,
 ) -> Result<(StatusCode, axum::response::Response), ForwardError> {
     let decision = crate::routing::resolve_native_inbound(&state.config, model.as_deref());
     let route = match decision {
@@ -358,10 +418,28 @@ pub(crate) async fn forward_turn(
             });
         }
     };
+    if operation == responses::inbound::InboundOperation::Compact
+        && !state
+            .config
+            .supports_native_responses_compact(&route.provider)
+    {
+        let message = format!(
+            "native Responses compaction is not supported by provider `{}`",
+            route.provider
+        );
+        return Err(ForwardError {
+            message: message.clone(),
+            response: Box::new(
+                ShuntError::new(StatusCode::BAD_REQUEST, "invalid_request_error", message)
+                    .into_response(),
+            ),
+        });
+    }
     let provider = route.provider.clone();
     let model = route.model.clone();
 
-    let result = responses::forward_codex_inbound(state, route, pool_key, headers, body).await;
+    let result =
+        responses::forward_codex_inbound(state, route, operation, pool_key, headers, body).await;
     let status_code = match &result {
         Ok((status, _)) => *status,
         Err(error) => error.response.status(),
@@ -555,6 +633,80 @@ enum ParsedModel {
     /// Valid JSON with a `model` field that is not a string. Carries only the
     /// JSON type name, never the client-controlled value — see [`ModelField`].
     NotAString(&'static str),
+}
+
+#[derive(Debug)]
+struct CompactModelView {
+    model: Option<ModelField>,
+}
+
+impl<'de> Deserialize<'de> for CompactModelView {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = CompactModelView;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a compaction request object")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let mut model = None;
+                let mut model_seen = false;
+                while let Some(key) = map.next_key::<String>()? {
+                    if key == "model" {
+                        if model_seen {
+                            return Err(serde::de::Error::custom("duplicate model field"));
+                        }
+                        model_seen = true;
+                        model = Some(map.next_value::<ModelField>()?);
+                    } else {
+                        map.next_value::<serde::de::IgnoredAny>()?;
+                    }
+                }
+                Ok(CompactModelView { model })
+            }
+        }
+
+        deserializer.deserialize_map(Visitor)
+    }
+}
+
+async fn compact_model(
+    headers: &HeaderMap,
+    body: &Bytes,
+    max_request_bytes: usize,
+) -> Result<String, String> {
+    let parsed = match crate::compression::body_encoding(headers) {
+        BodyEncoding::Zstd => {
+            crate::compression::decode_zstd_and_parse(body.clone(), max_request_bytes, |decoded| {
+                parse_compact_model(&decoded)
+            })
+            .await
+            .map_err(|_| "invalid compressed compaction request body".to_string())?
+            .ok_or_else(|| "compaction request body exceeds the decoded limit".to_string())?
+        }
+        BodyEncoding::Identity => parse_compact_model(body),
+        BodyEncoding::Other => {
+            return Err("unsupported compaction request content-encoding".to_string())
+        }
+    };
+    parsed
+}
+
+fn parse_compact_model(body: &[u8]) -> Result<String, String> {
+    let view: CompactModelView =
+        serde_json::from_slice(body).map_err(|_| "invalid compaction request body".to_string())?;
+    match view.model {
+        Some(ModelField::Str(model)) if !model.is_empty() => Ok(model),
+        _ => Err("compaction request requires a non-empty string model".to_string()),
+    }
 }
 
 fn parse_model(body: &[u8]) -> ParsedModel {

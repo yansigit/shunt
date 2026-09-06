@@ -3864,6 +3864,32 @@ impl Config {
             .unwrap_or(false)
     }
 
+    /// Whether the provider is a verified native `POST /responses/compact`
+    /// destination. The endpoint is not part of the generic Responses wire:
+    /// only the ChatGPT/Codex backend and the canonical OpenAI API are known to
+    /// implement it, so arbitrary compatible gateways fail closed.
+    pub fn supports_native_responses_compact(&self, provider: &str) -> bool {
+        if self.is_chatgpt_backend(provider) {
+            return true;
+        }
+        let Some(provider) = self.provider(provider) else {
+            return false;
+        };
+        if provider.kind != ProviderKind::Responses || provider.auth != AuthMode::ApiKey {
+            return false;
+        }
+        reqwest::Url::parse(&provider.base_url)
+            .ok()
+            .is_some_and(|url| {
+                url.scheme() == "https"
+                    && url.host_str() == Some("api.openai.com")
+                    && url.port_or_known_default() == Some(443)
+                    && url.path().trim_end_matches('/') == "/v1"
+                    && url.query().is_none()
+                    && url.fragment().is_none()
+            })
+    }
+
     /// The effective storm-control initial admission allowance
     /// (`[server.pool] ramp_initial_concurrency`), or `None` when no pool is
     /// configured or the gate is disabled.

@@ -40,6 +40,7 @@ use wiremock::{
 /// note `input`/`instructions` (Responses shape), not `messages` (Anthropic). It
 /// must reach the upstream byte-identical to prove no translation happened.
 const INBOUND_BODY: &str = r#"{"model":"gpt-5.6-sol","instructions":"be brief","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}],"stream":false,"store":false}"#;
+const COMPACT_BODY: &str = r#"{"model":"gpt-5.6-sol","input":[{"type":"context_compaction","encrypted_content":"opaque:abc123"}],"previous_response_id":"resp_opaque"}"#;
 
 struct BearerToken(String);
 
@@ -286,6 +287,183 @@ async fn post_responses(
         request = request.header("x-shunt-token", token);
     }
     request.send().await.unwrap()
+}
+
+async fn post_compact(
+    gateway: &TestGateway,
+    body: &str,
+    client_token: Option<&str>,
+) -> reqwest::Response {
+    let mut request = reqwest::Client::new()
+        .post(format!("{}/v1/responses/compact", gateway.base_url))
+        .header("content-type", "application/json")
+        .header("authorization", "Bearer client-would-be-forwarded")
+        .header("x-opaque-client-header", "preserved")
+        .body(body.to_string());
+    if let Some(token) = client_token {
+        request = request.header("x-shunt-token", token);
+    }
+    request.send().await.unwrap()
+}
+
+#[tokio::test]
+async fn compact_route_is_absent_without_opt_in_config() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let gateway = start_gateway_with(Config::default()).await;
+    let response = post_compact(&gateway, COMPACT_BODY, None).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn compact_pinned_chatgpt_preserves_body_auth_and_upstream_error() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let token = chatgpt_token(FAR_FUTURE_EXP, "acct-compact");
+    let account_env = format!("SHUNT_TEST_COMPACT_ACCOUNT_{}", std::process::id());
+    let clients_env = format!("SHUNT_TEST_COMPACT_CLIENTS_{}", std::process::id());
+    std::env::set_var(&account_env, &token);
+    std::env::set_var(&clients_env, "cli:compact-secret");
+
+    let upstream_body = r#"{"error":{"type":"invalid_request_error","message":"opaque failure"}}"#;
+    let upstream = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/codex/responses/compact"))
+        .and(BearerToken(token.clone()))
+        .and(header("x-opaque-client-header", "preserved"))
+        .and(HeaderAbsent("x-shunt-token"))
+        .and(body_string(COMPACT_BODY))
+        .respond_with(
+            ResponseTemplate::new(409)
+                .insert_header("retry-after", "7")
+                .insert_header("set-cookie", "edge-secret=1")
+                .set_body_raw(upstream_body, "application/json"),
+        )
+        .expect(1)
+        .mount(&upstream)
+        .await;
+
+    let mut config = test_config(&upstream.uri(), vec![account("compact", &account_env)]);
+    config.server.auth = Some(InboundAuthConfig {
+        header: "x-shunt-token".to_string(),
+        tokens_env: clients_env.clone(),
+    });
+    let gateway = start_gateway_with(config).await;
+
+    let unauthorized = post_compact(&gateway, COMPACT_BODY, None).await;
+    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+    let error: serde_json::Value =
+        serde_json::from_str(&unauthorized.text().await.unwrap()).unwrap();
+    assert_openai_error_shape(&error, "authentication_error");
+
+    let response = post_compact(&gateway, COMPACT_BODY, Some("compact-secret")).await;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    assert_eq!(response.headers().get("retry-after").unwrap(), "7");
+    assert!(response.headers().get("set-cookie").is_none());
+    assert_eq!(response.text().await.unwrap(), upstream_body);
+    upstream.verify().await;
+
+    std::env::remove_var(account_env);
+    std::env::remove_var(clients_env);
+}
+
+#[tokio::test]
+async fn compact_exact_native_route_uses_compact_url() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let token = chatgpt_token(FAR_FUTURE_EXP, "acct-compact-exact");
+    let account_env = format!("SHUNT_TEST_COMPACT_EXACT_{}", std::process::id());
+    std::env::set_var(&account_env, &token);
+    let upstream = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/codex/responses/compact"))
+        .and(BearerToken(token.clone()))
+        .and(body_bytes(COMPACT_BODY.as_bytes()))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            r#"{"output":[{"type":"compaction","encrypted_content":"opaque:def456"}]}"#,
+            "application/json",
+        ))
+        .expect(1)
+        .mount(&upstream)
+        .await;
+    let mut config = test_config(
+        &upstream.uri(),
+        vec![account("compact-exact", &account_env)],
+    );
+    config.models = vec![ModelConfig {
+        id: "gpt-5.6-sol".into(),
+        display_name: None,
+        upstream_model: Some(BTreeMap::from([("codex".into(), "gpt-5.6-sol".into())])),
+    }];
+    let gateway = start_gateway_with(config).await;
+    let response = post_compact(&gateway, COMPACT_BODY, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(response.text().await.unwrap().contains("opaque:def456"));
+    upstream.verify().await;
+    std::env::remove_var(account_env);
+}
+
+#[tokio::test]
+async fn compact_rejects_invalid_model_without_network() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let upstream = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&upstream)
+        .await;
+    let gateway = start_gateway_with(test_config(&upstream.uri(), Vec::new())).await;
+
+    for body in [
+        "{}",
+        r#"{"model":""}"#,
+        r#"{"model":42}"#,
+        r#"{"model":"gpt-5.6-sol","model":"gpt-5.6-sol"}"#,
+        r#"{"model":"gpt-5.6-sol""#,
+    ] {
+        let response = post_compact(&gateway, body, None).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{body}");
+        let error: serde_json::Value =
+            serde_json::from_str(&response.text().await.unwrap()).unwrap();
+        assert_openai_error_shape(&error, "invalid_request_error");
+    }
+    upstream.verify().await;
+}
+
+#[tokio::test]
+async fn compact_rejects_unverified_responses_provider_without_network() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let upstream = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&upstream)
+        .await;
+    let key_env = format!("SHUNT_TEST_COMPACT_XAI_{}", std::process::id());
+    std::env::set_var(&key_env, "xai-key");
+    let mut config = test_config("http://127.0.0.1:1", Vec::new());
+    let xai = config.providers.get_mut("xai").unwrap();
+    xai.base_url = upstream.uri();
+    xai.api_key_env = Some(key_env.clone());
+    config.models = vec![ModelConfig {
+        id: "gpt-5.6-sol".into(),
+        display_name: None,
+        upstream_model: Some(BTreeMap::from([("xai".into(), "gpt-5.6-sol".into())])),
+    }];
+    let gateway = start_gateway_with(config).await;
+    let response = post_compact(&gateway, COMPACT_BODY, None).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let error: serde_json::Value = serde_json::from_str(&response.text().await.unwrap()).unwrap();
+    assert_openai_error_shape(&error, "invalid_request_error");
+    upstream.verify().await;
+    std::env::remove_var(key_env);
 }
 
 async fn post_analytics(

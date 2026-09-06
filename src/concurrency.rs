@@ -71,7 +71,9 @@ pub(crate) async fn limit_requests(
 /// router registers from, so a Codex route cannot be added without also getting
 /// the correct error shape.
 pub(crate) fn is_codex_path(path: &str) -> bool {
-    crate::codex_endpoint::PATHS.contains(&path) || crate::codex_analytics::PATHS.contains(&path)
+    crate::codex_endpoint::PATHS.contains(&path)
+        || path == crate::codex_endpoint::COMPACT_PATH
+        || crate::codex_analytics::PATHS.contains(&path)
 }
 
 async fn overloaded_response(codex_shape: bool) -> Response {
@@ -250,6 +252,7 @@ mod tests {
         // covers every real Codex route rather than a copy that could drift.
         for path in crate::codex_endpoint::PATHS
             .into_iter()
+            .chain(std::iter::once(crate::codex_endpoint::COMPACT_PATH))
             .chain(crate::codex_analytics::PATHS)
         {
             let response = limited_router_with_calls(path, 0, calls.clone())

@@ -206,7 +206,16 @@ async fn run_turn(context: TurnContext) {
     // one immutable runtime snapshot while later turns observe newer config.
     let state = state.refreshed();
     let started_at = Instant::now();
-    let dispatch_res = forward_turn(state, model, pool_key, headers, body, started_at).await;
+    let dispatch_res = forward_turn(
+        state,
+        model,
+        pool_key,
+        headers,
+        body,
+        started_at,
+        crate::adapters::responses::inbound::InboundOperation::Responses,
+    )
+    .await;
 
     if !is_current() {
         return;

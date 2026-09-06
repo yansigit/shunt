@@ -24,8 +24,14 @@ use super::{
         commit_reprobe_for_account, force_refresh_or_cooldown, with_account_header, FirstOutcome,
         RetryOutcome,
     },
-    request::responses_url,
+    request::{responses_compact_url, responses_url},
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InboundOperation {
+    Responses,
+    Compact,
+}
 
 /// Entry point for the inbound `[server.codex_endpoint]` passthrough. Gathers the
 /// target provider's pooled accounts (explicit `[[accounts]]` or a store scan)
@@ -36,6 +42,7 @@ use super::{
 pub(crate) async fn forward_codex_inbound(
     state: AppState,
     route: Route,
+    operation: InboundOperation,
     pool_key: Option<String>,
     client_headers: HeaderMap,
     body: Bytes,
@@ -73,9 +80,16 @@ pub(crate) async fn forward_codex_inbound(
                 route.provider
             )));
         }
-        let upstream = passthrough_send(&state, &route, credential, &passthrough_headers, &body)
-            .await
-            .map_err(send_error)?;
+        let upstream = passthrough_send(
+            &state,
+            &route,
+            operation,
+            credential,
+            &passthrough_headers,
+            &body,
+        )
+        .await
+        .map_err(send_error)?;
         let status = upstream.status();
         return Ok((status, relay_passthrough(upstream)));
     }
@@ -91,9 +105,25 @@ pub(crate) async fn forward_codex_inbound(
     .await
     .map_err(own_error)?;
     if accounts.is_empty() {
-        return forward_codex_passthrough_single(state, route, passthrough_headers, body).await;
+        return forward_codex_passthrough_single(
+            state,
+            route,
+            operation,
+            passthrough_headers,
+            body,
+        )
+        .await;
     }
-    forward_codex_passthrough(state, route, accounts, pool_key, passthrough_headers, body).await
+    forward_codex_passthrough(
+        state,
+        route,
+        operation,
+        accounts,
+        pool_key,
+        passthrough_headers,
+        body,
+    )
+    .await
 }
 
 /// Single-account inbound passthrough: no pool, no failover. Resolves the default
@@ -103,6 +133,7 @@ pub(crate) async fn forward_codex_inbound(
 async fn forward_codex_passthrough_single(
     state: AppState,
     route: Route,
+    operation: InboundOperation,
     passthrough_headers: HeaderMap,
     body: Bytes,
 ) -> Result<(StatusCode, axum::response::Response), AdapterError> {
@@ -115,9 +146,16 @@ async fn forward_codex_passthrough_single(
         }),
         _ => None,
     };
-    let upstream = passthrough_send(&state, &route, credential, &passthrough_headers, &body)
-        .await
-        .map_err(send_error)?;
+    let upstream = passthrough_send(
+        &state,
+        &route,
+        operation,
+        credential,
+        &passthrough_headers,
+        &body,
+    )
+    .await
+    .map_err(send_error)?;
     if let Some(account) = &observed_account {
         state
             .accounts
@@ -144,6 +182,7 @@ async fn forward_codex_passthrough_single(
 async fn forward_codex_passthrough(
     state: AppState,
     route: Route,
+    operation: InboundOperation,
     accounts_config: Vec<AccountConfig>,
     pool_key: Option<String>,
     passthrough_headers: HeaderMap,
@@ -198,6 +237,7 @@ async fn forward_codex_passthrough(
         let upstream = match passthrough_send(
             &state,
             &route,
+            operation,
             credential.clone(),
             &passthrough_headers,
             &body,
@@ -263,6 +303,7 @@ async fn forward_codex_passthrough(
                 let retry = match passthrough_send(
                     &state,
                     &route,
+                    operation,
                     retry_credential,
                     &passthrough_headers,
                     &body,
@@ -435,13 +476,18 @@ pub(crate) fn passthrough_request_headers(
 async fn passthrough_send(
     state: &AppState,
     route: &Route,
+    operation: InboundOperation,
     credential: Credential,
     passthrough_headers: &HeaderMap,
     body: &Bytes,
 ) -> Result<reqwest::Response, SendError<reqwest::Error>> {
+    let url = match operation {
+        InboundOperation::Responses => responses_url(&state.config, &route.provider),
+        InboundOperation::Compact => responses_compact_url(&state.config, &route.provider),
+    };
     let mut request = state
         .http_client
-        .post(responses_url(&state.config, &route.provider))
+        .post(url)
         .headers(passthrough_headers.clone());
     match credential {
         Credential::ChatGptOAuth {
@@ -551,6 +597,7 @@ mod tests {
         passthrough_send(
             &state,
             &codex_route(),
+            InboundOperation::Responses,
             Credential::AntigravityOauth {
                 access_token: "antigravity-token".to_string(),
                 project_id: "proj-1".to_string(),

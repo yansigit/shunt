@@ -228,6 +228,10 @@ pub(super) fn responses_url(config: &crate::config::Config, provider: &str) -> S
     }
 }
 
+pub(super) fn responses_compact_url(config: &crate::config::Config, provider: &str) -> String {
+    format!("{}/compact", responses_url(config, provider))
+}
+
 #[cfg(test)]
 fn build_test_request(
     state: &AppState,

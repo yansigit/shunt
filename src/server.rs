@@ -262,6 +262,7 @@ pub fn build_router(config: Config) -> Result<(Router, SharedState, AppState), C
                 get(codex_endpoint::websocket::get).post(codex_endpoint::post),
             );
         }
+        router = router.route(codex_endpoint::COMPACT_PATH, post(codex_endpoint::compact));
         for path in codex_analytics::PATHS {
             router = router.route(path, post(codex_analytics::post));
         }
