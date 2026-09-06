@@ -286,6 +286,10 @@ impl AnthropicSseMachine {
         self.backend_error.take()
     }
 
+    pub fn has_backend_error(&self) -> bool {
+        self.backend_error.is_some()
+    }
+
     pub fn finish(&mut self) -> Vec<String> {
         self.finish_checked().unwrap_or_default()
     }

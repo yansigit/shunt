@@ -98,7 +98,8 @@ stream (§6 terminal state) and returns it as a single JSON body.
 
 ## 6. Response: Responses SSE → Anthropic SSE (state machine)
 
-Consume upstream SSE events (each `event:`/`data:` framed; `data: [DONE]` terminates). Emit
+Consume upstream SSE events (each `event:`/`data:` framed; `data: [DONE]` is only a control
+sentinel and does not replace a Responses terminal). Emit
 Anthropic SSE. Maintain: a running `content_block` index, per-item open/close state, and
 accumulated usage.
 
@@ -114,13 +115,15 @@ Upstream Responses events to handle (names as emitted by the Codex backend / Res
 | `response.function_call_arguments.delta` | `delta` (JSON fragment) | `content_block_delta {index, delta:{type:"input_json_delta", partial_json:delta}}`. |
 | `response.function_call_arguments.done` / `response.output_item.done` | full `arguments` | `content_block_stop {index}`; advance index. |
 | `response.reasoning_summary_text.delta` (optional) | `delta` | either a `thinking` block delta (if we surface thinking) or drop. MVP: drop. |
-| `response.completed` / `response.done` / `response.incomplete` | full `response` + `usage`, `stop_reason` | `message_delta {delta:{stop_reason, stop_sequence:null}, usage:{output_tokens,...}}` then `message_stop`. `stop_reason` = `tool_use` if any function_call emitted, else `end_turn`. `response.incomplete` (a clean, if truncated, terminal — mirrors the WebSocket transport's terminal set, `m7-codex-websocket.md` §4) is treated identically to `completed`/`done`, so a stream that ends right after it does **not** trigger the Robustness fallback below. |
+| `response.completed` / `response.done` / `response.incomplete` | full `response` + `usage`, `stop_reason` | Record the authoritative success terminal; after clean transport closure emit `message_delta {delta:{stop_reason, stop_sequence:null}, usage:{output_tokens,...}}` then one `message_stop`. `stop_reason` = `tool_use` if any function_call emitted, else `end_turn`. `response.incomplete` is an accepted provider terminal and is treated identically to `completed`/`done`. |
 | `error` / `response.failed` | error object | translate to an Anthropic error and terminate the stream. The envelope's type and status follow the error `code`, not an HTTP status (§8, "In-stream backend errors"). |
 
-Robustness: unknown event types are ignored. If the stream ends without a terminal
-event (`completed` / `done` / `incomplete`), fall back to closing any open block, emit
-`message_delta` (`end_turn`) + `message_stop` from accumulated text (insightflo's fallback
-shape).
+Robustness: unknown well-formed event types are ignored. UTF-8 and JSON are decoded strictly,
+and retained event, feed, wire-body, and translated-state data have internal bounds. EOF or a
+WebSocket channel close without `completed` / `done` / `incomplete` is an upstream protocol
+error: shunt never manufactures `message_stop` from a partial transcript. Duplicate terminals,
+semantic events after a success terminal, malformed tool arguments, and parser-limit failures
+likewise produce one error outcome and no clean terminal.
 
 Non-streaming client: run the same machine but collect blocks instead of emitting; return
 `transformCodexToAnthropic`-equivalent JSON: `{id,type:"message",role:"assistant",model:<original>,content,stop_reason,stop_sequence:null,usage}`.

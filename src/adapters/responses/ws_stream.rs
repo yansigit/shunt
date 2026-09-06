@@ -11,7 +11,11 @@ use axum::{
 use futures_util::stream;
 use serde_json::json;
 
-use crate::{adapters::AdapterError, error::ShuntError, model::responses::map_error_value};
+use crate::{
+    adapters::AdapterError,
+    error::ShuntError,
+    model::responses::{map_error_value, ResponsesProtocolError},
+};
 
 use super::codex_ws::{CodexWsError, CodexWsEvents};
 use super::context::RelayOptions;
@@ -49,11 +53,17 @@ pub(super) fn stream_events_response(
                 };
                 match item {
                     Some(Ok(event)) => {
-                        let data = machine.apply(event).into_iter().collect::<String>();
+                        let (data, terminal_failure) = match machine.apply_checked(event) {
+                            Ok(frames) => {
+                                let failed = machine.has_backend_error();
+                                (frames.into_iter().collect::<String>(), failed)
+                            }
+                            Err(error) => (protocol_error_sse(&error), true),
+                        };
                         if !data.is_empty() {
                             return Some((
                                 Ok::<_, std::convert::Infallible>(Bytes::from(data)),
-                                (buffered, events, machine, false),
+                                (buffered, events, machine, terminal_failure),
                             ));
                         }
                     }
@@ -64,7 +74,10 @@ pub(super) fn stream_events_response(
                         ));
                     }
                     None => {
-                        let data = machine.finish().join("");
+                        let data = match machine.finish_checked() {
+                            Ok(frames) => frames.join(""),
+                            Err(error) => protocol_error_sse(&error),
+                        };
                         if data.is_empty() {
                             return None;
                         }
@@ -115,7 +128,7 @@ pub(super) async fn json_events_response(
         };
         match item {
             Some(Ok(event)) => {
-                let _ = machine.apply(event);
+                let _ = machine.apply_checked(event).map_err(protocol_adapter_error)?;
                 // A backend error event is terminal: the machine records the
                 // mapped envelope and ignores everything after. Return the moment
                 // it lands instead of looping on `recv()` for a channel close the
@@ -140,7 +153,24 @@ pub(super) async fn json_events_response(
             None => break,
         }
     }
-    Ok((StatusCode::OK, axum::Json(machine.final_json())).into_response())
+    let message = machine.final_json_checked().map_err(protocol_adapter_error)?;
+    Ok((StatusCode::OK, axum::Json(message)).into_response())
+}
+
+fn protocol_adapter_error(error: ResponsesProtocolError) -> AdapterError {
+    AdapterError {
+        message: "responses websocket protocol error".into(),
+        response: Box::new(ShuntError::bad_gateway(error.to_string()).into_response()),
+        failure: None,
+    }
+}
+
+fn protocol_error_sse(error: &ResponsesProtocolError) -> String {
+    let value = map_error_value(
+        &json!({ "message": error.to_string() }),
+        StatusCode::BAD_GATEWAY,
+    );
+    format!("event: error\ndata: {value}\n\n")
 }
 
 /// Render a websocket transport error as an Anthropic `error` SSE event.
@@ -409,5 +439,29 @@ mod tests {
             .await
             .expect_err("bare close is an upstream protocol failure");
         assert_eq!(error.response.status(), StatusCode::BAD_GATEWAY);
+    }
+
+    #[tokio::test]
+    async fn responses_transport_terminal_stream_accepts_one_genuine_terminal() {
+        let (tx, rx) = mpsc::channel::<Result<ResponseEvent, CodexWsError>>(2);
+        tx.try_send(Ok(created_event())).unwrap();
+        tx.try_send(Ok(ResponseEvent {
+            event: Some("response.completed".to_string()),
+            data: json!({"response": {"usage": {"input_tokens": 1, "output_tokens": 1}}}),
+        }))
+        .unwrap();
+        drop(tx);
+
+        let response = stream_events_response(
+            None,
+            rx,
+            relay_opts(),
+            0,
+            std::time::Duration::from_secs(15),
+        );
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let text = String::from_utf8_lossy(&bytes);
+        assert_eq!(text.matches("event: message_stop").count(), 1);
+        assert!(!text.contains("event: error"));
     }
 }
