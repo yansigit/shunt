@@ -257,6 +257,7 @@ async fn send_create_model(
         .send(Message::Text(
             serde_json::json!({
                 "type": "response.create",
+                "generate": true,
                 "model": model,
                 "stream": false,
                 "metadata": {"marker": marker},
@@ -390,6 +391,44 @@ async fn streams_ordered_payloads_and_forces_streaming_upstream() {
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0]["stream"], true);
     assert!(requests[0].get("type").is_none());
+    assert!(requests[0].get("generate").is_none());
+    cleanup(&account_env, &client_env);
+}
+
+#[tokio::test]
+async fn omitted_generate_defaults_to_a_live_turn() {
+    let _env = ENV_LOCK.lock().await;
+    let (upstream, state) = start_upstream(vec![Reply::Static {
+        status: StatusCode::OK,
+        content_type: "text/event-stream",
+        body: "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"r-default\"}}\n\n"
+            .to_string(),
+        headers: Vec::new(),
+    }])
+    .await;
+    let (gateway, account_env, client_env) = start_gateway(&upstream, "DEFAULT_GENERATE").await;
+    let mut socket = connect(&gateway, "/v1/responses").await;
+
+    socket
+        .send(Message::Text(
+            serde_json::json!({
+                "type": "response.create",
+                "model": "gpt-5.4-mini",
+                "stream": false,
+                "input": []
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(next_json(&mut socket).await["type"], "response.completed");
+    let requests = state.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0]["stream"], true);
+    assert!(requests[0].get("type").is_none());
+    assert!(requests[0].get("generate").is_none());
     cleanup(&account_env, &client_env);
 }
 

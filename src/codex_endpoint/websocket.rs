@@ -149,6 +149,12 @@ async fn handle_socket(
 
                         if let Some(obj) = raw_json.as_object_mut() {
                             obj.remove("type");
+                            // `generate` is a WebSocket-bridge control flag, not a
+                            // Responses HTTP request field. The local warmup path
+                            // consumes `false` above; an explicit `true` must be
+                            // consumed here as well or the ChatGPT HTTP backend
+                            // rejects the otherwise-valid live turn.
+                            obj.remove("generate");
                             // A WebSocket turn is delivered as Responses events even when the
                             // client omitted or contradicted the HTTP transport flag.
                             obj.insert("stream".to_string(), serde_json::Value::Bool(true));
