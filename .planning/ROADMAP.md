@@ -52,6 +52,12 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
 
 **Plans**: TBD — approval gated
 
+- [x] 02-01-PLAN.md
+- [ ] 02-02-PLAN.md
+- [ ] 02-03-PLAN.md
+- [ ] 02-04-PLAN.md
+- [ ] 02-05-PLAN.md
+
 ### Phase 3: Quota-Aware Resilience
 
 **Goal**: Retry and cooldown behavior reflects the difference between transient request limiting and hard quota exhaustion.
@@ -134,7 +140,7 @@ keeps native passthrough opaque and adds only evidence-backed behavior.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Inbound Responses WebSocket | 4/4 | Complete    | 2026-09-05 |
-| 2. Native Responses Routing | 0/TBD | Approval gated | - |
+| 2. Native Responses Routing | 1/5 | In Progress|  |
 | 3. Quota-Aware Resilience | 0/TBD | Not started | - |
 | 4. Native Compaction | 0/TBD | Not started | - |
 | 5. Anthropic Translation | 0/TBD | Not started | - |
