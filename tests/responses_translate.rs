@@ -134,6 +134,93 @@ fn responses_bounds_malformed_completed_tool_arguments_fail() {
 }
 
 #[test]
+fn authentic_tool_identity_rejects_missing_response_tool_fields() {
+    for item in [
+        json!({"type": "function_call", "name": "run"}),
+        json!({"type": "function_call", "call_id": "call_1"}),
+        json!({"type": "function_call", "call_id": "", "name": "run"}),
+        json!({"type": "function_call", "call_id": "call_1", "name": ""}),
+    ] {
+        let mut machine = AnthropicSseMachine::new("gpt-5.6-sol", false, false);
+        let error = machine
+            .apply_checked(shunt::model::responses::ResponseEvent {
+                event: Some("response.output_item.added".to_string()),
+                data: json!({"item": item}),
+            })
+            .unwrap_err();
+        assert!(error.to_string().contains("tool identity"));
+    }
+}
+
+#[test]
+fn authentic_tool_identity_rejects_invalid_native_search_call() {
+    for item in [
+        json!({"type": "tool_search_call", "arguments": {"query": "gh"}}),
+        json!({"type": "tool_search_call", "call_id": "", "arguments": {"query": "gh"}}),
+        json!({"type": "tool_search_call", "call_id": "call_1", "arguments": null}),
+    ] {
+        let mut machine = AnthropicSseMachine::new("gpt-5.6-sol", false, true);
+        let error = machine
+            .apply_checked(shunt::model::responses::ResponseEvent {
+                event: Some("response.output_item.done".to_string()),
+                data: json!({"item": item}),
+            })
+            .unwrap_err();
+        assert!(error.to_string().contains("tool identity"));
+    }
+}
+
+#[test]
+fn authentic_tool_identity_rejects_unkeyed_reasoning_metadata() {
+    let mut machine = AnthropicSseMachine::new("gpt-5.6-sol", true, false);
+    machine
+        .apply_checked(shunt::model::responses::ResponseEvent {
+            event: Some("response.output_item.added".to_string()),
+            data: json!({"item": {"type": "reasoning"}}),
+        })
+        .unwrap();
+    let error = machine
+        .apply_checked(shunt::model::responses::ResponseEvent {
+            event: Some("response.output_item.done".to_string()),
+            data: json!({"item": {"type": "reasoning", "encrypted_content": "opaque"}}),
+        })
+        .unwrap_err();
+    assert!(error.to_string().contains("reasoning identity"));
+}
+
+#[test]
+fn authentic_tool_identity_rejects_invalid_request_history() {
+    let route = route("gpt-5.6-sol");
+    let invalid_tools = [
+        json!({"type": "tool_use", "name": "run", "input": {}}),
+        json!({"type": "tool_use", "id": "call_1", "input": {}}),
+        json!({"type": "tool_use", "id": "call_1", "name": "run", "input": []}),
+        json!({"type": "tool_result", "content": "done"}),
+    ];
+    for block in invalid_tools {
+        let body = serde_json::to_vec(&json!({
+            "model": "gpt-5.6-sol",
+            "messages": [{"role": "assistant", "content": [block]}]
+        }))
+        .unwrap();
+        let error = translate_request(&body, &route, ResponsesFlavor::Chatgpt, false).unwrap_err();
+        assert!(error.to_string().contains("tool identity"));
+    }
+
+    let signature = shunt::model::responses::encode_reasoning_signature("", "opaque-bytes");
+    let body = serde_json::to_vec(&json!({
+        "model": "gpt-5.6-sol",
+        "thinking": {"type": "enabled", "budget_tokens": 1024},
+        "messages": [{"role": "assistant", "content": [{
+            "type": "thinking", "thinking": "summary", "signature": signature
+        }]}]
+    }))
+    .unwrap();
+    let error = translate_request(&body, &route, ResponsesFlavor::Chatgpt, false).unwrap_err();
+    assert!(error.to_string().contains("reasoning identity"));
+}
+
+#[test]
 fn responses_bounds_translated_text_exact_and_plus_one() {
     let text_event = |delta: &str| shunt::model::responses::ResponseEvent {
         event: Some("response.output_text.delta".to_string()),
@@ -191,7 +278,7 @@ fn parsed_value_entry_point_matches_byte_wrapper_across_flavors() {
 
     for flavor in [ResponsesFlavor::OpenAi, ResponsesFlavor::Chatgpt] {
         assert_eq!(
-            translate_request_value(&request, &route, flavor, false),
+            translate_request_value(&request, &route, flavor, false).unwrap(),
             translate_request(&body, &route, flavor, false).unwrap(),
             "parsed and byte entry points diverged for {flavor:?}"
         );
@@ -2604,48 +2691,27 @@ fn native_non_streaming_tool_search_call_in_final_json() {
 }
 
 #[test]
-fn native_tool_search_call_missing_call_id_gets_synthetic_id() {
-    // Claude Code matches a tool_result to its tool_use by id, so an empty id is
-    // invalid. If upstream ever omits call_id, the machine synthesizes a
-    // non-empty per-block id (toolu_ts_<index>) instead of emitting "".
-    let fixture = concat!(
-        "event: response.output_item.done\n",
-        "data: {\"item\":{\"type\":\"tool_search_call\",\"execution\":\"client\",\"arguments\":{\"query\":\"gh\"}}}\n\n",
-        "event: response.completed\n",
-        "data: {\"response\":{\"usage\":{\"input_tokens\":10,\"output_tokens\":3}}}\n\n"
-    );
+fn native_tool_search_call_missing_call_id_fails_closed() {
     let mut machine = AnthropicSseMachine::new("gpt-5.6-sol", false, true);
-    for event in parse_sse_events(fixture) {
-        let _ = machine.apply(event);
-    }
-    let final_json = machine.final_json();
-
-    assert_eq!(final_json["content"][0]["type"], "tool_use");
-    assert_eq!(final_json["content"][0]["name"], "ToolSearch");
-    assert_eq!(final_json["content"][0]["id"], "toolu_ts_0");
-    assert_eq!(final_json["content"][0]["input"], json!({"query": "gh"}));
+    let error = machine
+        .apply_checked(shunt::model::responses::ResponseEvent {
+            event: Some("response.output_item.done".to_string()),
+            data: json!({"item": {"type": "tool_search_call", "execution": "client", "arguments": {"query": "gh"}}}),
+        })
+        .unwrap_err();
+    assert!(error.to_string().contains("tool identity"));
 }
 
 #[test]
-fn native_tool_search_call_non_object_arguments_falls_back_to_empty() {
-    // Anthropic requires tool_use `input` to be a JSON object. If upstream sends
-    // a non-object (here null) `arguments`, the machine must emit `{}` rather
-    // than forward the invalid value.
-    let fixture = concat!(
-        "event: response.output_item.done\n",
-        "data: {\"item\":{\"type\":\"tool_search_call\",\"call_id\":\"call_ts\",\"execution\":\"client\",\"arguments\":null}}\n\n",
-        "event: response.completed\n",
-        "data: {\"response\":{\"usage\":{\"input_tokens\":10,\"output_tokens\":3}}}\n\n"
-    );
+fn native_tool_search_call_non_object_arguments_fail_closed() {
     let mut machine = AnthropicSseMachine::new("gpt-5.6-sol", false, true);
-    for event in parse_sse_events(fixture) {
-        let _ = machine.apply(event);
-    }
-    let final_json = machine.final_json();
-
-    assert_eq!(final_json["content"][0]["type"], "tool_use");
-    assert_eq!(final_json["content"][0]["id"], "call_ts");
-    assert_eq!(final_json["content"][0]["input"], json!({}));
+    let error = machine
+        .apply_checked(shunt::model::responses::ResponseEvent {
+            event: Some("response.output_item.done".to_string()),
+            data: json!({"item": {"type": "tool_search_call", "call_id": "call_ts", "execution": "client", "arguments": null}}),
+        })
+        .unwrap_err();
+    assert!(error.to_string().contains("tool identity"));
 }
 
 #[test]
