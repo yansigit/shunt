@@ -1089,6 +1089,7 @@ async fn run_turn(
 struct ContinuationCapture {
     response_id: Option<String>,
     output_items: Vec<Value>,
+    output_items_bytes: usize,
     turn_state: Option<String>,
     limits: ContinuationLimits,
     reusable: bool,
@@ -1105,6 +1106,7 @@ impl ContinuationCapture {
         Self {
             response_id: None,
             output_items: Vec::new(),
+            output_items_bytes: 2,
             turn_state: None,
             limits,
             reusable: true,
@@ -1114,6 +1116,7 @@ impl ContinuationCapture {
     fn discard(&mut self) {
         self.response_id = None;
         self.output_items.clear();
+        self.output_items_bytes = 2;
         self.turn_state = None;
         self.reusable = false;
     }
@@ -1144,14 +1147,20 @@ impl ContinuationCapture {
         }
         if event.event.as_deref() == Some("response.output_item.done") {
             if let Some(item) = event.data.get("item") {
-                let next_count = self.output_items.len().saturating_add(1);
-                let item_bytes = serde_json::to_vec(item)
-                    .map(|bytes| bytes.len())
-                    .unwrap_or(usize::MAX);
-                if next_count > self.limits.items || item_bytes > self.limits.transcript_bytes {
+                let next_count = self.output_items.len().checked_add(1);
+                let item_bytes = serde_json::to_vec(item).ok().map(|bytes| bytes.len());
+                let next_bytes = item_bytes.and_then(|item_bytes| {
+                    self.output_items_bytes
+                        .checked_add(usize::from(!self.output_items.is_empty()))
+                        .and_then(|bytes| bytes.checked_add(item_bytes))
+                });
+                if next_count.is_none_or(|count| count > self.limits.items)
+                    || next_bytes.is_none_or(|bytes| bytes > self.limits.transcript_bytes)
+                {
                     self.discard();
                     return;
                 }
+                self.output_items_bytes = next_bytes.expect("validated above");
                 self.output_items.push(item.clone());
             }
         }
@@ -3051,6 +3060,34 @@ mod tests {
         assert!(!capture.reusable);
         assert!(capture.response_id.is_none());
         assert!(capture.output_items.is_empty());
+    }
+
+    #[test]
+    fn continuation_bounds_aggregate_output_items_exact_and_plus_one() {
+        let limits = ContinuationLimits {
+            items: 4,
+            transcript_bytes: 5,
+            response_id_bytes: 16,
+            turn_state_bytes: 16,
+        };
+        let mut capture = ContinuationCapture::with_limits(limits);
+        for item in [1, 2] {
+            capture.capture(&ResponseEvent {
+                event: Some("response.output_item.done".to_string()),
+                data: serde_json::json!({"item": item}),
+            });
+        }
+        assert!(capture.reusable);
+        assert_eq!(capture.output_items_bytes, 5);
+        assert_eq!(capture.output_items, vec![serde_json::json!(1), serde_json::json!(2)]);
+
+        capture.capture(&ResponseEvent {
+            event: Some("response.output_item.done".to_string()),
+            data: serde_json::json!({"item": 3}),
+        });
+        assert!(!capture.reusable);
+        assert!(capture.output_items.is_empty());
+        assert_eq!(capture.output_items_bytes, 2);
     }
 
     /// A rejected `previous_response_id` is detected from either the error `code` or
