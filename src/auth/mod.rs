@@ -482,6 +482,87 @@ mod tests {
         resolve_kimi_account, with_credential_timeout, Credential, Route,
     };
 
+    #[test]
+    fn credential_redaction_preserves_only_safe_structure() {
+        let secret = ["opaque", "-secret-fragment"].concat();
+        let identity = ["private", "-identity-fragment"].concat();
+        let credentials = [
+            (Credential::Passthrough, "Passthrough"),
+            (
+                Credential::ApiKey {
+                    value: secret.clone(),
+                    header: crate::config::ApiKeyHeader::XApiKey,
+                },
+                "ApiKey",
+            ),
+            (
+                Credential::ChatGptOAuth {
+                    access_token: secret.clone(),
+                    account_id: identity.clone(),
+                },
+                "ChatGptOAuth",
+            ),
+            (
+                Credential::XaiOauth {
+                    access_token: secret.clone(),
+                },
+                "XaiOauth",
+            ),
+            (
+                Credential::CursorOauth {
+                    access_token: secret.clone(),
+                },
+                "CursorOauth",
+            ),
+            (
+                Credential::GoogleOauth {
+                    access_token: secret.clone(),
+                    project_id: identity.clone(),
+                },
+                "GoogleOauth",
+            ),
+            (
+                Credential::AntigravityOauth {
+                    access_token: secret.clone(),
+                    project_id: identity.clone(),
+                },
+                "AntigravityOauth",
+            ),
+            (
+                Credential::ClaudeOauth {
+                    access_token: secret.clone(),
+                    account_uuid: Some(identity.clone()),
+                },
+                "ClaudeOauth",
+            ),
+            (
+                Credential::KimiOauth {
+                    access_token: secret.clone(),
+                    device_id: Some(identity.clone()),
+                },
+                "KimiOauth",
+            ),
+        ];
+
+        for (credential, kind) in credentials {
+            let diagnostic = format!("{credential:?}");
+            assert!(diagnostic.contains(kind));
+            for forbidden in [
+                secret.as_str(),
+                "opaque",
+                "secret-fragment",
+                identity.as_str(),
+                "private",
+                "identity-fragment",
+            ] {
+                assert!(
+                    !diagnostic.contains(forbidden),
+                    "{kind} diagnostic exposed credential material"
+                );
+            }
+        }
+    }
+
     #[tokio::test]
     async fn credential_timeout_maps_a_stalled_future_to_a_clear_auth_error() {
         use axum::body::to_bytes;
