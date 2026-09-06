@@ -34,6 +34,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use axum::{
+    body::Body, extract::State, http::HeaderMap, response::IntoResponse, routing::post, Router,
+};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use reqwest::StatusCode;
 use serde_json::Value;
@@ -42,7 +45,10 @@ use shunt::{
     config::{AccountConfig, Config, PoolConfig, RouteConfig},
     server,
 };
-use tokio::task::JoinHandle;
+use tokio::{
+    sync::{mpsc, Notify},
+    task::JoinHandle,
+};
 use wiremock::{
     matchers::{method, path},
     Match, Mock, MockServer, Request, ResponseTemplate,
@@ -89,6 +95,78 @@ impl Match for BearerToken {
 struct TestGateway {
     base_url: String,
     task: JoinHandle<()>,
+}
+
+#[derive(Clone)]
+struct HeldAccountUpstream {
+    token_a: String,
+    calls_a: Arc<std::sync::atomic::AtomicUsize>,
+    dropped: Arc<Notify>,
+}
+
+async fn held_account_response(
+    State(state): State<HeldAccountUpstream>,
+    headers: HeaderMap,
+) -> axum::response::Response {
+    use std::sync::atomic::Ordering;
+
+    let authorization = headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    let token_a = format!("Bearer {}", state.token_a);
+    if authorization == token_a && state.calls_a.fetch_add(1, Ordering::SeqCst) == 0 {
+        let (sender, receiver) = mpsc::channel::<Result<bytes::Bytes, std::io::Error>>(1);
+        sender
+            .send(Ok(bytes::Bytes::from_static(
+                concat!(
+                    "event: response.created\n",
+                    "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_held\",\"usage\":{\"output_tokens\":0}}}\n\n",
+                    "event: response.output_item.added\n",
+                    "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"message\"}}\n\n",
+                    "event: response.output_text.delta\n",
+                    "data: {\"type\":\"response.output_text.delta\",\"delta\":\"held\"}\n\n",
+                )
+                .as_bytes(),
+            )))
+            .await
+            .unwrap();
+        let dropped = state.dropped.clone();
+        tokio::spawn(async move {
+            sender.closed().await;
+            dropped.notify_one();
+        });
+        let stream = futures_util::stream::unfold(receiver, |mut receiver| async move {
+            receiver.recv().await.map(|item| (item, receiver))
+        });
+        return (
+            [("content-type", "text/event-stream")],
+            Body::from_stream(stream),
+        )
+            .into_response();
+    }
+
+    (
+        [("content-type", "text/event-stream")],
+        sse_body(if authorization == token_a {
+            "account a released"
+        } else {
+            "account b spill"
+        }),
+    )
+        .into_response()
+}
+
+async fn start_held_account_upstream(state: HeldAccountUpstream) -> (String, JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let router = Router::new()
+        .route("/codex/responses", post(held_account_response))
+        .with_state(state);
+    let task = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    (format!("http://{addr}"), task)
 }
 
 impl Drop for TestGateway {
@@ -1480,6 +1558,80 @@ async fn storm_control_spills_concurrent_request_to_next_account() {
 
     std::env::remove_var("SHUNT_TEST_CODEX_STORM_A");
     std::env::remove_var("SHUNT_TEST_CODEX_STORM_B");
+}
+
+#[tokio::test]
+async fn response_drop_releases_account_admission_and_cancels_upstream_work() {
+    use std::sync::atomic::Ordering;
+
+    if !can_bind_loopback() {
+        return;
+    }
+    let token_a = chatgpt_token(FAR_FUTURE_EXP, "acct-drop-a");
+    let token_b = chatgpt_token(FAR_FUTURE_EXP, "acct-drop-b");
+    let env_a = format!("SHUNT_TEST_CODEX_DROP_A_{}", std::process::id());
+    let env_b = format!("SHUNT_TEST_CODEX_DROP_B_{}", std::process::id());
+    std::env::set_var(&env_a, &token_a);
+    std::env::set_var(&env_b, &token_b);
+    let calls_a = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let dropped = Arc::new(Notify::new());
+    let (upstream_url, upstream_task) = start_held_account_upstream(HeldAccountUpstream {
+        token_a,
+        calls_a: calls_a.clone(),
+        dropped: dropped.clone(),
+    })
+    .await;
+
+    let mut config = test_config(
+        &upstream_url,
+        account("account-a", &env_a),
+        account("account-b", &env_b),
+    );
+    config.server.pool = Some(shunt::config::PoolConfig {
+        ramp_initial_concurrency: Some(1),
+        ..Default::default()
+    });
+    let gateway = start_gateway_with(config).await;
+    let session_id = session_id_for_account(0, 2);
+    let client = reqwest::Client::new();
+
+    let mut first = client
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .header("content-type", "application/json")
+        .header("x-claude-code-session-id", &session_id)
+        .body(
+            r#"{"model":"pooled-codex-model","max_tokens":16,"stream":true,"messages":[{"role":"user","content":"hi"}]}"#,
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first.status(), StatusCode::OK);
+    assert_eq!(first.headers()["x-shunt-account"], "account-a");
+    let first_chunk = tokio::time::timeout(std::time::Duration::from_secs(1), first.chunk())
+        .await
+        .expect("the held account must emit before cancellation")
+        .unwrap()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&first_chunk).contains("message_start"));
+
+    drop(first);
+    tokio::time::timeout(std::time::Duration::from_secs(2), dropped.notified())
+        .await
+        .expect("dropping the response must cancel the account-a upstream body");
+
+    let reused = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        post_messages(&gateway, Some(&session_id)),
+    )
+    .await
+    .expect("account admission must be reusable after response drop");
+    assert_eq!(reused.status(), StatusCode::OK);
+    assert_eq!(reused.headers()["x-shunt-account"], "account-a");
+    assert_eq!(calls_a.load(Ordering::SeqCst), 2);
+
+    std::env::remove_var(env_a);
+    std::env::remove_var(env_b);
+    upstream_task.abort();
 }
 
 #[tokio::test]

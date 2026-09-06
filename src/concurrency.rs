@@ -736,7 +736,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn permit_stays_held_after_data_until_mid_stream_body_is_dropped() {
+    async fn response_drop_releases_global_capacity_after_partial_stream() {
         let app = stalling_stream_router();
 
         let first = send_post(&app, "/stream").await;
@@ -748,7 +748,12 @@ mod tests {
         assert_eq!(second.status(), StatusCode::SERVICE_UNAVAILABLE);
 
         drop(body);
-        let third = send_post(&app, "/stream").await;
+        let third = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            send_post(&app, "/stream"),
+        )
+        .await
+        .expect("global capacity must be reusable after response drop");
         assert_eq!(third.status(), StatusCode::OK);
     }
 

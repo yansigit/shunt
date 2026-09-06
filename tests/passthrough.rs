@@ -682,13 +682,22 @@ async fn upstream_error_status_and_body_are_returned_unmodified() {
 }
 
 mod vercel_anthropic {
-    use std::ffi::OsString;
+    use std::{
+        convert::Infallible,
+        ffi::OsString,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
+    };
 
+    use axum::{body::Body, extract::State, response::IntoResponse, routing::post, Router};
+    use futures_util::stream;
     use shunt::config::{ApiKeyHeader, AuthMode, RetryConfig};
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
-        sync::oneshot,
+        sync::{mpsc, oneshot, Notify},
     };
 
     use super::*;
@@ -756,6 +765,50 @@ mod vercel_anthropic {
             "messages": [{"role": "user", "content": "hello"}]
         })
         .to_string()
+    }
+
+    #[derive(Clone)]
+    struct HeldUpstream {
+        calls: Arc<AtomicUsize>,
+        dropped: Arc<Notify>,
+    }
+
+    async fn held_upstream_response(State(state): State<HeldUpstream>) -> impl IntoResponse {
+        if state.calls.fetch_add(1, Ordering::SeqCst) > 0 {
+            return (
+                [("content-type", "text/event-stream")],
+                Body::from("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"),
+            );
+        }
+
+        let (sender, receiver) = mpsc::channel::<Result<bytes::Bytes, Infallible>>(1);
+        sender
+            .send(Ok(bytes::Bytes::from_static(
+                b"event: message_start\ndata: {\"type\":\"message_start\"}\n\n",
+            )))
+            .await
+            .unwrap();
+        let dropped = state.dropped.clone();
+        tokio::spawn(async move {
+            sender.closed().await;
+            dropped.notify_one();
+        });
+        let body = Body::from_stream(stream::unfold(receiver, |mut receiver| async move {
+            receiver.recv().await.map(|item| (item, receiver))
+        }));
+        ([("content-type", "text/event-stream")], body)
+    }
+
+    async fn start_held_upstream(state: HeldUpstream) -> (String, JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let router = Router::new()
+            .route("/v1/messages", post(held_upstream_response))
+            .with_state(state);
+        let task = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+        (format!("http://{addr}"), task)
     }
 
     #[tokio::test]
@@ -990,6 +1043,67 @@ mod vercel_anthropic {
         assert!(!body.contains("inbound-secret-fragment"));
         assert!(!body.contains("inbound-key-fragment"));
         upstream.verify().await;
+    }
+
+    #[tokio::test]
+    async fn response_drop_releases_upstream_work_and_global_capacity() {
+        if !can_bind_loopback() {
+            return;
+        }
+        let calls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(Notify::new());
+        let (upstream_url, upstream_task) = start_held_upstream(HeldUpstream {
+            calls: calls.clone(),
+            dropped: dropped.clone(),
+        })
+        .await;
+        let env_name = format!("SHUNT_TEST_VERCEL_DROP_{}", std::process::id());
+        let _env = EnvRestore::set(env_name.clone(), "drop-marker");
+        let mut gateway_config = config(upstream_url, &env_name, ApiKeyHeader::XApiKey);
+        gateway_config.server.max_concurrent_requests = 1;
+        let gateway = start_gateway_with(gateway_config).await;
+        let client = reqwest::Client::new();
+
+        let mut first = client
+            .post(format!("{}/v1/messages", gateway.base_url))
+            .body(request_body(true))
+            .send()
+            .await
+            .unwrap();
+        let chunk = tokio::time::timeout(Duration::from_secs(1), first.chunk())
+            .await
+            .expect("first upstream chunk must reach the downstream client")
+            .unwrap()
+            .unwrap();
+        assert!(String::from_utf8_lossy(&chunk).contains("message_start"));
+
+        let saturated = client
+            .post(format!("{}/v1/messages", gateway.base_url))
+            .body(request_body(true))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(saturated.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        drop(first);
+        tokio::time::timeout(Duration::from_secs(2), dropped.notified())
+            .await
+            .expect("dropping the downstream response must cancel upstream work");
+
+        let available = tokio::time::timeout(
+            Duration::from_secs(2),
+            client
+                .post(format!("{}/v1/messages", gateway.base_url))
+                .body(request_body(true))
+                .send(),
+        )
+        .await
+        .expect("global capacity must be reusable after cancellation")
+        .unwrap();
+        assert_eq!(available.status(), StatusCode::OK);
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        upstream_task.abort();
     }
 }
 

@@ -72,9 +72,10 @@ pub(crate) trait Adapter {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{convert::Infallible, future::poll_fn, pin::Pin, sync::Arc};
 
-    use axum::body::Body;
+    use axum::body::{Body, HttpBody};
+    use futures_util::{stream, StreamExt};
 
     use super::with_admission;
     use crate::{accounts::AccountPool, config::AccountConfig};
@@ -120,7 +121,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn with_admission_frees_slot_when_body_is_dropped_unread() {
+    async fn response_drop_releases_account_admission_after_partial_stream() {
         let pool = Arc::new(AccountPool::new());
         let acc = account("a");
         let guard = pool
@@ -129,14 +130,35 @@ mod tests {
             .expect("first admission");
 
         let response = with_admission(
-            axum::response::Response::new(Body::from("data: chunk\n\n")),
+            axum::response::Response::new(Body::from_stream(
+                stream::once(async { Ok::<_, Infallible>("data: chunk\n\n") })
+                    .chain(stream::pending()),
+            )),
             Some(guard),
         );
-        drop(response); // client disconnect before reading the stream
-
+        let (_parts, mut body) = response.into_parts();
+        let frame = poll_fn(|cx| Pin::new(&mut body).poll_frame(cx))
+            .await
+            .expect("the response yields its initial chunk")
+            .expect("the initial chunk is successful");
+        assert_eq!(frame.into_data().unwrap(), "data: chunk\n\n");
         assert!(
-            pool.try_admit("codex", &acc, 1, false).is_some(),
-            "slot should free when the response is dropped unread"
+            pool.clone().try_admit("codex", &acc, 1, false).is_none(),
+            "slot should remain held while the response is pending"
         );
+
+        drop(body); // client disconnect after reading one streamed chunk
+
+        let reguard = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            loop {
+                if let Some(guard) = pool.clone().try_admit("codex", &acc, 1, false) {
+                    break guard;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("account admission must be reusable after response drop");
+        drop(reguard);
     }
 }
