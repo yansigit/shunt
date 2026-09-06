@@ -23,6 +23,7 @@ use crate::{
 
 mod auto_mode_classifier;
 mod deferral;
+pub(crate) mod inbound;
 mod model_rewrite;
 
 pub struct AnthropicAdapter;

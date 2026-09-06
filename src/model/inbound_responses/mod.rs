@@ -5,3 +5,4 @@
 //! this module and therefore retain byte-for-byte passthrough behavior.
 
 pub mod request;
+pub mod response;

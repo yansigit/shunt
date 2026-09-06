@@ -399,7 +399,7 @@ pub(crate) async fn forward_turn(
     state: AppState,
     model: Option<String>,
     pool_key: Option<String>,
-    headers: HeaderMap,
+    mut headers: HeaderMap,
     body: Bytes,
     started_at: Instant,
     operation: responses::inbound::InboundOperation,
@@ -445,20 +445,42 @@ pub(crate) async fn forward_turn(
         crate::routing::AdapterKind::Anthropic
             if operation == responses::inbound::InboundOperation::Responses =>
         {
+            let response_model = route.model.clone();
+            let max_body_bytes = state.config.server.limits.max_request_bytes;
+            let translation_body = match crate::compression::body_encoding(&headers) {
+                BodyEncoding::Identity => body.to_vec(),
+                BodyEncoding::Zstd => crate::compression::decode_zstd_and_parse(
+                    body.clone(),
+                    max_body_bytes,
+                    |decoded| decoded.to_vec(),
+                )
+                .await
+                .map_err(|error| {
+                    translation_adapter_error(format!(
+                        "failed to decode zstd Responses request: {error}"
+                    ))
+                })?
+                .ok_or_else(|| {
+                    translation_adapter_error(
+                        "decoded Responses request exceeds the translation limit".into(),
+                    )
+                })?,
+                BodyEncoding::Other => {
+                    return Err(translation_adapter_error(
+                        "unsupported content-encoding for Anthropic translation".into(),
+                    )
+                    .into())
+                }
+            };
             let translated = crate::model::inbound_responses::request::translate(
-                body.to_vec(),
+                translation_body,
                 &route.upstream_model,
             )
-            .map_err(|message| AdapterError {
-                message: message.clone(),
-                response: Box::new(
-                    ShuntError::new(StatusCode::BAD_REQUEST, "invalid_request_error", message)
-                        .into_response(),
-                ),
-                failure: None,
-            })?;
-            let _stream = translated.stream;
-            AnthropicAdapter
+            .map_err(translation_adapter_error)?;
+            headers.remove(axum::http::header::CONTENT_ENCODING);
+            headers.remove(axum::http::header::CONTENT_LENGTH);
+            let requested_stream = translated.stream;
+            let (status, response) = AnthropicAdapter
                 .forward(
                     state,
                     route,
@@ -466,7 +488,16 @@ pub(crate) async fn forward_turn(
                     &headers,
                     translated.body,
                 )
-                .await
+                .await?;
+            let response = crate::adapters::anthropic::inbound::translate(
+                status,
+                response,
+                requested_stream,
+                &response_model,
+                max_body_bytes,
+            )
+            .await;
+            Ok((response.status(), response))
         }
         _ => unreachable!("inbound resolver returned an unsupported adapter"),
     };
@@ -494,6 +525,17 @@ pub(crate) async fn forward_turn(
             (status, response)
         })
         .map_err(ForwardError::from)
+}
+
+fn translation_adapter_error(message: String) -> AdapterError {
+    AdapterError {
+        message: message.clone(),
+        response: Box::new(
+            ShuntError::new(StatusCode::BAD_REQUEST, "invalid_request_error", message)
+                .into_response(),
+        ),
+        failure: None,
+    }
 }
 
 /// The label used when the request's model cannot be read (see [`model_label`]).
