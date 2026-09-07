@@ -170,3 +170,71 @@ async fn antigravity_native_affinity_tiered_only_catalog_decides_the_model_id_an
     gateway.abort();
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[tokio::test]
+async fn antigravity_native_affinity_rejected_catalog_tuple_has_zero_inference_hits() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let backend = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1internal:fetchAvailableModels"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "models": {"gemini-3.8-flash-high": {"model": "placeholder"}}
+        })))
+        .expect(1)
+        .mount(&backend)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1internal:streamGenerateContent"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&backend)
+        .await;
+
+    let dir =
+        std::env::temp_dir().join(format!("shunt-antigravity-negative-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let credential_path = dir.join("antigravity-auth.json");
+    let expiry = (std::time::SystemTime::now() + Duration::from_secs(3600))
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    std::fs::write(
+        &credential_path,
+        serde_json::to_vec(&json!({
+            "access_token":"negative-token", "refresh_token":"negative-refresh",
+            "expiry_date":expiry, "project_id":"negative-project"
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let _auth_file = EnvVarGuard::set("SHUNT_ANTIGRAVITY_AUTH_FILE", &credential_path);
+    let config_path = dir.join("shunt.toml");
+    std::fs::write(&config_path, format!(
+        "[server]\ndefault_provider = \"antigravity\"\n\n[providers.antigravity]\nauth = \"antigravity_oauth\"\nbase_url = \"{}\"\n", backend.uri())).unwrap();
+    let mut config = Config::load(Some(&config_path)).unwrap();
+    config.server.bind = "127.0.0.1:0".to_string();
+    let listener = tokio::net::TcpListener::bind(config.server.bind_addr().unwrap())
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (app, _, _) = server::build_router(config).unwrap();
+    let gateway = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/v1/messages"))
+        .json(&json!({"model":"gemini-3.8-flash", "max_tokens":16,
+            "messages":[{"role":"user","content":"no inference"}]}))
+        .send()
+        .await
+        .unwrap();
+    assert!(
+        !response.status().is_success(),
+        "bare model must be rejected"
+    );
+    backend.verify().await;
+    gateway.abort();
+    let _ = std::fs::remove_dir_all(&dir);
+}

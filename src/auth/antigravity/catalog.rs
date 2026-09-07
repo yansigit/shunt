@@ -8,10 +8,9 @@
 //! id [`crate::model::antigravity_request::antigravity_upstream_model`] may
 //! send, so the catalog — not a compiled-in rule — is the authority.
 //!
-//! Discovery is best-effort by construction. Every failure path returns the
-//! last known good set, or `None`, and the caller falls back to the
-//! pre-catalog heuristic: a catalog outage must degrade the id shunt guesses,
-//! never fail the operator's request.
+//! Discovery is best-effort for cache health: every failure path returns the
+//! last known good set, or `None`. Native inference admission is fail-closed
+//! on that freshness bit; a catalog outage must not authorize a guessed id.
 
 use std::{
     collections::{BTreeSet, HashMap},
@@ -296,8 +295,7 @@ async fn fetch_catalog(
             tracing::warn!(
                 %url,
                 %error,
-                "antigravity model catalog discovery failed; falling back to the model id shunt \
-                 would have guessed without it"
+                "antigravity model catalog discovery failed; native admission will fail closed"
             );
             return None;
         }
@@ -305,8 +303,7 @@ async fn fetch_catalog(
             tracing::warn!(
                 %url,
                 timeout_secs = CATALOG_FETCH_TIMEOUT.as_secs(),
-                "antigravity model catalog discovery timed out; falling back to the model id \
-                 shunt would have guessed without it"
+                "antigravity model catalog discovery timed out; native admission will fail closed"
             );
             return None;
         }
@@ -315,8 +312,7 @@ async fn fetch_catalog(
     let Some(models) = body.get("models").and_then(Value::as_object) else {
         tracing::warn!(
             %url,
-            "antigravity model catalog response has no `models` object; falling back to the \
-             model id shunt would have guessed without it"
+            "antigravity model catalog response has no `models` object; native admission will fail closed"
         );
         return None;
     };
@@ -608,6 +604,98 @@ mod tests {
         assert!(ids.contains("gemini-3.8-flash-tiered"), "{ids:?}");
         assert!(!ids.contains("gemini-3.8-flash-medium"), "{ids:?}");
         assert!(ids.fresh);
+        clear_for_test(&server.uri());
+    }
+
+    #[tokio::test]
+    async fn antigravity_native_affinity_same_project_different_accounts_have_isolated_catalogs() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1internal:fetchAvailableModels"))
+            .and(header("authorization", "Bearer account-a"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(catalog_body(&["gemini-3.8-flash-low"])),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1internal:fetchAvailableModels"))
+            .and(header("authorization", "Bearer account-b"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(catalog_body(&["gemini-3.8-flash-high"])),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        clear_for_test(&server.uri());
+        let client = reqwest::Client::new();
+        let a = catalog_ids_for_account(
+            &client,
+            &server.uri(),
+            "account-a",
+            "acct-a",
+            "same-project",
+        )
+        .await
+        .expect("account A catalog");
+        let b = catalog_ids_for_account(
+            &client,
+            &server.uri(),
+            "account-b",
+            "acct-b",
+            "same-project",
+        )
+        .await
+        .expect("account B catalog");
+        assert!(a.contains("gemini-3.8-flash-low"));
+        assert!(b.contains("gemini-3.8-flash-high"));
+        assert!(!a.contains("gemini-3.8-flash-high"));
+        assert!(!b.contains("gemini-3.8-flash-low"));
+        server.verify().await;
+        clear_for_test(&server.uri());
+    }
+
+    #[tokio::test]
+    async fn antigravity_native_affinity_legacy_refresh_rotation_changes_fallback_key_between_requests(
+    ) {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1internal:fetchAvailableModels"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(catalog_body(&["gemini-3.8-flash-medium"])),
+            )
+            .expect(2)
+            .mount(&server)
+            .await;
+        clear_for_test(&server.uri());
+        let client = reqwest::Client::new();
+        let first =
+            catalog_ids_for_account(&client, &server.uri(), "refresh-before", "legacy-a", "")
+                .await
+                .expect("first legacy catalog");
+        let second =
+            catalog_ids_for_account(&client, &server.uri(), "refresh-after", "legacy-b", "")
+                .await
+                .expect("rotated legacy catalog");
+        assert_eq!(
+            first, second,
+            "captured snapshot is stable despite request-local fallback rotation"
+        );
+        assert_ne!(
+            cache_key(
+                &super::super::auth::inference_base_url(&server.uri()),
+                "refresh-before",
+                ""
+            ),
+            cache_key(
+                &super::super::auth::inference_base_url(&server.uri()),
+                "refresh-after",
+                ""
+            ),
+        );
+        server.verify().await;
         clear_for_test(&server.uri());
     }
 

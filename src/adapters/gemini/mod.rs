@@ -322,11 +322,10 @@ async fn forward(
         }
         // The account's own catalog decides between the `-<tier>` and
         // `-tiered` forms of the same model; both exist in the wild and which
-        // one an account is served changes over time. Discovery is cached and
-        // fails open, so this costs at most one bounded request per account
-        // per TTL and never fails the client's request. It is skipped outright for
-        // an id no catalog could reshape — only Gemini ids carry a tier — so a
-        // Claude- or GPT-routed Antigravity provider never pays for it.
+        // one an account is served changes over time. Discovery is cached, and
+        // native admission fails closed when fresh evidence is unavailable.
+        // It is skipped outright for an id no catalog could reshape — only
+        // Gemini ids carry a tier — so rewritten Claude/GPT inputs are rejected.
         let catalog = crate::auth::antigravity::catalog::catalog_ids_for_account(
             &state.http_client,
             &inference_base,

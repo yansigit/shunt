@@ -285,8 +285,12 @@ pub fn antigravity_exact_catalog_admission(
                 );
             }
         }
-    } else if route_effort.is_some() || request.pointer("/output_config/effort").is_some() {
-        return Err("effort is unsupported for this Antigravity catalog model".into());
+    } else {
+        // Native Antigravity admission is limited to Gemini. A catalog may
+        // contain Claude/GPT entries for the broader Code Assist surface, but
+        // accepting one here would turn a rewritten or ambiguous model into
+        // an inference dispatch.
+        return Err("model is outside the native Antigravity Gemini catalog".into());
     }
     if !catalog.ids.contains(upstream_model) {
         return Err(format!(
@@ -681,7 +685,72 @@ mod tests {
             &json!({}),
             catalog
         )
-        .is_ok());
+        .is_err());
+    }
+
+    #[test]
+    fn antigravity_native_affinity_exact_admission_covers_full_tuple_matrix() {
+        let ids = [
+            "gemini-3.8-flash-low",
+            "gemini-3.8-flash-medium",
+            "gemini-3.8-flash-high",
+            "gemini-3.8-flash-tiered",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+        let catalog = AntigravityCatalog {
+            ids: &ids,
+            fresh: true,
+        };
+
+        // Every published tuple is admitted verbatim, including the tiered
+        // form whose effort is carried separately in the envelope.
+        for (model, effort) in [
+            ("gemini-3.8-flash-low", None),
+            ("gemini-3.8-flash-medium", Some("medium")),
+            ("gemini-3.8-flash-high", Some("high")),
+            ("gemini-3.8-flash-tiered", Some("low")),
+        ] {
+            let admitted = antigravity_exact_catalog_admission(model, effort, &json!({}), catalog)
+                .expect("published exact tuple");
+            assert_eq!(admitted.id, model);
+        }
+
+        // Bare, stale, ambiguous, rewritten, and unsupported-effort inputs
+        // all fail before an inference tuple can be produced. In particular,
+        // no case folds/clamps xhigh/max or silently trims a model id.
+        for (model, effort, request) in [
+            ("gemini-3.8-flash", None, json!({})),
+            ("gemini-3.8-flash-medium", Some("low"), json!({})),
+            ("gemini-3.8-flash-tiered", Some("xhigh"), json!({})),
+            ("gemini-3.8-flash-tiered", Some("max"), json!({})),
+            ("gemini-3.8-flash-medium ", None, json!({})),
+            ("gpt-4", None, json!({})),
+            ("claude-sonnet-4-6", None, json!({})),
+        ] {
+            assert!(
+                antigravity_exact_catalog_admission(model, effort, &request, catalog).is_err(),
+                "unexpected admission for {model:?} effort {effort:?}"
+            );
+        }
+        assert!(antigravity_exact_catalog_admission(
+            "gemini-3.8-flash-high",
+            None,
+            &json!({"output_config":{"effort":"max"}}),
+            catalog,
+        )
+        .is_err());
+        assert!(antigravity_exact_catalog_admission(
+            "gemini-3.8-flash-high",
+            None,
+            &json!({}),
+            AntigravityCatalog {
+                ids: &ids,
+                fresh: false
+            },
+        )
+        .is_err());
     }
 
     #[test]
