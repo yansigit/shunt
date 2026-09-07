@@ -4,9 +4,9 @@ milestone: v2
 milestone_name: Provider Compatibility
 current_phase: 12
 current_phase_name: Cursor Evidence-Backed Hardening
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Phase 12 plan 03 request-local KV architecture approved; implementation resumed
+stopped_at: Phase 12 plan 03 verified; continue plan 04 admission hardening
 last_updated: "2026-09-07T22:45:12.678Z"
 last_activity: 2026-09-07
 last_activity_desc: User approved bounded memory-only per-request KV/blob support; plan 03 resumed
@@ -15,7 +15,7 @@ progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 26
-  completed_plans: 20
+  completed_plans: 21
   percent: 38
 total_plans_in_phase: 8
 ---
@@ -32,10 +32,10 @@ See: `.planning/PROJECT.md` (updated 2026-09-07 after Phase 11)
 ## Current Position
 
 Phase: 12 (Cursor Evidence-Backed Hardening) — EXECUTING
-Current Plan: 3
+Current Plan: 4
 Total Plans in Phase: 8
-Status: 2 of 8 plans summarized; plan 03 partial
-Last activity: 2026-09-07 — Plans 01–02 verified; plan 03 preserves authentic output tool IDs. User approved bounded request-local KV/blob protocol support; implementation resumed.
+Status: 3 of 8 plans summarized; plan 04 next
+Last activity: 2026-09-07 — Plan 03 structured history, bidirectional hydration and continuation guard verified; workspace tests, clippy, site build and rebuilt binary smoke passed.
 
 ## Performance Metrics
 
@@ -137,5 +137,5 @@ Resume file: None
 
 ## Operator Next Steps
 
-- Finish the approved request-local KV/blob implementation and plan 03 verification, then execute plans 04–08 sequentially. Plans 01–02 are verified; no phase-wide completion is claimed.
+- Execute plans 04–08 sequentially. Plans 01–03 are verified; no phase-wide completion is claimed.
 - Continue the approved milestone sequentially through Phase 16, verifying each phase. Preserve credential-file behavior and request approval for new public configuration choices.
