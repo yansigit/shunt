@@ -547,10 +547,8 @@ impl GeminiSseMachine {
                         Some(last)
                             if last.get("type").and_then(Value::as_str) == Some("thinking") =>
                         {
-                            if let Some(existing_thinking) = last.get_mut("thinking") {
-                                if let Value::String(s) = existing_thinking {
-                                    s.push_str(&text);
-                                }
+                            if let Some(Value::String(s)) = last.get_mut("thinking") {
+                                s.push_str(&text);
                             }
                             false
                         }
@@ -627,10 +625,8 @@ impl GeminiSseMachine {
                 if self.accumulate_content {
                     let should_push = match self.content.last_mut() {
                         Some(last) if last.get("type").and_then(Value::as_str) == Some("text") => {
-                            if let Some(existing_text) = last.get_mut("text") {
-                                if let Value::String(s) = existing_text {
-                                    s.push_str(&text);
-                                }
+                            if let Some(Value::String(s)) = last.get_mut("text") {
+                                s.push_str(&text);
                             }
                             false
                         }
