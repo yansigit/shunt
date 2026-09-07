@@ -1,4 +1,12 @@
-use std::{convert::Infallible, io::ErrorKind, net::SocketAddr, sync::Arc};
+use std::{
+    convert::Infallible,
+    io::ErrorKind,
+    net::SocketAddr,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 
 use axum::{body::Body, extract::State, routing::post, Router};
 use futures_util::{stream, StreamExt};
@@ -560,7 +568,13 @@ async fn gemini_streaming_framing_embedded_provider_error_is_terminal() {
     assert!(!body.contains("event: message_stop"), "{body}");
 }
 
-async fn held_gemini_stream(State(dropped): State<Arc<Notify>>) -> Body {
+struct HeldStreamState {
+    dropped: Arc<Notify>,
+    hits: AtomicUsize,
+}
+
+async fn held_gemini_stream(State(state): State<Arc<HeldStreamState>>) -> Body {
+    state.hits.fetch_add(1, Ordering::SeqCst);
     let (sender, receiver) = mpsc::channel::<Result<bytes::Bytes, Infallible>>(1);
     sender
         .send(Ok(bytes::Bytes::from_static(
@@ -570,7 +584,7 @@ async fn held_gemini_stream(State(dropped): State<Arc<Notify>>) -> Body {
         .unwrap();
     tokio::spawn(async move {
         sender.closed().await;
-        dropped.notify_one();
+        state.dropped.notify_one();
     });
     Body::from_stream(stream::unfold(receiver, |mut receiver| async move {
         receiver.recv().await.map(|item| (item, receiver))
@@ -604,11 +618,14 @@ async fn chunked_unary_gateway_response(body: Vec<u8>) -> reqwest::Response {
 }
 
 #[tokio::test]
-async fn gemini_streaming_framing_delivers_early_and_drops_pending_upstream() {
+async fn gemini_response_drop_releases_upstream_and_gateway_capacity() {
     if !can_bind_loopback() {
         return;
     }
-    let dropped = Arc::new(Notify::new());
+    let state = Arc::new(HeldStreamState {
+        dropped: Arc::new(Notify::new()),
+        hits: AtomicUsize::new(0),
+    });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let app = Router::new()
@@ -616,9 +633,11 @@ async fn gemini_streaming_framing_delivers_early_and_drops_pending_upstream() {
             "/v1beta/models/gemini-2.5-pro:streamGenerateContent",
             post(held_gemini_stream),
         )
-        .with_state(dropped.clone());
+        .with_state(state.clone());
     let upstream_task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let gateway = start_gateway(format!("http://{addr}")).await;
+    let mut config = gemini_config_with_retry(format!("http://{addr}"), 2);
+    config.server.max_concurrent_requests = 1;
+    let gateway = start_gateway_with_config(config).await;
     let response = reqwest::Client::new()
         .post(format!("{}/v1/messages", gateway.base_url))
         .body(request(true))
@@ -632,10 +651,34 @@ async fn gemini_streaming_framing_delivers_early_and_drops_pending_upstream() {
         .unwrap()
         .unwrap();
     assert!(String::from_utf8_lossy(&first).contains("early"));
+
+    let saturated = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .body(request(true))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(saturated.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(state.hits.load(Ordering::SeqCst), 1);
+
     drop(body);
-    tokio::time::timeout(std::time::Duration::from_secs(1), dropped.notified())
+    tokio::time::timeout(std::time::Duration::from_secs(1), state.dropped.notified())
         .await
         .expect("downstream drop must release the pending upstream body");
+
+    let reacquired = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        reqwest::Client::new()
+            .post(format!("{}/v1/messages", gateway.base_url))
+            .body(request(true))
+            .send(),
+    )
+    .await
+    .expect("gateway capacity must be reacquired after response drop")
+    .unwrap();
+    assert_eq!(reacquired.status(), StatusCode::OK);
+    assert_eq!(state.hits.load(Ordering::SeqCst), 2);
+    drop(reacquired);
     upstream_task.abort();
 }
 
