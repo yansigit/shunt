@@ -12,10 +12,7 @@ use serde_json::Value;
 
 use crate::{
     adapters::{Adapter, AdapterError, AdapterFuture},
-    auth::{
-        antigravity::{auth::inference_base_url, catalog::catalog_ids},
-        Credential,
-    },
+    auth::{antigravity::auth::inference_base_url, Credential},
     config::AuthMode,
     model::antigravity_request::{
         antigravity_model_needs_catalog, antigravity_request_id, antigravity_session_id,
@@ -265,16 +262,17 @@ async fn forward(
 
     let credential = state.resolve_route_credential(&route).await?;
 
-    let (access_token, project_id) = match credential {
+    let (access_token, project_id, account_fingerprint) = match credential {
         Credential::GoogleOauth {
             access_token,
             project_id,
-        }
-        | Credential::AntigravityOauth {
+        } => (access_token, project_id, None),
+        Credential::AntigravityOauth {
             access_token,
             project_id,
-        } => (access_token, project_id),
-        Credential::ApiKey { value, .. } => (value, String::new()),
+            account_fingerprint,
+        } => (access_token, project_id, Some(account_fingerprint)),
+        Credential::ApiKey { value, .. } => (value, String::new(), None),
         _ => {
             return Err(AdapterError {
                 message: "unsupported credential for Gemini adapter".to_string(),
@@ -330,16 +328,24 @@ async fn forward(
         // an id no catalog could reshape — only Gemini ids carry a tier — so a
         // Claude- or GPT-routed Antigravity provider never pays for it.
         let catalog = if antigravity_model_needs_catalog(&route.upstream_model) {
-            catalog_ids(
+            crate::auth::antigravity::catalog::catalog_ids_for_account(
                 &state.http_client,
                 &inference_base,
                 &access_token,
+                account_fingerprint.as_deref().unwrap_or("legacy"),
                 &project_id,
             )
             .await
         } else {
             None
         };
+        if antigravity_model_needs_catalog(&route.upstream_model)
+            && catalog.as_ref().is_none_or(|snapshot| !snapshot.fresh)
+        {
+            return Err(local_gemini_error(
+                "Antigravity model admission requires fresh account catalog evidence",
+            ));
+        }
         let model = antigravity_upstream_model_with(
             &route.upstream_model,
             route.effort.as_deref(),

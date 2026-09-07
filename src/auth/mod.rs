@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use std::{env, fmt, future::Future, path::PathBuf, pin::Pin, time::Duration};
 
 use axum::{http::StatusCode, response::IntoResponse};
@@ -51,6 +52,7 @@ pub enum Credential {
     AntigravityOauth {
         access_token: String,
         project_id: String,
+        account_fingerprint: String,
     },
     ClaudeOauth {
         access_token: String,
@@ -194,10 +196,31 @@ pub async fn resolve_credential(
             .map(|credential| Credential::AntigravityOauth {
                 access_token: credential.access_token,
                 project_id: credential.project_id,
+                account_fingerprint: credential.account_fingerprint,
             })
         }
         AuthMode::None => Ok(Credential::Passthrough),
     }
+}
+
+/// Opaque request-local account identity. The raw email/token never leaves the
+/// resolver and this value is intentionally not serialized or logged.
+pub(crate) fn antigravity_account_fingerprint(email: Option<&str>, refresh_token: &str) -> String {
+    let (domain, material) = match email.map(str::trim).filter(|v| !v.is_empty()) {
+        Some(email) => ("email-v1", email.to_ascii_lowercase()),
+        None => ("legacy-refresh-v1", refresh_token.to_string()),
+    };
+    let mut hasher = Sha256::new();
+    hasher.update(b"shunt.antigravity.account/");
+    hasher.update(domain.as_bytes());
+    hasher.update([0]);
+    hasher.update(material.as_bytes());
+    let digest = hasher.finalize();
+    let encoded = digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("{domain}:{encoded}")
 }
 
 /// A Claude account credential-resolution failure, plus the two facts the
@@ -528,9 +551,28 @@ mod tests {
     use crate::routing::AdapterKind;
 
     use super::{
-        resolve_api_key, resolve_chatgpt_account, resolve_claude_account, resolve_credential,
-        resolve_kimi_account, with_credential_timeout, Credential, Route,
+        antigravity_account_fingerprint, resolve_api_key, resolve_chatgpt_account,
+        resolve_claude_account, resolve_credential, resolve_kimi_account, with_credential_timeout,
+        Credential, Route,
     };
+
+    #[test]
+    fn antigravity_account_fingerprint_is_private_stable_and_domain_separated() {
+        let first = antigravity_account_fingerprint(Some(" User@Example.COM "), "refresh-a");
+        assert_eq!(
+            first,
+            antigravity_account_fingerprint(Some("user@example.com"), "refresh-b")
+        );
+        assert!(first.starts_with("email-v1:"));
+        assert_ne!(
+            first,
+            antigravity_account_fingerprint(Some("other@example.com"), "refresh-a")
+        );
+        let legacy = antigravity_account_fingerprint(None, "refresh-a");
+        assert!(legacy.starts_with("legacy-refresh-v1:"));
+        assert_ne!(legacy, first);
+        assert!(!format!("{first}{legacy}").contains("refresh-a"));
+    }
 
     #[test]
     fn credential_redaction_preserves_only_safe_structure() {
@@ -575,6 +617,7 @@ mod tests {
                 Credential::AntigravityOauth {
                     access_token: secret.clone(),
                     project_id: identity.clone(),
+                    account_fingerprint: identity.clone(),
                 },
                 "AntigravityOauth",
             ),

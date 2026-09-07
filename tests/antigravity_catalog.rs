@@ -57,7 +57,8 @@ fn can_bind_loopback() -> bool {
 }
 
 #[tokio::test]
-async fn a_tiered_only_catalog_decides_the_model_id_and_the_thinking_level() {
+async fn antigravity_native_affinity_tiered_only_catalog_decides_the_model_id_and_the_thinking_level(
+) {
     if !can_bind_loopback() {
         return;
     }

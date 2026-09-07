@@ -20,7 +20,6 @@ use std::{
 };
 
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 
 /// How long a fetched catalog is served without re-asking. The catalog changes
 /// on the order of days (an account gained `-tiered` ids overnight), so ten
@@ -96,17 +95,8 @@ static CATALOG_FETCH_SLOTS: LazyLock<Mutex<HashMap<String, Arc<tokio::sync::Mute
 /// changes with the account. Only a credential with no project at all falls
 /// back to a fingerprint of the bearer; that is a truncated SHA-256 so the
 /// map never holds a token in the clear.
-fn cache_key(base_url: &str, access_token: &str, project_id: &str) -> String {
-    if !project_id.is_empty() {
-        return format!("{base_url}#project:{project_id}");
-    }
-    let digest = Sha256::digest(access_token.as_bytes());
-    let fingerprint = digest
-        .iter()
-        .take(8)
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    format!("{base_url}#token:{fingerprint}")
+fn cache_key(base_url: &str, account_fingerprint: &str, project_id: &str) -> String {
+    format!("{base_url}#account:{account_fingerprint}#project:{project_id}")
 }
 
 /// One catalog as handed to the resolver: the id set plus whether it came
@@ -195,17 +185,18 @@ fn cached(key: &str) -> Cached {
 /// and a different account never reads another's entry (see [`cache_key`]).
 /// The snapshot says whether it came from a fetch that just succeeded; a set
 /// served through a failure is `fresh: false`.
-pub async fn catalog_ids(
+pub async fn catalog_ids_for_account(
     client: &reqwest::Client,
     base_url: &str,
     access_token: &str,
+    account_fingerprint: &str,
     project_id: &str,
 ) -> Option<CatalogSnapshot> {
     // Normalize here as well as at the call site: the cache key must not
     // depend on whether the caller resolved the host first, and production
     // does not serve `fetchAvailableModels` any more than it serves inference.
     let base_url = super::auth::inference_base_url(base_url);
-    let key = cache_key(&base_url, access_token, project_id);
+    let key = cache_key(&base_url, account_fingerprint, project_id);
 
     let stale = match cached(&key) {
         Cached::Serve(snapshot) => return snapshot,
@@ -254,6 +245,17 @@ pub async fn catalog_ids(
             stale.map(|ids| CatalogSnapshot { ids, fresh: false })
         }
     }
+}
+
+/// Compatibility seam for existing unit fixtures; production native requests
+/// always use the account-aware variant above.
+pub async fn catalog_ids(
+    client: &reqwest::Client,
+    base_url: &str,
+    access_token: &str,
+    project_id: &str,
+) -> Option<CatalogSnapshot> {
+    catalog_ids_for_account(client, base_url, access_token, "legacy", project_id).await
 }
 
 async fn fetch_catalog(
@@ -328,12 +330,12 @@ async fn fetch_catalog(
 /// backend. Key by a URL unique to the test — the cache is process-wide, and
 /// tests run in parallel.
 #[cfg(test)]
-pub(crate) fn prime_for_test(base_url: &str, access_token: &str, project_id: &str, ids: &[&str]) {
+pub(crate) fn prime_for_test(base_url: &str, _access_token: &str, project_id: &str, ids: &[&str]) {
     let ids = ids.iter().map(|id| (*id).to_string()).collect();
     cache().insert(
         cache_key(
             &super::auth::inference_base_url(base_url),
-            access_token,
+            "legacy",
             project_id,
         ),
         CachedCatalog {

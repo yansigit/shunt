@@ -176,6 +176,7 @@ const CREDENTIAL_LOCK_TIMEOUT: Duration = Duration::from_secs(5);
 pub struct AntigravityCred {
     pub access_token: String,
     pub project_id: String,
+    pub(crate) account_fingerprint: String,
 }
 
 /// The on-disk credential shape. `project_id` is resolved once at login (where
@@ -348,6 +349,10 @@ impl AntigravityAuthStore {
             return Ok(AntigravityCred {
                 access_token: stored.access_token,
                 project_id,
+                account_fingerprint: crate::auth::antigravity_account_fingerprint(
+                    stored.email.as_deref(),
+                    &stored.refresh_token,
+                ),
             });
         }
 
@@ -374,6 +379,10 @@ impl AntigravityAuthStore {
             return Ok(AntigravityCred {
                 access_token: stored.access_token,
                 project_id,
+                account_fingerprint: crate::auth::antigravity_account_fingerprint(
+                    stored.email.as_deref(),
+                    &stored.refresh_token,
+                ),
             });
         }
 
@@ -401,6 +410,10 @@ impl AntigravityAuthStore {
         Ok(AntigravityCred {
             access_token: updated.access_token,
             project_id,
+            account_fingerprint: crate::auth::antigravity_account_fingerprint(
+                updated.email.as_deref(),
+                &updated.refresh_token,
+            ),
         })
     }
 

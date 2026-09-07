@@ -665,6 +665,7 @@ mod tests {
             Credential::AntigravityOauth {
                 access_token: "antigravity-token".to_string(),
                 project_id: "proj-1".to_string(),
+                account_fingerprint: "test-account".to_string(),
             },
             &HeaderMap::new(),
             &Bytes::from_static(b"{}"),
