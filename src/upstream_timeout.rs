@@ -28,6 +28,16 @@ impl<E: RetryableError> RetryableError for SendError<E> {
             Self::Timeout => false,
         }
     }
+
+    fn connect_phase(&self) -> bool {
+        match self {
+            Self::Transport(error) => error.connect_phase(),
+            // A TTFB timeout may or may not have reached the upstream —
+            // ambiguous by definition, so it must not retry for a
+            // `RetrySafety::ConnectOnly` operation.
+            Self::Timeout => false,
+        }
+    }
 }
 
 impl<E: std::fmt::Display> SendError<E> {

@@ -100,6 +100,16 @@ pub(crate) trait CredentialResolver: Send + Sync {
         route: &'a Route,
         client: &'a reqwest::Client,
     ) -> CredentialFuture<'a>;
+
+    fn refresh<'a>(
+        &'a self,
+        _config: &'a Config,
+        _route: &'a Route,
+        _client: &'a reqwest::Client,
+        _expected: &'a Credential,
+    ) -> CredentialFuture<'a> {
+        Box::pin(async { Err(auth_error("credential refresh is unavailable")) })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -124,6 +134,16 @@ impl CredentialResolver for DefaultCredentialResolver {
     ) -> CredentialFuture<'a> {
         self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Box::pin(resolve_credential(config, route, client))
+    }
+
+    fn refresh<'a>(
+        &'a self,
+        config: &'a Config,
+        route: &'a Route,
+        client: &'a reqwest::Client,
+        expected: &'a Credential,
+    ) -> CredentialFuture<'a> {
+        Box::pin(force_refresh_credential(config, route, client, expected))
     }
 }
 
@@ -211,6 +231,53 @@ pub async fn resolve_credential(
             })
         }
         AuthMode::None => Ok(Credential::Passthrough),
+    }
+}
+
+/// Forced, request-local, in-memory credential refresh for the Antigravity 401
+/// replay seam (phase 11, D-16/D-17). Never writes credential state (D-03):
+/// the store's own `force_refresh_in_memory` builds the refreshed bearer
+/// without touching the file, and no other auth mode is eligible for a forced
+/// refresh.
+pub(crate) async fn force_refresh_credential(
+    config: &Config,
+    route: &Route,
+    client: &reqwest::Client,
+    expected: &Credential,
+) -> Result<Credential, AdapterError> {
+    let provider = config
+        .provider(&route.provider)
+        .ok_or_else(|| auth_error(format!("unknown provider {}", route.provider)))?;
+    match provider.auth {
+        AuthMode::AntigravityOauth => {
+            let Credential::AntigravityOauth {
+                account_fingerprint,
+                project_id,
+                ..
+            } = expected
+            else {
+                return Err(auth_error("credential kind changed before forced refresh"));
+            };
+            let store = antigravity::auth::AntigravityAuthStore::new(
+                antigravity::default_antigravity_auth_path(),
+                client.clone(),
+                provider.base_url.clone(),
+            );
+            with_credential_timeout(
+                ANTIGRAVITY_CREDENTIAL_TIMEOUT,
+                store.force_refresh_in_memory(account_fingerprint, project_id),
+                "Antigravity credential refresh timed out",
+            )
+            .await
+            .map(|credential| Credential::AntigravityOauth {
+                access_token: credential.access_token,
+                project_id: credential.project_id,
+                account_fingerprint: credential.account_fingerprint,
+            })
+        }
+        _ => Err(auth_error(
+            "forced credential refresh is only implemented for antigravity_oauth",
+        )),
     }
 }
 

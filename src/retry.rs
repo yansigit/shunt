@@ -97,6 +97,14 @@ pub trait RetryableError {
     /// deterministic error (bad request build, decode) an identical retry
     /// cannot fix.
     fn is_transient(&self) -> bool;
+
+    /// `true` only when the failure provably happened before the request was
+    /// written to the network — a connect-phase error. A failure after the
+    /// request could have been sent is ambiguous and must not retry for a
+    /// [`RetrySafety::ConnectOnly`] operation.
+    fn connect_phase(&self) -> bool {
+        false
+    }
 }
 
 /// Monotonic evidence that determines whether an accepted generation may be
@@ -137,11 +145,30 @@ pub enum RetrySafety {
     /// The operation is a creation POST. A response means the upstream may
     /// already have accepted it, so only pre-response transport errors retry.
     NonIdempotentPost,
+    /// The operation must never repeat once it could have reached the
+    /// upstream: no response status retries, and of the transport errors only
+    /// a connect-phase failure (which provably happened before the request
+    /// was written) may. Phase 11 assigns this to Antigravity inference
+    /// (D-17): a returned transient status or an ambiguous post-send failure
+    /// terminates the attempt, and the protocol's own bounded 401 replay —
+    /// not this driver — owns the one permitted reissue.
+    ConnectOnly,
 }
 
 impl RetrySafety {
     fn may_retry_response_status(self) -> bool {
         matches!(self, Self::Idempotent)
+    }
+
+    /// Whether a pre-header transport error may retry under this safety.
+    /// `connect_phase` is `error.is_connect()`: only `ConnectOnly` consults
+    /// it, because for the other safeties the existing `is_transient` gate
+    /// already bounds what may retry.
+    fn may_retry_transport(self, connect_phase: bool) -> bool {
+        match self {
+            Self::ConnectOnly => connect_phase,
+            Self::Idempotent | Self::NonIdempotentPost => true,
+        }
     }
 }
 
@@ -151,6 +178,10 @@ impl RetryableError for reqwest::Error {
         // it yields is pre-body. Retry the clearly transient kinds; a
         // builder/redirect/decode error is deterministic and left alone.
         self.is_connect() || self.is_timeout()
+    }
+
+    fn connect_phase(&self) -> bool {
+        self.is_connect()
     }
 }
 
@@ -259,7 +290,11 @@ where
                     }
                 }
             }
-            Err(error) if retries_left && error.is_transient() => {
+            Err(error)
+                if retries_left
+                    && error.is_transient()
+                    && safety.may_retry_transport(error.connect_phase()) =>
+            {
                 // Transport errors carry no `Retry-After`, so always back off.
                 let delay = match next_backoff(&policy, retries, None) {
                     Backoff::Sleep(delay) => delay,

@@ -162,6 +162,20 @@ impl AppState {
             .await
     }
 
+    /// Forced, in-memory credential refresh for the Antigravity 401 replay
+    /// seam (phase 11, D-16/D-17). Request-local by construction: it reads the
+    /// same store the resolver reads, never writes credential state (D-03),
+    /// and never consults or mutates shared resolver state.
+    pub(crate) async fn refresh_route_credential(
+        &self,
+        route: &crate::routing::Route,
+        expected: &Credential,
+    ) -> Result<Credential, crate::adapters::AdapterError> {
+        self.credential_resolver
+            .refresh(&self.config, route, &self.http_client, expected)
+            .await
+    }
+
     /// Re-snapshot the live shared state into a new `AppState`, so a request
     /// entry picks up the latest reloaded config while holding one stable
     /// snapshot for the whole request. Cheap: clones `Arc`s and the client.
@@ -1600,3 +1614,5 @@ mod tests {
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }
+#[cfg(test)]
+mod antigravity_replay_tests;

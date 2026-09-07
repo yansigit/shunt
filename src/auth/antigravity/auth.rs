@@ -417,6 +417,59 @@ impl AntigravityAuthStore {
         })
     }
 
+    /// Forced, in-memory token refresh for the bounded Antigravity 401 replay
+    /// seam (phase 11, D-16/D-17).
+    ///
+    /// Deliberately does **not** write the credential file: the store's
+    /// existing writeback contract is untouched (D-03), and a forced refresh
+    /// that silently rewrote the store from the request path would be new
+    /// persistence behavior. The refreshed access token lives only in the
+    /// replaying request; if the endpoint also rotated the refresh grant, the
+    /// rotation is dropped with it — the plan's explicit trade for never
+    /// writing credentials from the replay seam.
+    ///
+    /// Account binding (D-02) is enforced here: the refreshed grant must
+    /// fingerprint to the same account as the stored one. An email-keyed
+    /// store always does; a legacy store keyed only on the refresh token
+    /// fails closed if the endpoint rotated the grant, because pairing an old
+    /// project/session with a new identity must never happen.
+    pub(crate) async fn force_refresh_in_memory(
+        &self,
+        expected_account: &str,
+        expected_project: &str,
+    ) -> Result<AntigravityCred, AdapterError> {
+        let _guard = REFRESH_LOCK.lock().await;
+        let stored = self.read().await?;
+        let account_before = crate::auth::antigravity_account_fingerprint(
+            stored.email.as_deref(),
+            &stored.refresh_token,
+        );
+        // Reject a login swap before exchanging another account's grant.
+        if account_before != expected_account {
+            return Err(auth_error(
+                "Antigravity account changed before forced refresh",
+            ));
+        }
+        let refreshed = self.refresh_call(&stored.refresh_token).await?;
+        // Same rule as `get_valid`: Google does not rotate the grant on every
+        // exchange, so keep the stored one when the response omits it.
+        let refresh_token = refreshed
+            .refresh_token
+            .unwrap_or_else(|| stored.refresh_token.clone());
+        let account_after =
+            crate::auth::antigravity_account_fingerprint(stored.email.as_deref(), &refresh_token);
+        if account_after != account_before {
+            return Err(auth_error(
+                "Antigravity account identity changed during forced refresh; refusing to re-bind the request",
+            ));
+        }
+        Ok(AntigravityCred {
+            access_token: refreshed.access_token,
+            project_id: expected_project.to_string(),
+            account_fingerprint: account_after,
+        })
+    }
+
     /// Read the credential file.
     ///
     /// Deliberately **unlocked**. Every writer replaces the file by atomic

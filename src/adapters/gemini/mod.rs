@@ -266,7 +266,7 @@ async fn forward(
 
     let credential = state.resolve_route_credential(&route).await?;
 
-    let (access_token, project_id, account_fingerprint) = match credential {
+    let (access_token, project_id, account_fingerprint) = match credential.clone() {
         Credential::GoogleOauth {
             access_token,
             project_id,
@@ -415,39 +415,99 @@ async fn forward(
 
     let ttfb_ms = state.config.server.timeouts.upstream_ttfb_ms;
     let retry_safety = retry_safety_for_auth(provider.auth);
-    let response =
-        crate::retry::send_with_retry_with_safety(policy, &route.provider, retry_safety, || {
-            let client = http_client.clone();
-            let payload = payload_clone.clone();
-            let endpoint = endpoint_clone.clone();
-            let token = token.clone();
-            let user_agent = user_agent.clone();
-            async move {
-                let mut req = client
-                    .post(&endpoint)
-                    .header("Content-Type", "application/json");
+    // One send of the fixed envelope under one bearer. The 401 replay seam
+    // below re-issues exactly this — same endpoint, payload, project, session,
+    // and request id — with only the bearer binding replaced.
+    let send_once = |token: String| {
+        let client = http_client.clone();
+        let payload = payload_clone.clone();
+        let endpoint = endpoint_clone.clone();
+        let user_agent = user_agent.clone();
+        async move {
+            let mut req = client
+                .post(&endpoint)
+                .header("Content-Type", "application/json");
 
-                if let Some(user_agent) = user_agent {
-                    req = req.header("User-Agent", user_agent);
-                }
-
-                if is_google_oauth {
-                    req = req.bearer_auth(&token);
-                } else {
-                    req = req.header("x-goog-api-key", &token);
-                }
-
-                crate::upstream_timeout::wait(ttfb_ms, req.json(&payload).send()).await
+            if let Some(user_agent) = user_agent {
+                req = req.header("User-Agent", user_agent);
             }
+
+            if is_google_oauth {
+                req = req.bearer_auth(&token);
+            } else {
+                req = req.header("x-goog-api-key", &token);
+            }
+
+            crate::upstream_timeout::wait(ttfb_ms, req.json(&payload).send()).await
+        }
+    };
+    let send_with_retry = |token: String| {
+        crate::retry::send_with_retry_with_safety(
+            policy,
+            &route.provider,
+            retry_safety,
+            move || send_once(token.clone()),
+        )
+    };
+    let map_send_error = |error: crate::upstream_timeout::SendError<reqwest::Error>| {
+        error.into_adapter_error(|error| AdapterError {
+            message: format!("network error calling Gemini backend: {error}"),
+            response: Box::new(StatusCode::BAD_GATEWAY.into_response()),
+            failure: None,
         })
+    };
+    let response = send_with_retry(token.clone())
         .await
-        .map_err(|error| {
-            error.into_adapter_error(|error| AdapterError {
-                message: format!("network error calling Gemini backend: {error}"),
-                response: Box::new(StatusCode::BAD_GATEWAY.into_response()),
-                failure: None,
-            })
-        })?;
+        .map_err(map_send_error)?;
+
+    // Antigravity 401 replay (D-16/D-17): the initial 401 may force
+    // one same-account refresh and replay. This decision happens strictly
+    // before any response body is read and before anything reaches the
+    // downstream client, so the commitment is still ReplaySafe here; once the
+    // single allowance is consumed, every later 401 — and every body/output
+    // condition — is terminal with zero further attempts.
+    let commitment = crate::retry::Commitment::default();
+    let response = if provider.auth == AuthMode::AntigravityOauth
+        && response.status() == StatusCode::UNAUTHORIZED
+        && commitment.may_redispatch()
+    {
+        // This branch is deliberately not a loop. The replay response cannot
+        // re-enter it, and its send has no additional retry budget.
+        drop(response);
+        let refreshed = match state.refresh_route_credential(&route, &credential).await {
+            // The refreshed bearer must fingerprint to the same account the
+            // request was resolved under; the project, session, catalog, and
+            // payload stay bound to the original tuple by construction.
+            Ok(Credential::AntigravityOauth {
+                access_token: new_token,
+                account_fingerprint: fingerprint,
+                project_id: refreshed_project,
+            }) if account_fingerprint.as_deref() == Some(fingerprint.as_str())
+                && refreshed_project == project_id
+                && !new_token.is_empty() =>
+            {
+                Ok(new_token)
+            }
+            _ => Err(()),
+        };
+        match refreshed {
+            Ok(new_token) => send_once(new_token)
+                .await
+                .map_err(map_send_error)
+                // A second 401 falls through to the terminal mapping below.
+                ?,
+            // Refresh failure or an account-identity change: surface the
+            // original 401 once, with zero further attempts.
+            Err(()) => {
+                return Err(map_gemini_error(
+                    StatusCode::UNAUTHORIZED,
+                    r#"{"error":{"code":401,"message":"Antigravity credential refresh failed","status":"UNAUTHENTICATED"}}"#,
+                ))
+            }
+        }
+    } else {
+        response
+    };
 
     let status = response.status();
     if !status.is_success() {
@@ -650,7 +710,12 @@ async fn forward(
 
 fn retry_safety_for_auth(auth: AuthMode) -> crate::retry::RetrySafety {
     if auth == AuthMode::AntigravityOauth {
-        crate::retry::RetrySafety::Idempotent
+        // Phase 11 (D-17): Antigravity inference never repeats once the
+        // request could have reached the upstream. Only a connect-phase
+        // transport error retries; a returned transient status or an
+        // ambiguous post-send failure terminates, and the one permitted
+        // reissue is the protocol's own bounded 401 replay below.
+        crate::retry::RetrySafety::ConnectOnly
     } else {
         crate::retry::RetrySafety::NonIdempotentPost
     }
@@ -661,10 +726,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn antigravity_retry_safety_remains_idempotent_until_phase_11() {
+    fn antigravity_retry_safety_is_connect_only_from_phase_11() {
         assert_eq!(
             retry_safety_for_auth(AuthMode::AntigravityOauth),
-            crate::retry::RetrySafety::Idempotent
+            crate::retry::RetrySafety::ConnectOnly
+        );
+        assert_eq!(
+            retry_safety_for_auth(AuthMode::GoogleOauth),
+            crate::retry::RetrySafety::NonIdempotentPost
         );
         assert_eq!(
             retry_safety_for_auth(AuthMode::ApiKey),
