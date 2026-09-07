@@ -364,11 +364,10 @@ async fn forward(
 
     let status = response.status();
     if !status.is_success() {
-        let body_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "failed to read error response".to_string());
-        return Err(map_gemini_error(status, &body_text));
+        let body = collect_unary_response(response, MAX_GEMINI_UNARY_RESPONSE_BYTES).await?;
+        let body_text = std::str::from_utf8(&body)
+            .map_err(|_| local_gemini_error("invalid UTF-8 in Gemini error response"))?;
+        return Err(map_gemini_error(status, body_text));
     }
 
     if is_streaming {

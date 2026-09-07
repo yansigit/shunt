@@ -111,11 +111,18 @@ async fn streaming_gateway_response(upstream_body: &[u8]) -> String {
 }
 
 async fn unary_gateway_response(upstream_body: Vec<u8>) -> reqwest::Response {
+    unary_gateway_response_with_status(200, upstream_body).await
+}
+
+async fn unary_gateway_response_with_status(
+    upstream_status: u16,
+    upstream_body: Vec<u8>,
+) -> reqwest::Response {
     let upstream = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1beta/models/gemini-2.5-pro:generateContent"))
         .respond_with(
-            ResponseTemplate::new(200)
+            ResponseTemplate::new(upstream_status)
                 .insert_header("content-type", "application/json")
                 .set_body_bytes(upstream_body),
         )
@@ -390,4 +397,20 @@ async fn gemini_unary_bounds_rejects_malformed_json_without_sensitive_context() 
     let body = body.to_string();
     assert!(!body.contains("fixture-key"));
     assert!(!body.contains("project"));
+}
+
+#[tokio::test]
+async fn gemini_unary_bounds_rejects_oversized_http_error_body() {
+    if !can_bind_loopback() {
+        return;
+    }
+    const LIMIT: usize = 32 * 1024 * 1024;
+    let response = unary_gateway_response_with_status(503, vec![b'x'; LIMIT + 1]).await;
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["type"], "error");
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("exceeded"));
 }
