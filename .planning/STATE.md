@@ -4,20 +4,20 @@ milestone: v2
 milestone_name: Provider Compatibility
 current_phase: 12
 current_phase_name: Cursor Evidence-Backed Hardening
-status: executing
-stopped_at: Phase 12 plan 01 verified; plan 02 executing
-last_updated: "2026-09-07T21:45:07.413Z"
+current_plan: 3
+status: needs_decision
+stopped_at: Phase 12 plan 03 requires approval for request-local KV protocol support
+last_updated: "2026-09-07T22:45:12.678Z"
 last_activity: 2026-09-07
-last_activity_desc: Phase 12 EOF tracer verified against the full workspace suite
-state_head: 39f527fff89ce498b41eb655c69ec8da327bc5fb
+last_activity_desc: Plans 01–02 verified; authentic tool IDs fixed; structured history architecture decision pending
+state_head: db2397e48b04ee1e5d0d9732fd8e2d4b08459f7d
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 26
-  completed_plans: 19
+  completed_plans: 20
   percent: 38
 total_plans_in_phase: 8
-current_plan: 2
 ---
 
 # Project State
@@ -31,11 +31,11 @@ See: `.planning/PROJECT.md` (updated 2026-09-07 after Phase 11)
 
 ## Current Position
 
-Phase: 12 (Cursor Evidence-Backed Hardening) — EXECUTING
-Current Plan: 2
+Phase: 12 (Cursor Evidence-Backed Hardening) — ARCHITECTURE DECISION
+Current Plan: 3
 Total Plans in Phase: 8
-Status: Executing; 1 of 8 plans summarized
-Last activity: 2026-09-07 — Plan 01 EOF tracer and wire fixtures pass focused tests, full workspace tests, format, and clippy. Plan 02 is executing.
+Status: 2 of 8 plans summarized; plan 03 partial
+Last activity: 2026-09-07 — Plans 01–02 verified; plan 03 preserves authentic output tool IDs. Structured history requires a bounded request-local KV/blob protocol addition; see 12-03-CHECKPOINT.md.
 
 ## Performance Metrics
 
@@ -119,7 +119,7 @@ None yet.
 
 ### Blockers/Concerns
 
-The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent OpenCodex supplies schema-derived Run output-token deltas and context checkpoints; 83 hermetic tests passed in isolated state. After CLI installation, an isolated read-only Composer 2.5 probe succeeded with streamed events and result usage, including cache fields. CLI output is not raw Connect evidence: do not infer protobuf field mappings or claim Shunt live verification. Original CLI settings/credential files were backed up and remained unchanged. No Phase 12 implementation has begun.
+The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent OpenCodex supplies schema-derived Run output-token deltas and context checkpoints; 83 hermetic tests passed in isolated state. After CLI installation, an isolated read-only Composer 2.5 probe succeeded with streamed events and result usage, including cache fields. CLI output is not raw Connect evidence: do not infer protobuf field mappings or claim Shunt live verification. Original CLI settings/credential files were backed up and remained unchanged. Plans 01–02 are verified. Plan 03 output tool identity is fixed, but structured continuation requires the architecture decision recorded in 12-03-CHECKPOINT.md.
 
 ## Deferred Items
 
@@ -131,10 +131,10 @@ The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent O
 ## Session Continuity
 
 Last session: 2026-09-07T19:45:00Z
-Stopped at: Phase 12 plan 01 verified; plan 02 executing
+Stopped at: Phase 12 plan 03 architecture decision (12-03-CHECKPOINT.md)
 Resume file: None
 
 ## Operator Next Steps
 
-- Execute Phase 12 plans sequentially in the shared worktree. Independent re-review passed after correcting terminal semantics, real-router fixture ownership, schema-derived fixture claims, and the wave graph. All 19 requirement/decision coverage items pass; 26 automated planning commands have explicit failure directions. Actual implementation verification remains outstanding.
+- Resolve the request-local KV/blob architecture decision in 12-03-CHECKPOINT.md, then finish plan 03 and execute plans 04–08 sequentially. Plans 01–02 are verified; no phase-wide completion is claimed.
 - Continue the approved milestone sequentially through Phase 16, verifying each phase. Preserve credential-file behavior and request approval for new public configuration choices.
