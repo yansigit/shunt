@@ -30,6 +30,9 @@
 //! format; Cursor's own agentic file/shell tools are not exposed.
 
 use std::borrow::Cow;
+#[cfg(test)]
+#[path = "router_parity_tests.rs"]
+mod router_parity_tests;
 use std::collections::VecDeque;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -311,9 +314,9 @@ impl CursorAgentTurn {
                             .pending
                             .push_back(Err(CursorError::from_reqwest(error)));
                     }
-                    // Clean EOF: the turn ended. Validate the decoder finished on
-                    // a frame boundary so a truncated body is an error, not a
-                    // partial/empty success.
+                    // EOF is not an authoritative terminal. A wire terminal
+                    // marks `finished` in ingest and never reaches this branch.
+                    // Preserve framing errors; otherwise report premature EOF.
                     Ok(None) => {
                         state.finished = true;
                         state.pending.push_back(terminal_event(
@@ -343,9 +346,8 @@ impl CursorAgentTurn {
 
 /// Decide the terminal event when the upstream byte stream ends. A first-byte
 /// timeout with no assistant output (`timed_out && !got_output`) is an upstream
-/// stall and surfaces as an error rather than an empty success. Otherwise the
-/// decoder must have ended on a frame boundary — leftover buffered bytes mean a
-/// truncated body.
+/// stall and surfaces as an error rather than an empty success. EOF without a
+/// wire terminal is always an error, even at a complete frame boundary.
 fn terminal_event(
     timed_out: bool,
     got_output: bool,
@@ -357,6 +359,9 @@ fn terminal_event(
         ));
     }
     match finish {
+        Ok(()) if !timed_out => Err(CursorError::internal(
+            "cursor: upstream EOF without an authoritative terminal",
+        )),
         Ok(()) => Ok(CursorStreamEvent::End),
         Err(error) => Err(CursorError::internal(format!("cursor frame: {error}"))),
     }
@@ -1134,11 +1139,10 @@ mod tests {
     }
 
     #[test]
-    fn terminal_event_clean_eof_ends_even_without_output() {
-        assert!(matches!(
-            super::terminal_event(false, false, Ok(())),
-            Ok(CursorStreamEvent::End)
-        ));
+    fn cursor_terminal_tracer_clean_eof_requires_authoritative_terminal() {
+        for got_output in [false, true] {
+            assert!(super::terminal_event(false, got_output, Ok(())).is_err());
+        }
     }
 
     #[test]

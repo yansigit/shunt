@@ -112,6 +112,9 @@ zstd = { version = "0.13", default-features = false }
 libc = "0.2"
 
 [dev-dependencies]
+h2 = "0.4"
+rcgen = "0.13"
+tokio-rustls = "0.26"
 divan = { version = "5.0.1", package = "codspeed-divan-compat" }
 hex = "0.4"
 libc = "0.2"

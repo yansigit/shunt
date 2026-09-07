@@ -244,6 +244,18 @@ fn attach_default_resolver_calls(
     result
 }
 
+#[cfg(test)]
+pub(crate) fn build_router_with_test_client(
+    config: Config,
+    client: reqwest::Client,
+) -> Result<(Router, SharedState, AppState), ConfigError> {
+    build_router_with_dependencies(
+        config,
+        client,
+        Arc::new(DefaultCredentialResolver::default()),
+    )
+}
+
 fn build_router_with_dependencies(
     config: Config,
     http_client: reqwest::Client,
