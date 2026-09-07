@@ -57,6 +57,11 @@ check_unchanged "dependency manifest" \
   wiki/package-lock.json
 check_unchanged "generated wiki" wiki
 
+# The Gemini adapter is shared by API-key Code Assist and Antigravity OAuth.
+# Pin the pre-Phase-10 Antigravity retry contract behaviorally instead of
+# pretending path-only checks can exclude changes in this shared file.
+cargo test --all-features antigravity_retry_safety_remains_idempotent_until_phase_11 --lib
+
 added_source_test_lines() {
   git diff --no-ext-diff --unified=0 "$phase_base"..HEAD -- src tests |
     sed -n '/^+[^+]/p'

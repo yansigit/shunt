@@ -3,7 +3,7 @@
 mod sse;
 
 use axum::{
-    body::Body,
+    body::{Body, Bytes},
     http::{HeaderMap, HeaderValue, Response, StatusCode, Uri},
     response::IntoResponse,
 };
@@ -329,11 +329,9 @@ async fn forward(
     let token = access_token.clone();
 
     let ttfb_ms = state.config.server.timeouts.upstream_ttfb_ms;
-    let response = crate::retry::send_with_retry_with_safety(
-        policy,
-        &route.provider,
-        crate::retry::RetrySafety::NonIdempotentPost,
-        || {
+    let retry_safety = retry_safety_for_auth(provider.auth);
+    let response =
+        crate::retry::send_with_retry_with_safety(policy, &route.provider, retry_safety, || {
             let client = http_client.clone();
             let payload = payload_clone.clone();
             let endpoint = endpoint_clone.clone();
@@ -356,16 +354,15 @@ async fn forward(
 
                 crate::upstream_timeout::wait(ttfb_ms, req.json(&payload).send()).await
             }
-        },
-    )
-    .await
-    .map_err(|error| {
-        error.into_adapter_error(|error| AdapterError {
-            message: format!("network error calling Gemini backend: {error}"),
-            response: Box::new(StatusCode::BAD_GATEWAY.into_response()),
-            failure: None,
         })
-    })?;
+        .await
+        .map_err(|error| {
+            error.into_adapter_error(|error| AdapterError {
+                message: format!("network error calling Gemini backend: {error}"),
+                response: Box::new(StatusCode::BAD_GATEWAY.into_response()),
+                failure: None,
+            })
+        })?;
 
     let status = response.status();
     if !status.is_success() {
@@ -377,62 +374,66 @@ async fn forward(
 
     if is_streaming {
         let byte_stream = response.bytes_stream();
-        let machine = GeminiSseMachine::new_streaming(&route.model);
+        let machine =
+            GeminiSseMachine::new_streaming_for_upstream(&route.model, &route.upstream_model);
         let decoder = GeminiSseDecoder::default();
 
         let sse_stream = futures_util::stream::unfold(
-            (byte_stream, decoder, machine, false),
-            |(mut bytes, mut decoder, mut machine, finished)| async move {
+            (byte_stream, decoder, machine, false, None::<Bytes>),
+            |(mut bytes, mut decoder, mut machine, finished, mut pending)| async move {
                 if finished {
                     return None;
                 }
                 loop {
-                    match bytes.next().await {
-                        Some(Ok(chunk)) => {
-                            let items = match decoder.push(&chunk) {
-                                Ok(items) => items,
-                                Err(error) => {
-                                    let mut output = Vec::new();
-                                    append_protocol_error(error, &mut output);
-                                    return Some((
-                                        Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(
-                                            output,
-                                        )),
-                                        (bytes, decoder, machine, true),
-                                    ));
-                                }
-                            };
-                            let mut output = Vec::new();
-                            let mut terminal = false;
-                            for item in items {
-                                let result = match item {
-                                    GeminiSseItem::Json(value) => {
-                                        machine.process_chunk_checked(&value)
-                                    }
-                                    GeminiSseItem::Done => machine.transport_close_checked(),
-                                };
-                                match result {
-                                    Ok(events) => {
-                                        terminal = events.iter().any(|event| {
-                                            event.event == "error" || event.event == "message_stop"
-                                        });
-                                        append_sse_events(events, &mut output);
-                                    }
-                                    Err(error) => {
-                                        append_protocol_error(error.to_string(), &mut output);
-                                        terminal = true;
-                                    }
-                                }
-                                if terminal {
-                                    break;
-                                }
-                            }
-                            if !output.is_empty() {
+                    if let Some(chunk) = pending.take() {
+                        let (consumed, item) = match decoder.push_one(&chunk) {
+                            Ok(step) => step,
+                            Err(error) => {
+                                let mut output = Vec::new();
+                                append_protocol_error(error, &mut output);
                                 return Some((
-                                    Ok(axum::body::Bytes::from(output)),
-                                    (bytes, decoder, machine, terminal),
+                                    Ok::<_, std::convert::Infallible>(Bytes::from(output)),
+                                    (bytes, decoder, machine, true, None),
                                 ));
                             }
+                        };
+                        if consumed < chunk.len() {
+                            pending = Some(chunk.slice(consumed..));
+                        }
+                        let Some(item) = item else {
+                            continue;
+                        };
+
+                        let result = match item {
+                            GeminiSseItem::Json(value) => machine.process_chunk_checked(&value),
+                            GeminiSseItem::Done => machine.transport_close_checked(),
+                        };
+                        let mut output = Vec::new();
+                        let terminal = match result {
+                            Ok(events) => {
+                                let terminal = events.iter().any(|event| {
+                                    event.event == "error" || event.event == "message_stop"
+                                });
+                                append_sse_events(events, &mut output);
+                                terminal
+                            }
+                            Err(error) => {
+                                append_protocol_error(error.to_string(), &mut output);
+                                true
+                            }
+                        };
+                        if !output.is_empty() {
+                            return Some((
+                                Ok(Bytes::from(output)),
+                                (bytes, decoder, machine, terminal, pending),
+                            ));
+                        }
+                        continue;
+                    }
+
+                    match bytes.next().await {
+                        Some(Ok(chunk)) => {
+                            pending = Some(chunk);
                         }
                         Some(Err(error)) => {
                             let mut output = Vec::new();
@@ -441,8 +442,8 @@ async fn forward(
                                 &mut output,
                             );
                             return Some((
-                                Ok(axum::body::Bytes::from(output)),
-                                (bytes, decoder, machine, true),
+                                Ok(Bytes::from(output)),
+                                (bytes, decoder, machine, true, None),
                             ));
                         }
                         None => {
@@ -460,8 +461,8 @@ async fn forward(
                                 Err(error) => append_protocol_error(error, &mut output),
                             }
                             return Some((
-                                Ok(axum::body::Bytes::from(output)),
-                                (bytes, decoder, machine, true),
+                                Ok(Bytes::from(output)),
+                                (bytes, decoder, machine, true, None),
                             ));
                         }
                     }
@@ -488,7 +489,7 @@ async fn forward(
         let parsed = serde_json::from_slice::<Value>(&full_body).map_err(|error| {
             local_gemini_error(format!("invalid JSON from Gemini backend: {error}"))
         })?;
-        let mut machine = GeminiSseMachine::new(&route.model);
+        let mut machine = GeminiSseMachine::new_for_upstream(&route.model, &route.upstream_model);
         let events = machine
             .process_chunk_checked(&parsed)
             .map_err(|error| local_gemini_error(error.to_string()))?;
@@ -510,9 +511,29 @@ async fn forward(
     }
 }
 
+fn retry_safety_for_auth(auth: AuthMode) -> crate::retry::RetrySafety {
+    if auth == AuthMode::AntigravityOauth {
+        crate::retry::RetrySafety::Idempotent
+    } else {
+        crate::retry::RetrySafety::NonIdempotentPost
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn antigravity_retry_safety_remains_idempotent_until_phase_11() {
+        assert_eq!(
+            retry_safety_for_auth(AuthMode::AntigravityOauth),
+            crate::retry::RetrySafety::Idempotent
+        );
+        assert_eq!(
+            retry_safety_for_auth(AuthMode::ApiKey),
+            crate::retry::RetrySafety::NonIdempotentPost
+        );
+    }
 
     #[test]
     fn a_production_pinned_antigravity_base_url_sends_inference_to_the_daily_host() {
@@ -604,9 +625,13 @@ mod tests {
         let split = line.find('🌊').unwrap() + 1;
         let mut decoder = GeminiSseDecoder::default();
 
-        assert!(decoder.push(&line.as_bytes()[..split]).unwrap().is_empty());
-        let items = decoder.push(&line.as_bytes()[split..]).unwrap();
-        let GeminiSseItem::Json(value) = &items[0] else {
+        assert_eq!(
+            decoder.push_one(&line.as_bytes()[..split]).unwrap(),
+            (split, None)
+        );
+        let (_, Some(GeminiSseItem::Json(value))) =
+            decoder.push_one(&line.as_bytes()[split..]).unwrap()
+        else {
             panic!("expected JSON event")
         };
         assert_eq!(
@@ -620,9 +645,10 @@ mod tests {
         let mut decoder = GeminiSseDecoder::default();
 
         assert!(decoder
-            .push(br#"data: {"candidates":[{"finishReason":"STOP"}]}"#)
+            .push_one(br#"data: {"candidates":[{"finishReason":"STOP"}]}"#)
             .unwrap()
-            .is_empty());
+            .1
+            .is_none());
         assert!(decoder.finish().unwrap_err().contains("unterminated"));
     }
 }

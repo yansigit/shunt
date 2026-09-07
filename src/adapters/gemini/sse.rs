@@ -3,7 +3,6 @@
 use serde_json::Value;
 
 pub(super) const MAX_EVENT_BYTES: usize = 8 * 1024 * 1024;
-pub(super) const MAX_EVENTS_PER_FEED: usize = 256;
 
 #[derive(Debug, PartialEq)]
 pub(super) enum Item {
@@ -14,25 +13,22 @@ pub(super) enum Item {
 pub(super) struct Decoder {
     buffer: Vec<u8>,
     max_event_bytes: usize,
-    max_events_per_feed: usize,
     done: bool,
     disposed: bool,
 }
 
 impl Default for Decoder {
     fn default() -> Self {
-        Self::with_limits(MAX_EVENT_BYTES, MAX_EVENTS_PER_FEED)
+        Self::with_limit(MAX_EVENT_BYTES)
     }
 }
 
 impl Decoder {
-    pub(super) fn with_limits(max_event_bytes: usize, max_events_per_feed: usize) -> Self {
+    pub(super) fn with_limit(max_event_bytes: usize) -> Self {
         assert!(max_event_bytes > 0);
-        assert!(max_events_per_feed > 0);
         Self {
             buffer: Vec::new(),
             max_event_bytes,
-            max_events_per_feed,
             done: false,
             disposed: false,
         }
@@ -44,13 +40,16 @@ impl Decoder {
         message.into()
     }
 
-    pub(super) fn push(&mut self, chunk: &[u8]) -> Result<Vec<Item>, String> {
+    /// Consume no more than one complete SSE frame.
+    ///
+    /// The returned byte count lets the caller retain an unconsumed `Bytes`
+    /// slice without copying it. Consequently parser memory and translated
+    /// output are bounded by one event, independent of HTTP packetization.
+    pub(super) fn push_one(&mut self, chunk: &[u8]) -> Result<(usize, Option<Item>), String> {
         if self.disposed {
             return Err("Gemini SSE parser is disposed".to_string());
         }
-        let mut items = Vec::new();
-        let mut frames_seen = 0usize;
-        for &byte in chunk {
+        for (offset, &byte) in chunk.iter().enumerate() {
             self.buffer.push(byte);
             if let Some(delimiter_len) = terminal_delimiter_len(&self.buffer) {
                 let frame_len = self.buffer.len() - delimiter_len;
@@ -60,16 +59,9 @@ impl Decoder {
                         self.max_event_bytes
                     )));
                 }
-                if frames_seen >= self.max_events_per_feed {
-                    return Err(self.fail(format!(
-                        "Gemini SSE chunk exceeded {} event limit",
-                        self.max_events_per_feed
-                    )));
-                }
-                frames_seen += 1;
-                let frame = self.buffer[..frame_len].to_vec();
-                self.buffer.clear();
-                match parse_frame(&frame) {
+                let mut frame = std::mem::take(&mut self.buffer);
+                frame.truncate(frame_len);
+                let item = match parse_frame(&frame) {
                     Ok(Some(Item::Json(_))) if self.done => {
                         return Err(self.fail("Gemini SSE data arrived after [DONE]"));
                     }
@@ -78,12 +70,12 @@ impl Decoder {
                     }
                     Ok(Some(Item::Done)) => {
                         self.done = true;
-                        items.push(Item::Done);
+                        Some(Item::Done)
                     }
-                    Ok(Some(item)) => items.push(item),
-                    Ok(None) => {}
+                    Ok(item) => item,
                     Err(error) => return Err(self.fail(error)),
-                }
+                };
+                return Ok((offset + 1, item));
             } else if retained_candidate_len(&self.buffer) > self.max_event_bytes {
                 return Err(self.fail(format!(
                     "Gemini SSE event exceeded {} bytes",
@@ -91,7 +83,7 @@ impl Decoder {
                 )));
             }
         }
-        Ok(items)
+        Ok((chunk.len(), None))
     }
 
     pub(super) fn finish(&mut self) -> Result<(), String> {
@@ -159,6 +151,20 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn drain(decoder: &mut Decoder, wire: &[u8]) -> Result<Vec<Item>, String> {
+        let mut offset = 0;
+        let mut items = Vec::new();
+        while offset < wire.len() {
+            let (consumed, item) = decoder.push_one(&wire[offset..])?;
+            assert!(consumed > 0);
+            offset += consumed;
+            if let Some(item) = item {
+                items.push(item);
+            }
+        }
+        Ok(items)
+    }
+
     #[test]
     fn gemini_sse_bounds_preserves_splits_framing_and_event_order() {
         let wire = concat!(
@@ -171,13 +177,13 @@ mod tests {
             "data:{\"n\":2}\n\r\n",
         );
         let wave = wire.find('🌊').unwrap();
-        let mut decoder = Decoder::with_limits(128, 4);
+        let mut decoder = Decoder::with_limit(128);
 
-        assert!(decoder
-            .push(&wire.as_bytes()[..wave + 1])
-            .unwrap()
-            .is_empty());
-        let items = decoder.push(&wire.as_bytes()[wave + 1..]).unwrap();
+        assert_eq!(
+            decoder.push_one(&wire.as_bytes()[..wave + 1]).unwrap(),
+            (wave + 1, None)
+        );
+        let items = drain(&mut decoder, &wire.as_bytes()[wave + 1..]).unwrap();
 
         assert_eq!(
             items,
@@ -191,45 +197,46 @@ mod tests {
     #[test]
     fn gemini_sse_bounds_accepts_exact_event_and_rejects_plus_one() {
         let frame = b"data: {}";
-        let mut exact = Decoder::with_limits(frame.len(), 2);
+        let mut exact = Decoder::with_limit(frame.len());
         let mut exact_wire = frame.to_vec();
         exact_wire.extend_from_slice(b"\n\n");
         assert_eq!(
-            exact.push(&exact_wire).unwrap(),
-            vec![Item::Json(json!({}))]
+            exact.push_one(&exact_wire).unwrap(),
+            (exact_wire.len(), Some(Item::Json(json!({}))))
         );
 
-        let mut oversized = Decoder::with_limits(frame.len() - 1, 2);
+        let mut oversized = Decoder::with_limit(frame.len() - 1);
         assert!(oversized
-            .push(&exact_wire)
+            .push_one(&exact_wire)
             .unwrap_err()
             .contains("exceeded"));
         assert!(oversized
-            .push(b"data: {}\n\n")
+            .push_one(b"data: {}\n\n")
             .unwrap_err()
             .contains("disposed"));
     }
 
     #[test]
-    fn gemini_sse_bounds_rejects_event_amplification_and_disposes() {
-        let mut decoder = Decoder::with_limits(64, 2);
-        assert!(decoder
-            .push(b": one\n\n: two\r\n\r\n: three\r\n\n")
-            .unwrap_err()
-            .contains("event limit"));
-        assert!(decoder
-            .push(b"data: {}\n\n")
-            .unwrap_err()
-            .contains("disposed"));
+    fn gemini_sse_bounds_decodes_one_frame_per_step_without_feed_amplification() {
+        let wire = b"data: {\"n\":1}\n\ndata: {\"n\":2}\n\ndata: {\"n\":3}\n\n";
+        let mut decoder = Decoder::with_limit(64);
+        assert_eq!(
+            drain(&mut decoder, wire).unwrap(),
+            vec![
+                Item::Json(json!({"n": 1})),
+                Item::Json(json!({"n": 2})),
+                Item::Json(json!({"n": 3})),
+            ]
+        );
     }
 
     #[test]
     fn gemini_sse_bounds_rejects_invalid_utf8_and_json_then_disposes() {
         for bad in [b"data: \xff\n\n".as_slice(), b"data: nope\n\n".as_slice()] {
-            let mut decoder = Decoder::with_limits(64, 2);
-            assert!(decoder.push(bad).is_err());
+            let mut decoder = Decoder::with_limit(64);
+            assert!(decoder.push_one(bad).is_err());
             assert!(decoder
-                .push(b"data: {}\n\n")
+                .push_one(b"data: {}\n\n")
                 .unwrap_err()
                 .contains("disposed"));
         }
@@ -237,26 +244,53 @@ mod tests {
 
     #[test]
     fn gemini_sse_bounds_requires_clean_termination() {
-        let mut clean = Decoder::with_limits(64, 2);
-        assert!(clean.push(b" \r\n").unwrap().is_empty());
+        let mut clean = Decoder::with_limit(64);
+        assert_eq!(clean.push_one(b" \r\n").unwrap(), (3, None));
         clean.finish().unwrap();
 
-        let mut cut = Decoder::with_limits(64, 2);
-        assert!(cut.push(b"data: {\"n\":1}").unwrap().is_empty());
+        let mut cut = Decoder::with_limit(64);
+        let incomplete = b"data: {\"n\":1}";
+        assert_eq!(cut.push_one(incomplete).unwrap(), (incomplete.len(), None));
         assert!(cut.finish().unwrap_err().contains("unterminated"));
-        assert!(cut.push(b"\n\n").unwrap_err().contains("disposed"));
+        assert!(cut.push_one(b"\n\n").unwrap_err().contains("disposed"));
     }
 
     #[test]
     fn gemini_sse_bounds_treats_empty_data_as_noop_and_done_as_terminal_boundary() {
-        let mut decoder = Decoder::with_limits(64, 4);
+        let mut decoder = Decoder::with_limit(64);
         assert_eq!(
-            decoder.push(b"data:\n\ndata: [DONE]\n\n").unwrap(),
+            drain(&mut decoder, b"data:\n\ndata: [DONE]\n\n").unwrap(),
             vec![Item::Done]
         );
         assert!(decoder
-            .push(b"data: {\"late\":true}\n\n")
+            .push_one(b"data: {\"late\":true}\n\n")
             .unwrap_err()
             .contains("after [DONE]"));
+    }
+
+    #[test]
+    fn gemini_sse_valid_prefix_survives_a_later_malformed_frame_regardless_of_split() {
+        let valid = b"data: {\"n\":1}\n\n";
+        let invalid = b"data: nope\n\n";
+        let mut combined = Decoder::with_limit(64);
+        let (used, item) = combined
+            .push_one(&[valid.as_slice(), invalid.as_slice()].concat())
+            .unwrap();
+        assert_eq!(used, valid.len());
+        assert_eq!(item, Some(Item::Json(json!({"n": 1}))));
+        assert!(combined
+            .push_one(invalid)
+            .unwrap_err()
+            .contains("invalid JSON"));
+
+        let mut split = Decoder::with_limit(64);
+        assert_eq!(
+            split.push_one(valid).unwrap().1,
+            Some(Item::Json(json!({"n": 1})))
+        );
+        assert!(split
+            .push_one(invalid)
+            .unwrap_err()
+            .contains("invalid JSON"));
     }
 }

@@ -138,6 +138,68 @@ async fn gemini_identity_retry_never_retries_returned_transient_statuses() {
     }
 }
 
+#[tokio::test]
+async fn gemini_aliases_validate_signatures_against_the_resolved_upstream_model() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let response_body = json!({"candidates": [{
+        "content": {"role": "model", "parts": [{
+            "functionCall": {"name": "lookup", "args": {}}
+        }]},
+        "finishReason": "STOP"
+    }]});
+
+    let strict_upstream = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/v1beta/models/gemini-3.1-pro-preview:generateContent",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(response_body.clone()))
+        .expect(1)
+        .mount(&strict_upstream)
+        .await;
+    let mut strict_config = gemini_config(strict_upstream.uri());
+    strict_config.routes[0].upstream_model = Some("gemini-3.1-pro-preview".to_string());
+    let strict_gateway = start_gateway_with_config(strict_config).await;
+    let strict = reqwest::Client::new()
+        .post(format!("{}/v1/messages", strict_gateway.base_url))
+        .body(request(false))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(strict.status(), StatusCode::BAD_GATEWAY);
+
+    let legacy_upstream = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1beta/models/gemini-2.5-pro:generateContent"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
+        .expect(1)
+        .mount(&legacy_upstream)
+        .await;
+    let mut legacy_config = gemini_config(legacy_upstream.uri());
+    legacy_config.routes[0].model = "gemini-3-looking-alias".to_string();
+    let legacy_gateway = start_gateway_with_config(legacy_config).await;
+    let legacy = reqwest::Client::new()
+        .post(format!("{}/v1/messages", legacy_gateway.base_url))
+        .body(
+            json!({
+                "model": "gemini-3-looking-alias",
+                "max_tokens": 64,
+                "messages": [{"role": "user", "content": "fixture"}]
+            })
+            .to_string(),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(legacy.status(), StatusCode::OK);
+    assert_eq!(
+        legacy.json::<serde_json::Value>().await.unwrap()["model"],
+        "gemini-3-looking-alias"
+    );
+}
+
 fn tool_use_id_from_sse(body: &str) -> String {
     body.lines()
         .filter_map(|line| line.strip_prefix("data: "))
@@ -372,7 +434,7 @@ async fn gemini_no_post_header_replay_streaming_and_unary_tool_transcripts_agree
         return;
     }
 
-    let document = json!({
+    let content = json!({
         "candidates": [{
             "content": {"parts": [
                 {"text": "before tool"},
@@ -381,16 +443,27 @@ async fn gemini_no_post_header_replay_streaming_and_unary_tool_transcripts_agree
                     "thoughtSignature": "sig-parity"
                 }
             ]},
+        }]
+    });
+    let finish = json!({
+        "candidates": [{"finishReason": "STOP"}],
+        "usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 4}
+    });
+    let document = json!({
+        "candidates": [{
+            "content": content["candidates"][0]["content"].clone(),
             "finishReason": "STOP"
         }],
-        "usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 4}
+        "usageMetadata": finish["usageMetadata"].clone()
     });
 
     let unary = unary_gateway_response(serde_json::to_vec(&document).unwrap()).await;
     assert_eq!(unary.status(), StatusCode::OK);
     let unary: serde_json::Value = unary.json().await.unwrap();
 
-    let streaming = streaming_gateway_response(format!("data: {document}\n\n").as_bytes()).await;
+    let streaming =
+        streaming_gateway_response(format!("data: {content}\n\ndata: {finish}\n\n").as_bytes())
+            .await;
     let events: Vec<serde_json::Value> = streaming
         .lines()
         .filter_map(|line| line.strip_prefix("data: "))
@@ -429,17 +502,49 @@ async fn gemini_no_post_header_replay_streaming_and_unary_tool_transcripts_agree
                 .and_then(|value| value.as_str())
         })
         .unwrap();
-    let streamed_usage = events.iter().find_map(|event| event.get("usage")).unwrap();
+    let streamed_usage = events
+        .iter()
+        .find(|event| event["type"] == "message_delta")
+        .and_then(|event| event.get("usage"))
+        .unwrap();
 
     assert_eq!(unary["content"][0]["text"], streamed_text);
     assert_eq!(unary["content"][1]["id"], streamed_tool["id"]);
     assert_eq!(unary["content"][1]["name"], streamed_tool["name"]);
     assert_eq!(unary["content"][1]["input"], streamed_args);
     assert_eq!(unary["stop_reason"], streamed_finish);
-    assert_eq!(
-        unary["usage"]["output_tokens"],
-        streamed_usage["output_tokens"]
+    assert_eq!(&unary["usage"], streamed_usage);
+}
+
+#[tokio::test]
+async fn gemini_streaming_framing_emits_valid_prefix_before_later_frame_error() {
+    if !can_bind_loopback() {
+        return;
+    }
+
+    let body = concat!(
+        "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"visible\"}]}}]}\n\n",
+        "data: not-json\n\n"
     );
+    let response = streaming_gateway_response(body.as_bytes()).await;
+    let events: Vec<serde_json::Value> = response
+        .lines()
+        .filter_map(|line| line.strip_prefix("data: "))
+        .filter_map(|data| serde_json::from_str(data).ok())
+        .collect();
+
+    let visible = events
+        .iter()
+        .position(|event| event.pointer("/delta/text") == Some(&json!("visible")))
+        .unwrap();
+    let errors: Vec<_> = events
+        .iter()
+        .enumerate()
+        .filter(|(_, event)| event["type"] == "error")
+        .collect();
+    assert_eq!(errors.len(), 1);
+    assert!(visible < errors[0].0);
+    assert!(!events.iter().any(|event| event["type"] == "message_stop"));
 }
 
 fn request(stream: bool) -> String {
