@@ -114,7 +114,7 @@ Plans:
   3. Streaming and non-streaming clients receive equivalent text, reasoning, sequential tool history, authentic matching thought signatures, usage, terminal state, and embedded provider errors from the always-SSE upstream.
   4. Malformed wrappers, incomplete tools, or unsafe signature state fail closed, while a 401 permits at most one account-bound pre-commit refresh and replay without changing credential-file writeback behavior.
 
-**Plans**: 4/7 plans executed
+**Plans**: 5/7 plans executed
 
 **Wave 1**
 
@@ -134,7 +134,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 11-05-PLAN.md — One bounded same-account pre-commit 401 replay.
+- [x] 11-05-PLAN.md — One bounded same-account pre-commit 401 replay.
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -224,7 +224,7 @@ Plans:
 | 1–8. OpenCodex Port | v1 | 25/25 | Complete | 2026-09-06 |
 | 9. Provider Conformance Foundation | v2 | 4/4 | Complete    | 2026-09-06 |
 | 10. Gemini Semantic Hardening | v2 | 7/7 | Complete | 2026-09-07 |
-| 11. Antigravity Protocol and Credential Hardening | v2 | 4/7 | In Progress|  |
+| 11. Antigravity Protocol and Credential Hardening | v2 | 5/7 | In Progress|  |
 | 12. Cursor Evidence-Backed Hardening | v2 | 0/TBD | Not started | - |
 | 13. Generic OpenAI Chat Completions | v2 | 0/TBD | Not started | - |
 | 14. Command Code Product Separation | v2 | 0/TBD | Not started | - |
