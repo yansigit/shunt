@@ -36,14 +36,15 @@ phase performs no credential writeback, creation, migration, or refresh-write.
 Streaming responses use an incremental byte-oriented SSE decoder. It preserves
 event order across arbitrary transport and UTF-8 splits, accepts LF, CRLF,
 comments, unknown SSE fields, and supported multi-line `data:` fields, and
-decodes JSON only after an event is complete. The production limits are 8 MiB
-per SSE event and 256 completed events per decoder feed. Client-requested unary
+decodes JSON only after an event is complete. Each decoder step consumes at
+most one complete event, bounded to 8 MiB, so memory use and observable behavior
+do not depend on how the transport packets events. Client-requested unary
 responses and non-success HTTP bodies use a checked 32 MiB wire limit; semantic
 retention is independently bounded to 32 MiB, with bounded tool signatures,
 tool IDs, and content-block counts.
 
 Invalid UTF-8, malformed JSON, malformed supported fields, multiple candidates,
-oversized events or bodies, amplification beyond the event-count limit,
+oversized events or bodies,
 unterminated non-whitespace residuals, duplicate terminals, and semantic data
 after a terminal are protocol failures. Unknown JSON fields remain ignorable for
 forward compatibility, but an ambiguous supported shape is never guessed or
@@ -70,11 +71,12 @@ or a synthetic terminal.
 
 Candidate parts are validated atomically before any part is emitted. Text,
 reasoning, and function calls retain provider order. A function call requires a
-non-blank name and valid JSON arguments. Gemini 3 calls also require the
-authentic non-empty `thoughtSignature` attached to that exact part; shunt bounds
-and carries it in the opaque `call_gemini_v1_...` tool-use ID. It never invents,
-moves, or repairs a signature. Foreign, malformed, duplicate, orphaned, or
-ambiguous tool identities fail before dispatch.
+non-blank name and valid JSON arguments. In a Gemini 3 parallel-call batch, the
+first call requires the authentic non-empty `thoughtSignature`; later calls in
+that same batch may be unsigned. Each sequential batch is validated anew. Shunt
+bounds and carries authentic signatures in opaque `call_gemini_v1_...` tool-use
+IDs. It never invents, moves, or repairs a signature. Foreign, malformed,
+duplicate, orphaned, or ambiguous tool identities fail before dispatch.
 
 GEM-02's function-result direction is the faithful Anthropic round trip: a
 Gemini `functionCall` becomes a client-visible `tool_use`, and the client's
