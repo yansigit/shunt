@@ -12,6 +12,28 @@ const MAX_RETAINED_SEMANTIC_BYTES: usize = 32 * 1024 * 1024;
 const MAX_TOOL_SIGNATURE_BYTES: usize = 64 * 1024;
 const MAX_TOOL_USE_ID_BYTES: usize = 96 * 1024;
 const MAX_CONTENT_BLOCKS: usize = 4_096;
+/// Provider Part fields with content semantics. These must never fall through
+/// to the metadata no-op path: unsupported kinds are rejected explicitly, and
+/// more than one kind in a Part is ambiguous.
+const GEMINI_PART_SEMANTIC_KEYS: &[&str] = &[
+    "text",
+    "functionCall",
+    "functionResponse",
+    "inlineData",
+    "executableCode",
+    "codeExecutionResult",
+    "fileData",
+];
+const UNSUPPORTED_GEMINI_PART_KEYS: &[&str] = &[
+    "inlineData",
+    "executableCode",
+    "codeExecutionResult",
+    "fileData",
+];
+/// `citationMetadata` is the currently evidenced metadata-only Part field.
+/// Truly unknown fields also remain no-ops for forward compatibility, but any
+/// newly recognized semantic field must be added to the classifier above.
+const GEMINI_PART_METADATA_KEYS: &[&str] = &["citationMetadata"];
 
 /// Pack Gemini's opaque function-call signature into the Anthropic tool-use join
 /// key. Claude Code returns this id unchanged in assistant history and in the
@@ -399,6 +421,25 @@ impl GeminiSseMachine {
                 "Gemini part text must be a string",
             ));
         }
+        let semantic_keys: Vec<_> = GEMINI_PART_SEMANTIC_KEYS
+            .iter()
+            .copied()
+            .filter(|key| part.contains_key(*key))
+            .collect();
+        if semantic_keys.len() > 1 {
+            return Err(GeminiSemanticError::protocol(format!(
+                "Gemini part claims incompatible semantic kinds: {}",
+                semantic_keys.join(", ")
+            )));
+        }
+        if let Some(key) = UNSUPPORTED_GEMINI_PART_KEYS
+            .iter()
+            .find(|key| part.contains_key(**key))
+        {
+            return Err(GeminiSemanticError::protocol(format!(
+                "unsupported Gemini Part kind {key}"
+            )));
+        }
         if part.contains_key("functionResponse") {
             return Err(GeminiSemanticError::protocol(
                 "assistant-side Gemini functionResponse is unsupported",
@@ -406,9 +447,9 @@ impl GeminiSseMachine {
         }
         let has_text = part.contains_key("text");
         let has_call = part.contains_key("functionCall");
-        if has_text && has_call {
+        if part.contains_key("thought") && !has_text {
             return Err(GeminiSemanticError::protocol(
-                "Gemini part claims incompatible text and functionCall kinds",
+                "Gemini thought marker must accompany text",
             ));
         }
         if has_call {
@@ -505,6 +546,14 @@ impl GeminiSseMachine {
                 "Gemini thoughtSignature is not attached to a functionCall",
             ));
         }
+        if GEMINI_PART_METADATA_KEYS
+            .iter()
+            .any(|key| part.contains_key(*key))
+        {
+            return Ok((CheckedPart::Metadata, 0));
+        }
+        // Unknown fields that do not claim a known semantic kind are retained
+        // as forward-compatible metadata no-ops.
         Ok((CheckedPart::Metadata, 0))
     }
 
