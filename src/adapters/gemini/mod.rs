@@ -372,7 +372,12 @@ async fn forward(
     };
 
     let policy = provider.retry.policy();
-    let http_client = state.http_client.clone();
+    let http_client = if provider.auth == AuthMode::AntigravityOauth {
+        crate::auth::shared::antigravity_inference_client(&inference_base_url(base_url))
+            .map_err(|error| local_gemini_error(error.to_string()))?
+    } else {
+        state.http_client.clone()
+    };
     let payload_clone = payload.clone();
     let endpoint_clone = endpoint.clone();
     let is_google_oauth = is_code_assist;
