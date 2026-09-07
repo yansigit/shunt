@@ -2,11 +2,37 @@ use std::{
     convert::Infallible,
     io::ErrorKind,
     net::SocketAddr,
+    path::PathBuf,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
 };
+
+struct EnvVarGuard {
+    key: &'static str,
+    previous: Option<std::ffi::OsString>,
+}
+
+impl EnvVarGuard {
+    fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+        let previous = std::env::var_os(key);
+        std::env::set_var(key, value);
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        match &self.previous {
+            Some(previous) => std::env::set_var(self.key, previous),
+            None => std::env::remove_var(self.key),
+        }
+    }
+}
+
+static ANTIGRAVITY_ENV_LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> =
+    std::sync::OnceLock::new();
 
 use axum::{body::Body, extract::State, routing::post, Router};
 use futures_util::{stream, StreamExt};
@@ -90,6 +116,288 @@ async fn start_gateway_with_config(mut config: Config) -> Gateway {
     Gateway {
         base_url: format!("http://{addr}"),
         task,
+    }
+}
+
+fn antigravity_fixture_config(base_url: String) -> Config {
+    let mut config = Config::default();
+    let provider = config.providers.get_mut("antigravity").unwrap();
+    provider.base_url = base_url;
+    provider.auth = AuthMode::AntigravityOauth;
+    config.server.default_provider = "antigravity".to_string();
+    config.routes = vec![RouteConfig {
+        model: "claude-via-antigravity".to_string(),
+        provider: "antigravity".to_string(),
+        // A non-Gemini model keeps catalog discovery out of this transport
+        // fixture; the inference request itself is still native Antigravity.
+        upstream_model: Some("claude-sonnet-4-6".to_string()),
+        effort: None,
+        service_tier: None,
+    }];
+    config
+}
+
+#[tokio::test]
+async fn antigravity_native_sse_real_loopback_both_downstream_modes() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_guard = ANTIGRAVITY_ENV_LOCK
+        .get_or_init(|| tokio::sync::Mutex::const_new(()))
+        .lock()
+        .await;
+
+    let backend = MockServer::start().await;
+    let transcript = concat!(
+        "data: {\"response\":{\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"native\"}]}}]}}\n\n",
+        "data: {\"response\":{\"candidates\":[{\"finishReason\":\"STOP\"}]}}\n\n",
+        "data: [DONE]\n\n"
+    );
+    Mock::given(method("POST"))
+        .and(path("/v1internal:streamGenerateContent"))
+        .and(query_param("alt", "sse"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(transcript),
+        )
+        .expect(2)
+        .mount(&backend)
+        .await;
+
+    let dir = std::env::temp_dir().join(format!(
+        "shunt-antigravity-native-sse-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let credential_path: PathBuf = dir.join("antigravity-auth.json");
+    std::fs::write(
+        &credential_path,
+        serde_json::to_vec(&json!({
+            "access_token": "native-fixture-token",
+            "refresh_token": "native-fixture-refresh",
+            "expiry_date": 4_102_444_800_000u64,
+            "project_id": "native-fixture-project"
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let _auth_file = EnvVarGuard::set("SHUNT_ANTIGRAVITY_AUTH_FILE", &credential_path);
+
+    let mut config = antigravity_fixture_config(backend.uri());
+    config.server.bind = "127.0.0.1:0".to_string();
+    let listener = tokio::net::TcpListener::bind(config.server.bind_addr().unwrap())
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (app, _, _) = server::build_router(config).unwrap();
+    let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let client = reqwest::Client::new();
+    let unary = client
+        .post(format!("http://{addr}/v1/messages"))
+        .body(request(false).replace("claude-via-gemini", "claude-via-antigravity"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unary.status(), StatusCode::OK);
+    let unary_body: serde_json::Value = unary.json().await.unwrap();
+    assert_eq!(unary_body["content"][0]["text"], "native");
+
+    let streaming = client
+        .post(format!("http://{addr}/v1/messages"))
+        .body(request(true).replace("claude-via-gemini", "claude-via-antigravity"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(streaming.status(), StatusCode::OK);
+    let streaming_body = streaming.text().await.unwrap();
+    assert!(streaming_body.contains("native"), "{streaming_body}");
+    assert!(
+        streaming_body.contains("event: message_stop"),
+        "{streaming_body}"
+    );
+
+    let requests = backend.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 2);
+    for request in requests {
+        assert_eq!(request.url.path(), "/v1internal:streamGenerateContent");
+        assert_eq!(request.url.query(), Some("alt=sse"));
+        assert_eq!(
+            request
+                .headers
+                .get("authorization")
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer native-fixture-token")
+        );
+    }
+
+    task.abort();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+async fn run_antigravity_native_case(body: Vec<u8>, streaming: bool) -> (StatusCode, String) {
+    let backend = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1internal:streamGenerateContent"))
+        .and(query_param("alt", "sse"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_bytes(body),
+        )
+        .expect(1)
+        .mount(&backend)
+        .await;
+
+    let dir = std::env::temp_dir().join(format!(
+        "shunt-antigravity-native-case-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let credential_path = dir.join("antigravity-auth.json");
+    std::fs::write(
+        &credential_path,
+        br#"{"access_token":"native-case-token","refresh_token":"native-case-refresh","expiry_date":4102444800000,"project_id":"native-case-project"}"#,
+    )
+    .unwrap();
+    let _auth_file = EnvVarGuard::set("SHUNT_ANTIGRAVITY_AUTH_FILE", &credential_path);
+
+    let mut config = antigravity_fixture_config(backend.uri());
+    config.server.bind = "127.0.0.1:0".to_string();
+    let listener = tokio::net::TcpListener::bind(config.server.bind_addr().unwrap())
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (app, _, _) = server::build_router(config).unwrap();
+    let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let payload = request(streaming).replace("claude-via-gemini", "claude-via-antigravity");
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/v1/messages"))
+        .body(payload)
+        .send()
+        .await
+        .unwrap();
+    let status = response.status();
+    let text = response.text().await.unwrap();
+    task.abort();
+    let _ = std::fs::remove_dir_all(dir);
+    (status, text)
+}
+
+#[tokio::test]
+async fn antigravity_native_sse_strict_failures_are_closed_in_both_modes() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_guard = ANTIGRAVITY_ENV_LOCK
+        .get_or_init(|| tokio::sync::Mutex::const_new(()))
+        .lock()
+        .await;
+    let finish = br#"data: {"response":{"candidates":[{"finishReason":"STOP"}]}}
+
+"#;
+    let done = b"data: [DONE]\n\n";
+    let valid = br#"data: {"response":{"candidates":[{"content":{"parts":[{"text":"late"}]}}]}}
+
+"#;
+    let cases: Vec<(&str, Vec<u8>)> = vec![
+        ("malformed wrapper", b"data: {\"response\":[] }\n\n".to_vec()),
+        ("malformed json", b"data: not-json\n\n".to_vec()),
+        ("invalid utf8", vec![b'd', b'a', b't', b'a', b':', b' ', 0xff, b'\n', b'\n']),
+        (
+            "incomplete tools",
+            b"data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"functionCall\":{\"name\":\"lookup\",\"args\":{}}}]}}]}}\n\n".to_vec(),
+        ),
+        (
+            "provider error",
+            b"data: {\"response\":{\"error\":{\"code\":429,\"message\":\"quota\"}}}\n\n".to_vec(),
+        ),
+        ("premature eof", b"data: {\"response\":{\"candidates\":[]}}".to_vec()),
+        ("duplicate terminal", [finish.as_slice(), done, done].concat()),
+        ("post done frame", [finish.as_slice(), done, valid].concat()),
+    ];
+
+    for (name, body) in cases {
+        for streaming in [false, true] {
+            let (status, response) = run_antigravity_native_case(body.clone(), streaming).await;
+            if streaming {
+                assert_eq!(status, StatusCode::OK, "{name} streaming status");
+                assert_eq!(
+                    response.matches("event: error").count(),
+                    1,
+                    "{name}: {response}"
+                );
+                assert!(
+                    !response.contains("event: message_stop"),
+                    "{name}: {response}"
+                );
+            } else {
+                let expected = if name == "provider error" {
+                    StatusCode::TOO_MANY_REQUESTS
+                } else {
+                    StatusCode::BAD_GATEWAY
+                };
+                assert_eq!(status, expected, "{name} unary status: {response}");
+            }
+        }
+    }
+
+    let valid_split = b"data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"x\"}]}}]}}\r\n\r\ndata: {\"response\":{\"candidates\":[{\"finishReason\":\"STOP\"}]}}\n\ndata: [DONE]\n\n".to_vec();
+    for streaming in [false, true] {
+        let (status, response) = run_antigravity_native_case(valid_split.clone(), streaming).await;
+        assert_eq!(status, StatusCode::OK, "split/coalesced status: {response}");
+        if streaming {
+            assert!(response.contains("event: message_stop"), "{response}");
+        } else {
+            assert!(
+                response.contains("\"stop_reason\":\"end_turn\""),
+                "{response}"
+            );
+        }
+    }
+}
+
+fn native_sse_padded_frame(frame_bytes: usize) -> Vec<u8> {
+    let prefix =
+        b"data: {\"response\":{\"candidates\":[{\"finishReason\":\"STOP\"}]},\"padding\":\"";
+    let suffix = b"\"}";
+    assert!(frame_bytes > prefix.len() + suffix.len());
+    let mut frame = Vec::with_capacity(frame_bytes + 2);
+    frame.extend_from_slice(prefix);
+    frame.resize(frame_bytes - suffix.len(), b'x');
+    frame.extend_from_slice(suffix);
+    frame.extend_from_slice(b"\n\n");
+    frame
+}
+
+#[tokio::test]
+async fn antigravity_native_sse_decoder_accepts_cap_and_rejects_cap_plus_one() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_guard = ANTIGRAVITY_ENV_LOCK
+        .get_or_init(|| tokio::sync::Mutex::const_new(()))
+        .lock()
+        .await;
+    const CAP: usize = 8 * 1024 * 1024;
+    for streaming in [false, true] {
+        let (status, body) =
+            run_antigravity_native_case(native_sse_padded_frame(CAP), streaming).await;
+        assert_eq!(status, StatusCode::OK, "exact cap: {body}");
+
+        let (status, body) =
+            run_antigravity_native_case(native_sse_padded_frame(CAP + 1), streaming).await;
+        if streaming {
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(body.matches("event: error").count(), 1, "{body}");
+        } else {
+            assert_eq!(status, StatusCode::BAD_GATEWAY, "cap+1: {body}");
+        }
     }
 }
 
