@@ -581,6 +581,34 @@ async fn streaming_gateway_response(upstream_body: &[u8]) -> String {
     response.text().await.unwrap()
 }
 
+async fn split_streaming_gateway_response(chunks: Vec<bytes::Bytes>) -> String {
+    async fn chunked_stream(State(chunks): State<Arc<Vec<bytes::Bytes>>>) -> Body {
+        let chunks = chunks.as_ref().clone();
+        Body::from_stream(stream::iter(chunks.into_iter().map(Ok::<_, Infallible>)))
+    }
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let app = Router::new()
+        .route(
+            "/v1beta/models/gemini-2.5-pro:streamGenerateContent",
+            post(chunked_stream),
+        )
+        .with_state(Arc::new(chunks));
+    let upstream = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let gateway = start_gateway(format!("http://{addr}")).await;
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .body(request(true))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.unwrap();
+    upstream.abort();
+    body
+}
+
 async fn unary_gateway_response(upstream_body: Vec<u8>) -> reqwest::Response {
     unary_gateway_response_with_status(200, upstream_body).await
 }
@@ -629,6 +657,32 @@ async fn gemini_streaming_framing_rejects_malformed_json_once() {
     let body = streaming_gateway_response(b"data: not-json\n\n").await;
     assert_eq!(body.matches("event: error").count(), 1, "{body}");
     assert!(!body.contains("event: message_stop"), "{body}");
+}
+
+#[tokio::test]
+async fn gemini_streaming_framing_rejects_trailing_data_and_duplicate_done_before_success() {
+    if !can_bind_loopback() {
+        return;
+    }
+    const FINISH: &[u8] = b"data: {\"candidates\":[{\"finishReason\":\"STOP\"}]}\n\n";
+    const DONE: &[u8] = b"data: [DONE]\n\n";
+    const LATE: &[u8] = b"data: {\"candidates\":[]}\n\n";
+
+    for suffix in [LATE, DONE] {
+        let combined = bytes::Bytes::from([FINISH, DONE, suffix].concat());
+        let split = vec![
+            bytes::Bytes::from_static(FINISH),
+            bytes::Bytes::from_static(DONE),
+            bytes::Bytes::copy_from_slice(suffix),
+        ];
+        for body in [
+            split_streaming_gateway_response(vec![combined]).await,
+            split_streaming_gateway_response(split).await,
+        ] {
+            assert_eq!(body.matches("event: error").count(), 1, "{body}");
+            assert!(!body.contains("event: message_stop"), "{body}");
+        }
+    }
 }
 
 #[tokio::test]

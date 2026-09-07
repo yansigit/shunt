@@ -379,8 +379,22 @@ async fn forward(
         let decoder = GeminiSseDecoder::default();
 
         let sse_stream = futures_util::stream::unfold(
-            (byte_stream, decoder, machine, false, None::<Bytes>),
-            |(mut bytes, mut decoder, mut machine, finished, mut pending)| async move {
+            (
+                byte_stream,
+                decoder,
+                machine,
+                false,
+                None::<Bytes>,
+                None::<Bytes>,
+            ),
+            |(
+                mut bytes,
+                mut decoder,
+                mut machine,
+                finished,
+                mut pending,
+                mut deferred_terminal,
+            )| async move {
                 if finished {
                     return None;
                 }
@@ -393,7 +407,7 @@ async fn forward(
                                 append_protocol_error(error, &mut output);
                                 return Some((
                                     Ok::<_, std::convert::Infallible>(Bytes::from(output)),
-                                    (bytes, decoder, machine, true, None),
+                                    (bytes, decoder, machine, true, None, None),
                                 ));
                             }
                         };
@@ -404,10 +418,12 @@ async fn forward(
                             continue;
                         };
 
+                        let is_done = item == GeminiSseItem::Done;
                         let result = match item {
                             GeminiSseItem::Json(value) => machine.process_chunk_checked(&value),
                             GeminiSseItem::Done => machine.transport_close_checked(),
                         };
+                        let result_succeeded = result.is_ok();
                         let mut output = Vec::new();
                         let terminal = match result {
                             Ok(events) => {
@@ -422,10 +438,24 @@ async fn forward(
                                 true
                             }
                         };
+                        if is_done && !terminal {
+                            unreachable!("[DONE] completion must be terminal");
+                        }
+                        if is_done && terminal && result_succeeded {
+                            deferred_terminal = Some(Bytes::from(output));
+                            continue;
+                        }
                         if !output.is_empty() {
                             return Some((
                                 Ok(Bytes::from(output)),
-                                (bytes, decoder, machine, terminal, pending),
+                                (
+                                    bytes,
+                                    decoder,
+                                    machine,
+                                    terminal,
+                                    pending,
+                                    deferred_terminal,
+                                ),
                             ));
                         }
                         continue;
@@ -443,26 +473,30 @@ async fn forward(
                             );
                             return Some((
                                 Ok(Bytes::from(output)),
-                                (bytes, decoder, machine, true, None),
+                                (bytes, decoder, machine, true, None, None),
                             ));
                         }
                         None => {
-                            let result = decoder
-                                .finish()
-                                .map_err(|error| error.to_string())
-                                .and_then(|()| {
-                                    machine
-                                        .transport_close_checked()
-                                        .map_err(|error| error.to_string())
-                                });
                             let mut output = Vec::new();
-                            match result {
-                                Ok(events) => append_sse_events(events, &mut output),
+                            match decoder.finish() {
                                 Err(error) => append_protocol_error(error, &mut output),
+                                Ok(()) => {
+                                    if let Some(terminal) = deferred_terminal {
+                                        output.extend_from_slice(&terminal);
+                                    } else {
+                                        match machine.transport_close_checked() {
+                                            Ok(events) => append_sse_events(events, &mut output),
+                                            Err(error) => append_protocol_error(
+                                                error.to_string(),
+                                                &mut output,
+                                            ),
+                                        }
+                                    }
+                                }
                             }
                             return Some((
                                 Ok(Bytes::from(output)),
-                                (bytes, decoder, machine, true, None),
+                                (bytes, decoder, machine, true, None, None),
                             ));
                         }
                     }
