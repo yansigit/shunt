@@ -50,6 +50,8 @@ use crate::adapters::cursor::connect::{
 };
 use crate::adapters::cursor::response::CursorStreamEvent;
 
+use super::kv::RequestBlobStore;
+
 /// Default agent host. Cursor serves the CLI/agent `AgentService/Run` path here,
 /// not on the old `api2.cursor.sh` (issue #170).
 /// Visible within the adapter so its destination-pin regression can assert
@@ -69,6 +71,11 @@ const FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(60);
 /// expects a tool exec-result (which this stateless bridge never sends), so
 /// finish the turn once output goes quiet.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(4);
+/// Upper bound on how long the read loop will wait for the paced request
+/// sender to accept one KV reply frame. The channel is bounded (capacity 8),
+/// so a stalled request body must fail the turn instead of parking the read
+/// loop indefinitely.
+const KV_REPLY_SEND_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Resolve the agent base URL once, process-wide. Falls back to the default when
 /// the override is empty or points off a Cursor host (never leak the
@@ -172,6 +179,20 @@ impl CursorAgentClient {
         token: &str,
         frames: Vec<Bytes>,
     ) -> Result<CursorAgentTurn, CursorError> {
+        self.open_turn_prepared(token, frames, RequestBlobStore::new())
+            .await
+    }
+
+    /// Prepared-history variant of [`Self::open_turn`]: seeds the turn's
+    /// request-local blob store with the hydrated structured history blobs so
+    /// server KV gets for state references are answered in-request. The public
+    /// wrapper above stays byte-identical for tests and benchmarks.
+    pub(super) async fn open_turn_prepared(
+        &self,
+        token: &str,
+        frames: Vec<Bytes>,
+        blob_store: RequestBlobStore,
+    ) -> Result<CursorAgentTurn, CursorError> {
         let request_id = uuid::Uuid::new_v4().to_string();
 
         // The request body is fed by a paced sender task so the server sees the
@@ -180,6 +201,13 @@ impl CursorAgentClient {
         // the sender (on stop or completion) ends the body and half-closes.
         let (tx, rx) = mpsc::channel::<Result<Bytes, std::io::Error>>(8);
         let (stop_tx, mut stop_rx) = oneshot::channel::<()>();
+        // Clone the body sender before the paced task owns it: server KV
+        // requests (kv_server_message) are answered on this same request
+        // stream while the response is read. The blob store created in
+        // into_event_stream owns all blob bytes for this turn only and is
+        // dropped on completion, error, or cancellation: no disk writeback,
+        // no cross-request cache, no credential changes.
+        let kv_tx = tx.clone();
         let sender = tokio::spawn(async move {
             for (idx, frame) in frames.into_iter().enumerate() {
                 if tx.send(Ok(frame)).await.is_err() {
@@ -210,6 +238,15 @@ impl CursorAgentClient {
             }
         });
 
+        // The guard owns the stop signal and the sender task handle and is
+        // constructed BEFORE the header await: if `send()` errors before any
+        // response headers arrive, dropping the guard still aborts the paced
+        // sender and ends the half-open request body; nothing can linger.
+        let guard = TurnGuard {
+            _stop: Some(stop_tx),
+            _sender: Some(sender),
+        };
+
         let body =
             reqwest::Body::wrap_stream(futures_util::stream::unfold(rx, |mut rx| async move {
                 rx.recv().await.map(|item| (item, rx))
@@ -236,10 +273,9 @@ impl CursorAgentClient {
 
         Ok(CursorAgentTurn {
             response,
-            guard: TurnGuard {
-                _stop: stop_tx,
-                _sender: sender,
-            },
+            guard,
+            kv_tx: Some(kv_tx),
+            kv_store: blob_store,
         })
     }
 }
@@ -247,14 +283,37 @@ impl CursorAgentClient {
 /// Keeps the paced request stream alive for the lifetime of a turn. Dropping it
 /// signals the sender task to stop and half-close the request body.
 struct TurnGuard {
-    _stop: oneshot::Sender<()>,
-    _sender: JoinHandle<()>,
+    // Option-shelled so Drop can move each halve out of the held guard.
+    _stop: Option<oneshot::Sender<()>>,
+    _sender: Option<JoinHandle<()>>,
+}
+
+#[cfg(test)]
+#[path = "history_lifetime_tests.rs"]
+mod history_lifetime_tests;
+
+impl Drop for TurnGuard {
+    fn drop(&mut self) {
+        // Signal the paced loop first (it may be mid-await on a pace sleep or
+        // the heartbeat ticker), then abort the task in case it is parked on
+        // channel backpressure and never observes the stop signal.
+        if let Some(_stop) = self._stop.take() {
+            let _ = _stop.send(());
+        }
+        if let Some(_sender) = self._sender.take() {
+            _sender.abort();
+        }
+    }
 }
 
 /// An open agent turn: response headers received, request stream still open.
 pub struct CursorAgentTurn {
     response: reqwest::Response,
     guard: TurnGuard,
+    kv_tx: Option<mpsc::Sender<Result<Bytes, std::io::Error>>>,
+    // Request-local blob store for this turn. Empty for plain turns; seeded
+    // with hydrated history blobs when the turn carries structured history.
+    kv_store: RequestBlobStore,
 }
 
 #[cfg(test)]
@@ -265,9 +324,11 @@ impl CursorAgentTurn {
         Self {
             response,
             guard: TurnGuard {
-                _stop: stop_tx,
-                _sender: sender,
+                _stop: Some(stop_tx),
+                _sender: Some(sender),
             },
+            kv_tx: None,
+            kv_store: RequestBlobStore::new(),
         }
     }
 }
@@ -292,6 +353,8 @@ impl CursorAgentTurn {
             decoder: ConnectFrameDecoder::new(),
             pending: VecDeque::new(),
             _guard: self.guard,
+            kv_store: self.kv_store,
+            kv_tx: self.kv_tx,
             got_text: false,
             finished: false,
         };
@@ -374,6 +437,12 @@ struct ReadState {
     decoder: ConnectFrameDecoder,
     pending: VecDeque<Result<CursorStreamEvent, CursorError>>,
     _guard: TurnGuard,
+    // Request-local bounded blob store (12-03). Owned by this turn alone;
+    // dropped with it on completion, error, or cancellation. Replies flow
+    // on kv_tx, the same request body the paced sender feeds; None in
+    // hermetic unit turns that have no live request stream.
+    kv_store: RequestBlobStore,
+    kv_tx: Option<mpsc::Sender<Result<Bytes, std::io::Error>>>,
     got_text: bool,
     finished: bool,
 }
@@ -418,6 +487,52 @@ impl ReadState {
             } else {
                 Cow::Borrowed(&frame.payload[..])
             };
+            // 12-03 bounded KV/blob exchange (OpenCodex rev 055c3ecf0de6c35f59195fc434d6b08525182b7f:
+            // AgentServerMessage.kv_server_message is field 4, answered with
+            // AgentClientMessage.kv_client_message field 3). A KV frame
+            // carries no assistant text: answer it on the live request
+            // stream and continue reading. Malformed KV fails the turn
+            // explicitly; it is never re-rendered as a fresh conversation.
+            match super::kv::handle_kv_payload(&payload, &mut self.kv_store) {
+                Ok(Some(reply)) => {
+                    let Some(tx) = self.kv_tx.as_ref() else {
+                        self.finished = true;
+                        self.pending.push_back(Err(CursorError::internal(
+                            "cursor: KV request arrived but this turn has no live request \
+                             stream to answer on",
+                        )));
+                        return;
+                    };
+                    // Bounded wait on the reply send: the request channel is a
+                    // bounded FIFO behind paced marker frames, so a stalled
+                    // body must fail the turn rather than hang the read loop.
+                    match tokio::time::timeout(KV_REPLY_SEND_TIMEOUT, tx.send(Ok(reply))).await {
+                        Ok(Ok(())) => {}
+                        Ok(Err(_)) => {
+                            self.finished = true;
+                            self.pending.push_back(Err(CursorError::internal(
+                                "cursor: KV reply channel closed",
+                            )));
+                            return;
+                        }
+                        Err(_) => {
+                            self.finished = true;
+                            self.pending.push_back(Err(CursorError::internal(
+                                "cursor: KV reply send timed out waiting on the request stream",
+                            )));
+                            return;
+                        }
+                    }
+                    continue;
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    self.finished = true;
+                    self.pending
+                        .push_back(Err(CursorError::internal(error.to_string())));
+                    return;
+                }
+            }
             // A native MCP tool call ends the assistant turn: the model now waits
             // for an exec-result on the stream. The stateless bridge surfaces the
             // call as a tool_use pause and re-runs with the result in history, so
@@ -485,7 +600,7 @@ fn encode_varint(mut value: u64, out: &mut Vec<u8>) {
 }
 
 /// Encode a length-delimited (wire type 2) protobuf field.
-fn field_ld(field: u64, data: &[u8]) -> Vec<u8> {
+pub(super) fn field_ld(field: u64, data: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(data.len() + 4);
     encode_varint((field << 3) | 2, &mut out);
     encode_varint(data.len() as u64, &mut out);
@@ -494,14 +609,14 @@ fn field_ld(field: u64, data: &[u8]) -> Vec<u8> {
 }
 
 /// Encode a varint (wire type 0) protobuf field.
-fn field_varint(field: u64, value: u64) -> Vec<u8> {
+pub(super) fn field_varint(field: u64, value: u64) -> Vec<u8> {
     let mut out = Vec::new();
     encode_varint(field << 3, &mut out);
     encode_varint(value, &mut out);
     out
 }
 
-fn field_str(field: u64, s: &str) -> Vec<u8> {
+pub(super) fn field_str(field: u64, s: &str) -> Vec<u8> {
     field_ld(field, s.as_bytes())
 }
 
@@ -517,7 +632,7 @@ fn field_double(field: u64, value: f64) -> Vec<u8> {
 /// for `McpToolDefinition.input_schema` (bytes, not JSON text). Value oneof
 /// tags: null=1 (varint), number=2 (double), string=3, bool=4 (varint),
 /// struct=5, list=6.
-fn encode_protobuf_value(value: &serde_json::Value) -> Vec<u8> {
+pub(super) fn encode_protobuf_value(value: &serde_json::Value) -> Vec<u8> {
     match value {
         serde_json::Value::Null => field_varint(1, 0),
         serde_json::Value::Bool(b) => field_varint(4, u64::from(*b)),
@@ -615,6 +730,26 @@ fn encode_selected_context(images: &[AgentImage]) -> Vec<u8> {
 /// Exposed for the benchmark target only, not a stability commitment.
 #[doc(hidden)]
 pub fn build_run_frames(params: &AgentRunParams) -> Vec<Bytes> {
+    build_run_frames_inner(params, None)
+}
+
+/// Prepared-history framing: the empty conversation_state placeholder is
+/// replaced with the hydrated `ConversationStateStructure` bytes and the
+/// per-turn random conversation identity is replaced with the stable session
+/// digest, so the server resumes the reconstructed conversation instead of
+/// opening a fresh one.
+pub(super) fn build_run_frames_prepared(
+    params: &AgentRunParams,
+    conversation_id: &str,
+    state: &[u8],
+) -> Vec<Bytes> {
+    build_run_frames_inner(params, Some((conversation_id, state)))
+}
+
+fn build_run_frames_inner(
+    params: &AgentRunParams,
+    conversation: Option<(&str, &[u8])>,
+) -> Vec<Bytes> {
     let AgentRunParams {
         prompt,
         model_id: model,
@@ -624,7 +759,14 @@ pub fn build_run_frames(params: &AgentRunParams) -> Vec<Bytes> {
         images,
         tools,
     } = params;
-    let conv = uuid::Uuid::new_v4().to_string();
+    let conv = match conversation {
+        Some((conversation_id, _)) => conversation_id.to_owned(),
+        None => uuid::Uuid::new_v4().to_string(),
+    };
+    let state_bytes: &[u8] = match conversation {
+        Some((_, state)) => state,
+        None => &[],
+    };
     let msg = uuid::Uuid::new_v4().to_string();
 
     // frame 0: field 1 = RunRequest.
@@ -640,7 +782,15 @@ pub fn build_run_frames(params: &AgentRunParams) -> Vec<Bytes> {
     inner.extend(field_varint(4, *mode));
     let messages = field_ld(2, &field_ld(1, &field_ld(1, &inner)));
 
-    let mut req = field_str(1, "");
+    // RunRequest.conversation_state = 1. Text-only turns carry the empty
+    // placeholder; structured-history turns carry the hydrated state bytes
+    // (ConversationStateStructure with turns at field 8, as built by
+    // `history::prepare`).
+    let mut req = if conversation.is_some() {
+        field_ld(1, state_bytes)
+    } else {
+        field_str(1, "")
+    };
     req.extend(messages);
     // f4 = mcp_tools (McpTools wrapper). Empty tools encode to the same bytes as
     // the text-only placeholder.

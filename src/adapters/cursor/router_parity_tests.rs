@@ -39,6 +39,15 @@ impl Drop for TaskGuard {
 }
 
 async fn router_turn(terminal: bool, stream: bool) -> (StatusCode, String) {
+    router_case(terminal, stream, None).await
+}
+
+async fn router_case(
+    terminal: bool,
+    stream: bool,
+    history: Option<serde_json::Value>,
+) -> (StatusCode, String) {
+    let hydrate = history.is_some();
     let host = "agentn.global.api5.cursor.sh";
     assert_eq!(super::agent_base_url(), super::AGENT_BASE_URL);
     let cert = rcgen::generate_simple_self_signed(vec![host.to_string()]).unwrap();
@@ -72,6 +81,8 @@ async fn router_turn(terminal: bool, stream: bool) -> (StatusCode, String) {
     std::fs::write(&auth_path, &auth_bytes).unwrap();
     let _auth = EnvRestore::set("SHUNT_CURSOR_AUTH_FILE", &auth_path);
     let expected_auth = format!("Bearer {token}");
+    let requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let observed = requests.clone();
     let upstream = TaskGuard(tokio::spawn(async move {
         let (socket, _) = listener.accept().await.unwrap();
         let socket = TlsAcceptor::from(Arc::new(tls))
@@ -79,8 +90,10 @@ async fn router_turn(terminal: bool, stream: bool) -> (StatusCode, String) {
             .await
             .unwrap();
         let mut connection = h2::server::handshake(socket).await.unwrap();
+        let mut workers = tokio::task::JoinSet::new();
         while let Some(request) = connection.accept().await {
             let (request, mut respond) = request.unwrap();
+            observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             assert_eq!(request.method(), "POST");
             assert_eq!(request.uri().path(), super::AGENT_PATH);
             assert_eq!(request.headers()["authorization"], expected_auth);
@@ -101,7 +114,14 @@ async fn router_turn(terminal: bool, stream: bool) -> (StatusCode, String) {
                 .body(())
                 .unwrap();
             let mut send = respond.send_response(response, false).unwrap();
-            send.send_data(Bytes::from(body), true).unwrap();
+            if hydrate {
+                workers.spawn(async move {
+                    hydrate_history(request.into_body(), &mut send).await;
+                    send.send_data(Bytes::from(body), true).unwrap();
+                });
+            } else {
+                send.send_data(Bytes::from(body), true).unwrap();
+            }
         }
     }));
     let mut config = Config::default();
@@ -112,18 +132,23 @@ async fn router_turn(terminal: bool, stream: bool) -> (StatusCode, String) {
     let serving = TaskGuard(tokio::spawn(async move {
         axum::serve(gateway, router).await.unwrap();
     }));
+    let mut input =
+        history.unwrap_or_else(|| json!({"messages":[{"role":"user","content":"fixture"}]}));
+    input["model"] = json!("composer-2.5");
+    input["stream"] = json!(stream);
+    input["max_tokens"] = json!(16);
     let response = reqwest::Client::new()
         .post(format!("http://{gateway_addr}/v1/messages"))
-        .json(
-            &json!({"model":"composer-2.5","max_tokens":16,"stream":stream,
-            "messages":[{"role":"user","content":"fixture"}]}),
-        )
+        .json(&input)
         .timeout(Duration::from_secs(12))
         .send()
         .await
         .unwrap();
     let status = response.status();
     let body = response.text().await.unwrap();
+    if status == StatusCode::BAD_REQUEST {
+        assert_eq!(requests.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
     assert_eq!(std::fs::read(&auth_path).unwrap(), auth_bytes);
     drop(serving);
     drop(upstream);
@@ -164,6 +189,162 @@ async fn cursor_terminal_tracer_full_router_eof_and_terminal() {
                 serde_json::from_str::<serde_json::Value>(&body).unwrap()["stop_reason"],
                 "end_turn"
             );
+        }
+    }
+}
+
+fn wire_fields(bytes: &[u8], number: u32) -> Vec<&[u8]> {
+    super::super::wire::fields(bytes)
+        .map(Result::unwrap)
+        .filter(|f| f.number == number)
+        .map(|f| f.bytes)
+        .collect()
+}
+fn wire_one(bytes: &[u8], number: u32) -> &[u8] {
+    let found = wire_fields(bytes, number);
+    assert_eq!(found.len(), 1, "field {number}");
+    found[0]
+}
+
+async fn next_payload(
+    body: &mut h2::RecvStream,
+    decoder: &mut super::super::connect::ConnectFrameDecoder,
+    pending: &mut std::collections::VecDeque<Bytes>,
+) -> Bytes {
+    loop {
+        if let Some(frame) = pending.pop_front() {
+            return frame;
+        }
+        let chunk = tokio::time::timeout(Duration::from_secs(6), body.data())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        body.flow_control().release_capacity(chunk.len()).unwrap();
+        for frame in decoder.push(&chunk).unwrap() {
+            pending.push_back(frame.payload);
+        }
+    }
+}
+
+async fn fetch_blob(
+    id: &[u8],
+    serial: &mut u64,
+    body: &mut h2::RecvStream,
+    send: &mut h2::SendStream<Bytes>,
+    decoder: &mut super::super::connect::ConnectFrameDecoder,
+    pending: &mut std::collections::VecDeque<Bytes>,
+) -> Vec<u8> {
+    *serial += 1;
+    let mut get = super::field_varint(1, *serial);
+    get.extend(super::field_ld(2, &super::field_ld(1, id)));
+    send.send_data(encode_connect_frame(super::field_ld(4, &get), 0), false)
+        .unwrap();
+    loop {
+        let payload = next_payload(body, decoder, pending).await;
+        let replies = wire_fields(&payload, 3);
+        if replies.is_empty() {
+            continue;
+        } // paced context/heartbeat frames
+        let reply = replies[0];
+        let correlation = super::super::wire::fields(reply)
+            .map(Result::unwrap)
+            .find(|f| f.number == 1)
+            .unwrap()
+            .varint;
+        assert_eq!(correlation, *serial);
+        let data = wire_one(wire_one(reply, 2), 1).to_vec();
+        use sha2::Digest;
+        assert_eq!(sha2::Sha256::digest(&data).as_slice(), id);
+        return data;
+    }
+}
+
+async fn hydrate_history(mut body: h2::RecvStream, send: &mut h2::SendStream<Bytes>) {
+    let mut decoder = super::super::connect::ConnectFrameDecoder::new();
+    let mut pending = std::collections::VecDeque::new();
+    let first = next_payload(&mut body, &mut decoder, &mut pending).await;
+    let run = wire_one(&first, 1);
+    let state = wire_one(run, 1);
+    assert_eq!(wire_one(run, 5), wire_one(run, 16));
+    uuid::Uuid::parse_str(std::str::from_utf8(wire_one(run, 5)).unwrap()).unwrap();
+    let mut serial = 0;
+    for root in wire_fields(state, 1) {
+        let data = fetch_blob(
+            root,
+            &mut serial,
+            &mut body,
+            send,
+            &mut decoder,
+            &mut pending,
+        )
+        .await;
+        let _: serde_json::Value = serde_json::from_slice(&data).unwrap();
+    }
+    let mut ids = Vec::new();
+    for id in wire_fields(state, 8) {
+        let blob = fetch_blob(id, &mut serial, &mut body, send, &mut decoder, &mut pending).await;
+        let turn = wire_one(&blob, 1);
+        let user = fetch_blob(
+            wire_one(turn, 1),
+            &mut serial,
+            &mut body,
+            send,
+            &mut decoder,
+            &mut pending,
+        )
+        .await;
+        assert!(!wire_one(&user, 1).is_empty());
+        for id in wire_fields(turn, 2) {
+            let step =
+                fetch_blob(id, &mut serial, &mut body, send, &mut decoder, &mut pending).await;
+            let calls = wire_fields(&step, 2);
+            if calls.is_empty() {
+                continue;
+            }
+            let mcp = wire_one(calls[0], 15);
+            let args = wire_one(mcp, 1);
+            ids.push(String::from_utf8(wire_one(args, 3).to_vec()).unwrap());
+            let content = wire_one(wire_one(wire_one(wire_one(wire_one(mcp, 2), 1), 1), 1), 1);
+            assert_eq!(content, b"file contents");
+        }
+    }
+    assert_eq!(ids, ["authentic-17"]);
+}
+
+#[tokio::test]
+async fn cursor_history_identity_full_router_bidirectional_hydration() {
+    let _lock = crate::config::CONFIG_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    for stream in [false, true] {
+        let history = json!({"metadata":{"session_id":"router-session"},"messages":[
+            {"role":"user","content":"Read the file"},
+            {"role":"assistant","content":[{"type":"tool_use","id":"authentic-17","name":"Read","input":{"path":"a.txt"}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"authentic-17","content":"file contents"}]}
+        ]});
+        let (status, body) = router_case(true, stream, Some(history)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert!(body.contains("OK"), "{body}");
+        assert!(!body.contains("event: error"), "{body}");
+    }
+}
+
+#[tokio::test]
+async fn cursor_continuation_guard_full_router_zero_dispatch() {
+    let _lock = crate::config::CONFIG_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    for stream in [false, true] {
+        for history in [
+            json!({"checkpoint":"opaque","messages":[{"role":"user","content":"continue"}]}),
+            json!({"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"unknown","content":"x"}]}]}),
+        ] {
+            let (status, body) = router_case(true, stream, Some(history)).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+            let envelope: serde_json::Value = serde_json::from_str(&body).unwrap();
+            assert_eq!(envelope["type"], "error");
+            assert_eq!(envelope["error"]["type"], "invalid_request_error");
         }
     }
 }

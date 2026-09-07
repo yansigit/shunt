@@ -113,6 +113,10 @@ Detection does not depend on what the request advertised: shunt recognizes the b
 the response frame alone, so a request that carries no `tools` can raise the same error whenever
 Composer reaches for a built-in. Retrying is the mitigation in both cases.
 
+Structured tool history is currently supported for the exact `composer-2.5` wire model (including aliases resolving to it). Supply a stable `metadata.session_id`, or a JSON-string `metadata.user_id` containing `session_id`, and retain the user context plus paired `tool_use` / `tool_result` blocks with their original IDs. Ordinary, compacted, recovered, and multi-round transcripts use the same reconstruction path; summary wording is never used to guess identity. Opaque checkpoints, missing/duplicate/unpaired IDs, unsupported models, and image or mixed text/result history return `400` before credentials or network access.
+
+History blobs live only in the active request: at most 192 entries, 512 KiB per entry, and 8 MiB total. Exceeding these bounds is an explicit error, not silent truncation. No disk persistence, cross-request cache, or credential writeback is added. Bidirectional hydration is covered by hermetic HTTP/2 tests, not a claim of live model availability.
+
 ## Verify
 
 An upstream EOF without an authoritative terminal is an error, not a successful

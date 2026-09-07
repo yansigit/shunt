@@ -1,9 +1,12 @@
 pub mod agent;
 pub mod connect;
+pub(crate) mod history;
+pub(crate) mod kv;
 pub mod model;
 pub(crate) mod offload;
 pub mod request;
 pub mod sse;
+mod wire;
 // Retained pending #170 follow-up: the old `api2.cursor.sh` proto/transport and
 // tool-bridge machinery are bound to the decommissioned wire format and are off
 // the live path. Kept (not deleted) so the tool-bridge/image work can be ported
@@ -79,6 +82,32 @@ async fn forward(
     })?;
     let message_id = format!("msg_{}", uuid::Uuid::new_v4().simple());
 
+    // 12-03 CUR-03/D-03 continuation guard: opaque or unpaired history is
+    // rejected BEFORE credentials or network so it can never dispatch as a
+    // silent fresh conversation. Supported ordinary, compacted, recovered,
+    // and multi-round histories (paired tool_use/tool_result ids) pass.
+    // Structured-history hydration runs in the same pre-credential window:
+    // unsupported structured history (session identity, model gating, tool
+    // pairing, blob budgets) is rejected with a 400 before any auth/network
+    // work. `None` keeps the proven text-render path byte-for-byte.
+    let history_request = body.json_arc();
+    let history_model = resolved.model_id.clone();
+    let prepared_history = match offload::spawn_bounded_request_prep(move || {
+        history::prepare(&history_request, &history_model)
+    })
+    .await
+    .map_err(|error| request_prep_error("cursor history preparation", error))?
+    {
+        Ok(prepared) => prepared,
+        Err(reject) => {
+            return Err(own_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request_error",
+                reject,
+            ))
+        }
+    };
+
     let credential = resolve_credential(&state.config, &route, &state.http_client).await?;
     let access_token = match credential {
         Credential::CursorOauth { access_token } => access_token,
@@ -90,7 +119,10 @@ async fn forward(
             ))
         }
     };
-    let prompt = request::render_cursor_prompt(request);
+    let prompt = match &prepared_history {
+        Some(prepared) => prepared.prompt.clone(),
+        None => request::render_cursor_prompt(request),
+    };
     let images = decode_cursor_images_async(request).await?;
     let tools = extract_cursor_tools(request);
     let want_stream = request
@@ -117,17 +149,43 @@ async fn forward(
         images,
         tools,
     };
-    let frames = build_run_frames_async(params).await?;
+    let (frames, seeded_blobs) = match prepared_history {
+        Some(prepared) => {
+            let conversation_id = prepared.conversation_id;
+            let state = prepared.state;
+            let blobs = prepared.blobs;
+            let (frames, blobs) = offload::spawn_bounded_request_prep(move || {
+                #[cfg(test)]
+                LAST_REQUEST_PREP_PATH
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .replace(RequestPrepPath::FramingOffloaded);
+                (
+                    agent::build_run_frames_prepared(&params, &conversation_id, &state),
+                    blobs,
+                )
+            })
+            .await
+            .map_err(|error| request_prep_error("cursor request framing", error))?;
+            (frames, Some(blobs))
+        }
+        None => (build_run_frames_async(params).await?, None),
+    };
     // `open_turn` returns once the response headers arrive, keeping the paced
     // request stream open behind the returned turn. It is not wrapped in the
     // shared `send_with_retry` (which is typed to `reqwest::Response`); a
     // connection blip surfaces to the client. Building first also lets the
     // TODO(#170) retry reuse cheap `Bytes` clones instead of reframing.
     // TODO(#170): bounded pre-response retry for the streaming turn.
-    let turn = client
-        .open_turn(&access_token, frames)
-        .await
-        .map_err(map_client_error)?;
+    let turn = match seeded_blobs {
+        Some(blob_store) => {
+            client
+                .open_turn_prepared(&access_token, frames, blob_store)
+                .await
+        }
+        None => client.open_turn(&access_token, frames).await,
+    }
+    .map_err(map_client_error)?;
     if !turn.status().is_success() {
         return Err(map_upstream_error(turn.into_response()).await);
     }

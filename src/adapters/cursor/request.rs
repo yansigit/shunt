@@ -88,7 +88,7 @@ fn is_billing_header_line(line: &str) -> bool {
         .is_some_and(|head| head.eq_ignore_ascii_case(PREFIX))
 }
 
-fn render_system(req: &Value) -> Option<String> {
+pub(super) fn render_system(req: &Value) -> Option<String> {
     let system_value = req.get("system")?;
     let text = match system_value {
         serde_json::Value::String(s) => s
