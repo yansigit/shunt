@@ -74,7 +74,7 @@ remains intentionally explicit. Full original findings plus triage are in
 
 ## Release evidence
 
-- `bash scripts/check_phase11_scope.sh`: passed; baseline is the actual first
+- Scope gate command: `bash scripts/check_phase11_scope.sh` passed; baseline is the actual first
   introduction of 11-01-PLAN, `608988fb9c364e05baf71f2e437b26c5785dd122`.
   Committed/worktree changes, renames/deletions, and Git-visible untracked paths
   are checked with NUL-safe path inventory. Only the three existing user-state

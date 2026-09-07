@@ -28,14 +28,14 @@ requirement maps to exactly one roadmap phase after roadmap creation.
 
 ### Antigravity
 
-- [ ] **ANT-01**: Antigravity OAuth credentials are sent only to the approved canonical daily or production HTTPS Cloud Code Assist destinations, and redirects cannot carry them off-origin.
-- [ ] **ANT-02**: An Antigravity request keeps its bearer token, account, discovered project, and retry identity paired for the full response lifetime.
-- [ ] **ANT-03**: Antigravity requests use the proven Cloud Code Assist agent envelope with a stable opaque conversation session and exact request metadata.
-- [ ] **ANT-04**: Antigravity accepts only exact supported model and reasoning-effort combinations and reports unsupported combinations before dispatch.
-- [ ] **ANT-05**: Antigravity preserves sequential tool-call/result history and replays only authentic thought signatures associated with the matching call, account, and session.
-- [ ] **ANT-06**: Antigravity consumes the upstream SSE contract in both client modes, relaying it incrementally for streaming clients and using bounded accumulation only when the client requested non-streaming output.
-- [ ] **ANT-07**: Antigravity unwraps text, reasoning, tools, usage, terminal states, and embedded provider errors consistently and fails closed on malformed wrappers or incomplete tool data.
-- [ ] **ANT-08**: An Antigravity 401 can trigger at most one account-bound refresh and replay, and only before output or replay-unsafe tool activity.
+- [x] **ANT-01**: Antigravity OAuth credentials are sent only to the approved canonical daily or production HTTPS Cloud Code Assist destinations, and redirects cannot carry them off-origin.
+- [x] **ANT-02**: An Antigravity request keeps its bearer token, account, discovered project, and retry identity paired for the full response lifetime.
+- [x] **ANT-03**: Antigravity requests use the proven Cloud Code Assist agent envelope with a stable opaque conversation session and exact request metadata.
+- [x] **ANT-04**: Antigravity accepts only exact supported model and reasoning-effort combinations and reports unsupported combinations before dispatch.
+- [x] **ANT-05**: Antigravity preserves sequential tool-call/result history and replays only authentic thought signatures associated with the matching call, account, and session.
+- [x] **ANT-06**: Antigravity consumes the upstream SSE contract in both client modes, relaying it incrementally for streaming clients and using bounded accumulation only when the client requested non-streaming output.
+- [x] **ANT-07**: Antigravity unwraps text, reasoning, tools, usage, terminal states, and embedded provider errors consistently and fails closed on malformed wrappers or incomplete tool data.
+- [x] **ANT-08**: An Antigravity 401 can trigger at most one account-bound refresh and replay, and only before output or replay-unsafe tool activity.
 
 ### Cursor
 
@@ -136,14 +136,14 @@ Each committed requirement has exactly one owning phase.
 | GEM-03 | Phase 10 | Complete |
 | GEM-04 | Phase 10 | Complete |
 | GEM-05 | Phase 10 | Complete |
-| ANT-01 | Phase 11 | Pending |
-| ANT-02 | Phase 11 | Pending |
-| ANT-03 | Phase 11 | Pending |
-| ANT-04 | Phase 11 | Pending |
-| ANT-05 | Phase 11 | Pending |
-| ANT-06 | Phase 11 | Pending |
-| ANT-07 | Phase 11 | Pending |
-| ANT-08 | Phase 11 | Pending |
+| ANT-01 | Phase 11 | Complete |
+| ANT-02 | Phase 11 | Complete |
+| ANT-03 | Phase 11 | Complete |
+| ANT-04 | Phase 11 | Complete |
+| ANT-05 | Phase 11 | Complete |
+| ANT-06 | Phase 11 | Complete |
+| ANT-07 | Phase 11 | Complete |
+| ANT-08 | Phase 11 | Complete |
 | CUR-01 | Phase 12 | Pending |
 | CUR-02 | Phase 12 | Pending |
 | CUR-03 | Phase 12 | Pending |
