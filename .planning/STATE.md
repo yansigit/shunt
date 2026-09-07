@@ -78,6 +78,7 @@ Last activity: 2026-09-07 — Plans 01–02 verified; plan 03 preserves authenti
 
 ### Decisions
 
+- [2026-09-07 user approval]: Phase 12 may add a bounded, memory-only, per-request KV/blob handler to preserve structured Cursor history. No disk persistence, cross-request cache, public configuration, or credential-file writeback change is authorized.
 - [2026-09-07 user approval]: Phases 13–14 may add public configuration choices for generic OpenAI Chat and separate read-only Command Code subscription authentication. Existing provider settings and credential-file writeback must remain unchanged. User requires settings/credential backups first; existing project settings and the available provider credential file were copied outside the repository with owner-only permissions and verified byte-for-byte without displaying contents.
 - Port observable OpenCodex behavior and fixtures, not its platform architecture.
 - Phase 1 changes only the opt-in inbound Responses transport; HTTP stays stable.
@@ -119,7 +120,7 @@ None yet.
 
 ### Blockers/Concerns
 
-The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent OpenCodex supplies schema-derived Run output-token deltas and context checkpoints; 83 hermetic tests passed in isolated state. After CLI installation, an isolated read-only Composer 2.5 probe succeeded with streamed events and result usage, including cache fields. CLI output is not raw Connect evidence: do not infer protobuf field mappings or claim Shunt live verification. Original CLI settings/credential files were backed up and remained unchanged. Plans 01–02 are verified. Plan 03 output tool identity is fixed, but structured continuation requires the architecture decision recorded in 12-03-CHECKPOINT.md.
+The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent OpenCodex supplies schema-derived Run output-token deltas and context checkpoints; 83 hermetic tests passed in isolated state. After CLI installation, an isolated read-only Composer 2.5 probe succeeded with streamed events and result usage, including cache fields. CLI output is not raw Connect evidence: do not infer protobuf field mappings or claim Shunt live verification. Original CLI settings/credential files were backed up and remained unchanged. Plans 01–02 are verified. Plan 03 output tool identity is fixed, and the user approved the bounded request-local KV architecture recorded in 12-03-CHECKPOINT.md; implementation is in progress.
 
 ## Deferred Items
 
@@ -136,5 +137,5 @@ Resume file: None
 
 ## Operator Next Steps
 
-- Resolve the request-local KV/blob architecture decision in 12-03-CHECKPOINT.md, then finish plan 03 and execute plans 04–08 sequentially. Plans 01–02 are verified; no phase-wide completion is claimed.
+- Finish the approved request-local KV/blob implementation and plan 03 verification, then execute plans 04–08 sequentially. Plans 01–02 are verified; no phase-wide completion is claimed.
 - Continue the approved milestone sequentially through Phase 16, verifying each phase. Preserve credential-file behavior and request approval for new public configuration choices.

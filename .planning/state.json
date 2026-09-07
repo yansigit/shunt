@@ -51,7 +51,7 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Resolve Phase 12 structured-history architecture decision",
+    "label": "Execute approved Phase 12 request-local KV/history support",
     "reason": "3 of 8 milestone phases complete; Phase 12 has 2 of 8 plans verified"
   },
   "updated_at": "2026-09-07T22:45:12.698Z"
