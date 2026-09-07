@@ -329,30 +329,35 @@ async fn forward(
     let token = access_token.clone();
 
     let ttfb_ms = state.config.server.timeouts.upstream_ttfb_ms;
-    let response = crate::retry::send_with_retry(policy, &route.provider, || {
-        let client = http_client.clone();
-        let payload = payload_clone.clone();
-        let endpoint = endpoint_clone.clone();
-        let token = token.clone();
-        let user_agent = user_agent.clone();
-        async move {
-            let mut req = client
-                .post(&endpoint)
-                .header("Content-Type", "application/json");
+    let response = crate::retry::send_with_retry_with_safety(
+        policy,
+        &route.provider,
+        crate::retry::RetrySafety::NonIdempotentPost,
+        || {
+            let client = http_client.clone();
+            let payload = payload_clone.clone();
+            let endpoint = endpoint_clone.clone();
+            let token = token.clone();
+            let user_agent = user_agent.clone();
+            async move {
+                let mut req = client
+                    .post(&endpoint)
+                    .header("Content-Type", "application/json");
 
-            if let Some(user_agent) = user_agent {
-                req = req.header("User-Agent", user_agent);
+                if let Some(user_agent) = user_agent {
+                    req = req.header("User-Agent", user_agent);
+                }
+
+                if is_google_oauth {
+                    req = req.bearer_auth(&token);
+                } else {
+                    req = req.header("x-goog-api-key", &token);
+                }
+
+                crate::upstream_timeout::wait(ttfb_ms, req.json(&payload).send()).await
             }
-
-            if is_google_oauth {
-                req = req.bearer_auth(&token);
-            } else {
-                req = req.header("x-goog-api-key", &token);
-            }
-
-            crate::upstream_timeout::wait(ttfb_ms, req.json(&payload).send()).await
-        }
-    })
+        },
+    )
     .await
     .map_err(|error| {
         error.into_adapter_error(|error| AdapterError {
