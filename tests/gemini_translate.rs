@@ -651,6 +651,77 @@ fn gemini_tool_signature_roundtrip_preserves_exact_parallel_identities() {
 }
 
 #[test]
+fn gemini_parallel_tool_result_identity() {
+    let first_id = "call_gemini_v1_c2lnLWE";
+    let second_id = "toolu_unsigned_b";
+    let assistant = json!({"role": "assistant", "content": [
+        {"type": "tool_use", "id": first_id, "name": "first_tool", "input": {"n": 1}},
+        {"type": "tool_use", "id": second_id, "name": "second_tool", "input": {"n": 2}}
+    ]});
+    let valid = json!({"messages": [
+        assistant.clone(),
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": second_id, "content": "second", "is_error": true},
+            {"type": "tool_result", "tool_use_id": first_id, "content": [{"type": "text", "text": "first"}]}
+        ]}
+    ]});
+
+    let translated = translate_request_for_model(&valid, "gemini-3.1-pro-preview").unwrap();
+    let responses = translated["contents"][1]["parts"].as_array().unwrap();
+    assert_eq!(responses[0]["functionResponse"]["name"], "first_tool");
+    assert_eq!(responses[0]["functionResponse"]["response"]["output"], "first");
+    assert!(responses[0]["functionResponse"]["response"]
+        .get("error")
+        .is_none());
+    assert_eq!(responses[1]["functionResponse"]["name"], "second_tool");
+    assert_eq!(responses[1]["functionResponse"]["response"]["output"], "second");
+    assert_eq!(
+        responses[1]["functionResponse"]["response"]["error"],
+        true
+    );
+
+    let invalid_result_batches = [
+        json!([
+            {"type": "tool_result", "tool_use_id": first_id, "content": "one"},
+            {"type": "tool_result", "tool_use_id": first_id, "content": "duplicate"}
+        ]),
+        json!([
+            {"type": "tool_result", "tool_use_id": first_id, "content": "missing second"}
+        ]),
+        json!([
+            {"type": "tool_result", "tool_use_id": first_id, "content": "one"},
+            {"type": "tool_result", "tool_use_id": "foreign", "content": "foreign"}
+        ]),
+        json!([
+            {"type": "tool_result", "content": "missing id"},
+            {"type": "tool_result", "tool_use_id": second_id, "content": "two"}
+        ]),
+    ];
+    for results in invalid_result_batches {
+        let request = json!({"messages": [
+            assistant.clone(),
+            {"role": "user", "content": results}
+        ]});
+        assert!(
+            translate_request_for_model(&request, "gemini-3.1-pro-preview").is_err(),
+            "accepted non-bijective tool result batch: {request}"
+        );
+    }
+
+    let already_consumed = json!({"messages": [
+        assistant,
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": first_id, "content": "one"},
+            {"type": "tool_result", "tool_use_id": second_id, "content": "two"}
+        ]},
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": first_id, "content": "again"}
+        ]}
+    ]});
+    assert!(translate_request_for_model(&already_consumed, "gemini-3.1-pro-preview").is_err());
+}
+
+#[test]
 fn gemini_tool_signature_roundtrip_rejects_invented_or_orphan_metadata() {
     let invalid = [
         json!({"messages": [{"role": "assistant", "content": [{
