@@ -114,7 +114,28 @@ Plans:
   3. Streaming and non-streaming clients receive equivalent text, reasoning, sequential tool history, authentic matching thought signatures, usage, terminal state, and embedded provider errors from the always-SSE upstream.
   4. Malformed wrappers, incomplete tools, or unsafe signature state fail closed, while a 401 permits at most one account-bound pre-commit refresh and replay without changing credential-file writeback behavior.
 
-**Plans**: TBD
+**Plans**: 7 plans
+
+**Wave 1**
+- [ ] 11-01-PLAN.md — Always-SSE bounded semantic and terminal path.
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 11-02-PLAN.md — Canonical-origin and redirect credential safety.
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 11-03-PLAN.md — Request-local account affinity and exact catalog admission.
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 11-04-PLAN.md — Exact envelope/session and authentic tool-signature history.
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 11-05-PLAN.md — One bounded same-account pre-commit 401 replay.
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 11-06-PLAN.md — Integrated real-router parity, cancellation, and lifetime evidence.
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 11-07-PLAN.md — Locale-complete documentation and release/scope gates.
 
 ### Phase 12: Cursor Evidence-Backed Hardening
 

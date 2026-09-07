@@ -44,7 +44,8 @@ created: "2026-09-07"
 | 11-04-01 | 04 | 4 | ANT-03 | T-11-03 | Exact envelope and opaque account/conversation-scoped session identity | unit + integration | `cargo test --all-features antigravity_native_envelope` | ❌ W0 | ⬜ pending |
 | 11-04-02 | 04 | 4 | ANT-05 | T-11-05 | Only authentic account/session-bound signatures and ordered tool history replay | unit + integration | `cargo test --all-features antigravity_native_tool_signature` | ❌ W0 | ⬜ pending |
 | 11-05-01 | 05 | 5 | ANT-08 | T-11-08 | At most one same-account pre-commit 401 refresh/replay; all committed/ambiguous cases terminate | integration | `cargo test --all-features antigravity_native_401` | ❌ W0 | ⬜ pending |
-| 11-06-01 | 06 | 6 | ANT-01–ANT-08 | T-11-01–T-11-08 | Real-router parity, cancellation, docs, and complete release evidence remain synthetic | integration + release | `cargo test --all-features antigravity_native_lifetime` | ❌ W0 | ⬜ pending |
+| 11-06-01 | 06 | 6 | ANT-01–ANT-08 | T-11-01–T-11-08 | Real-router parity and cancellation evidence remain synthetic and bounded | integration | `cargo test --all-features antigravity_native_lifetime` | ❌ W0 | ⬜ pending |
+| 11-07-01 | 07 | 7 | ANT-01–ANT-08 | T-11-01–T-11-08 | Documentation, scope, exclusion, and release evidence is executable and locale-complete | release | `bash scripts/check_phase11_scope.sh` | ❌ W0 | ⬜ pending |
 
 ---
 
