@@ -93,6 +93,7 @@ struct ActiveBlock {
 /// `content_block_delta`, `content_block_stop`, `message_delta`, `message_stop`).
 pub struct GeminiSseMachine {
     model: String,
+    upstream_model: String,
     message_id: String,
     started: bool,
     terminal: TerminalState,
@@ -110,9 +111,15 @@ pub struct GeminiSseMachine {
 
 impl GeminiSseMachine {
     pub fn new(model: impl Into<String>) -> Self {
+        let model = model.into();
+        Self::new_for_upstream(model.clone(), model)
+    }
+
+    pub fn new_for_upstream(model: impl Into<String>, upstream_model: impl Into<String>) -> Self {
         let random_id = format!("{:016x}", rand::random::<u64>());
         Self {
             model: model.into(),
+            upstream_model: upstream_model.into(),
             message_id: format!("msg_gemini_{random_id}"),
             started: false,
             terminal: TerminalState::Open,
@@ -133,6 +140,15 @@ impl GeminiSseMachine {
     /// not retained as a second complete response copy.
     pub fn new_streaming(model: impl Into<String>) -> Self {
         let mut machine = Self::new(model);
+        machine.accumulate_content = false;
+        machine
+    }
+
+    pub fn new_streaming_for_upstream(
+        model: impl Into<String>,
+        upstream_model: impl Into<String>,
+    ) -> Self {
+        let mut machine = Self::new_for_upstream(model, upstream_model);
         machine.accumulate_content = false;
         machine
     }
@@ -326,8 +342,14 @@ impl GeminiSseMachine {
                                 "Gemini content block count exceeds limit",
                             ));
                         }
+                        let mut function_call_seen = self.saw_tool_use;
                         for raw_part in raw_parts {
-                            let (part, cost) = self.validate_part(raw_part)?;
+                            let is_function_call = raw_part.get("functionCall").is_some();
+                            let require_signature = is_function_call && !function_call_seen;
+                            let (part, cost) = self.validate_part(raw_part, require_signature)?;
+                            if is_function_call {
+                                function_call_seen = true;
+                            }
                             retained_bytes = retained_bytes.checked_add(cost).ok_or_else(|| {
                                 GeminiSemanticError::protocol(
                                     "Gemini retained semantic state exceeds limit",
@@ -351,7 +373,11 @@ impl GeminiSseMachine {
         })
     }
 
-    fn validate_part(&self, raw: &Value) -> Result<(CheckedPart, usize), GeminiSemanticError> {
+    fn validate_part(
+        &self,
+        raw: &Value,
+        require_signature: bool,
+    ) -> Result<(CheckedPart, usize), GeminiSemanticError> {
         let part = raw
             .as_object()
             .ok_or_else(|| GeminiSemanticError::protocol("Gemini part must be an object"))?;
@@ -411,7 +437,7 @@ impl GeminiSseMachine {
                             "Gemini thoughtSignature must be a non-empty string",
                         )
                     })?,
-                None if self.model.starts_with("gemini-3") => {
+                None if self.upstream_model.starts_with("gemini-3") && require_signature => {
                     return Err(GeminiSemanticError::protocol(
                         "Gemini 3 functionCall is missing an authentic thoughtSignature",
                     ));
@@ -522,8 +548,8 @@ impl GeminiSseMachine {
                             if last.get("type").and_then(Value::as_str) == Some("thinking") =>
                         {
                             if let Some(existing_thinking) = last.get_mut("thinking") {
-                                if let Some(s) = existing_thinking.as_str() {
-                                    *existing_thinking = Value::String(format!("{}{}", s, text));
+                                if let Value::String(s) = existing_thinking {
+                                    s.push_str(&text);
                                 }
                             }
                             false
@@ -602,8 +628,8 @@ impl GeminiSseMachine {
                     let should_push = match self.content.last_mut() {
                         Some(last) if last.get("type").and_then(Value::as_str) == Some("text") => {
                             if let Some(existing_text) = last.get_mut("text") {
-                                if let Some(s) = existing_text.as_str() {
-                                    *existing_text = Value::String(format!("{}{}", s, text));
+                                if let Value::String(s) = existing_text {
+                                    s.push_str(&text);
                                 }
                             }
                             false
@@ -673,7 +699,9 @@ impl GeminiSseMachine {
     pub fn finish(&mut self, events: &mut Vec<SseEvent>) {
         if matches!(
             self.terminal,
-            TerminalState::SuccessEmitted | TerminalState::ProviderFailed
+            TerminalState::SuccessEmitted
+                | TerminalState::ProviderFailed
+                | TerminalState::ProtocolFailed
         ) {
             return;
         }
@@ -686,17 +714,28 @@ impl GeminiSseMachine {
         }
     }
 
-    pub fn finish_stream(&mut self, finish_reason: &str, events: &mut Vec<SseEvent>) {
+    pub fn finish_stream(
+        &mut self,
+        finish_reason: &str,
+        events: &mut Vec<SseEvent>,
+    ) -> Result<(), GeminiSemanticError> {
         if self.terminal != TerminalState::Open {
-            return;
+            return Ok(());
         }
-        if matches!(finish_reason, "STOP" | "MAX_TOKENS" | "SAFETY") {
-            self.last_finish_reason = Some(finish_reason.to_string());
-            self.terminal = TerminalState::SuccessPending;
-            if let Ok(terminal) = self.transport_close_checked() {
-                events.extend(terminal);
-            }
+        if !matches!(finish_reason, "STOP" | "MAX_TOKENS" | "SAFETY") {
+            self.terminal = TerminalState::ProtocolFailed;
+            return Err(GeminiSemanticError::protocol(format!(
+                "unsupported Gemini finishReason {finish_reason}"
+            )));
         }
+        self.last_finish_reason = Some(finish_reason.to_string());
+        self.terminal = TerminalState::SuccessPending;
+        if !self.started {
+            self.started = true;
+            events.push(self.message_start_event());
+        }
+        events.extend(self.transport_close_checked()?);
+        Ok(())
     }
 
     pub fn transport_close_checked(&mut self) -> Result<Vec<SseEvent>, GeminiSemanticError> {
@@ -718,6 +757,7 @@ impl GeminiSseMachine {
                     "stop_sequence": null
                 },
                 "usage": {
+                    "input_tokens": self.input_tokens,
                     "output_tokens": self.output_tokens
                 }
             }),

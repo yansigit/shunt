@@ -215,7 +215,7 @@ fn test_gemini_3_parallel_calls_keep_signature_on_first_call() {
                 },
                 {
                     "type": "tool_use",
-                    "id": "call_gemini_v1_cGFyYWxsZWwtc2lnbmF0dXJlLTI",
+                    "id": "toolu_parallel_unsigned",
                     "name": "read_file",
                     "input": { "path": "b.tex" }
                 }
@@ -226,7 +226,29 @@ fn test_gemini_3_parallel_calls_keep_signature_on_first_call() {
     let translated = translate_request_for_model(&request, "gemini-3.1-pro-preview").unwrap();
     let parts = translated["contents"][0]["parts"].as_array().unwrap();
     assert_eq!(parts[0]["thoughtSignature"], "parallel-signature");
-    assert_eq!(parts[1]["thoughtSignature"], "parallel-signature-2");
+    assert!(parts[1].get("thoughtSignature").is_none());
+}
+
+#[test]
+fn gemini_3_parallel_signature_policy_is_independent_of_sse_chunking() {
+    let mut machine =
+        GeminiSseMachine::new_streaming_for_upstream("claude-via-gemini", "gemini-3.1-pro-preview");
+    machine
+        .process_chunk_checked(&json!({"candidates": [{"content": {
+            "role": "model", "parts": [{
+                "functionCall": {"name": "first", "args": {}},
+                "thoughtSignature": "authentic-first"
+            }]
+        }}]}))
+        .unwrap();
+    machine
+        .process_chunk_checked(&json!({"candidates": [{"content": {
+            "role": "model", "parts": [{
+                "functionCall": {"name": "second", "args": {}}
+            }]
+        }, "finishReason": "STOP"}]}))
+        .unwrap();
+    machine.transport_close_checked().unwrap();
 }
 
 #[test]
@@ -574,7 +596,7 @@ fn gemini_tool_signature_roundtrip_preserves_exact_parallel_identities() {
             "candidates": [{
                 "content": {"role": "model", "parts": [
                     {"functionCall": {"name": "read_file", "args": {"path": "a"}}, "thoughtSignature": "sig-a"},
-                    {"functionCall": {"name": "read_file", "args": {"path": "b"}}, "thoughtSignature": "sig-b"}
+                    {"functionCall": {"name": "read_file", "args": {"path": "b"}}}
                 ]},
                 "finishReason": "STOP"
             }]
@@ -604,10 +626,9 @@ fn gemini_tool_signature_roundtrip_preserves_exact_parallel_identities() {
         translated["contents"][0]["parts"][0]["thoughtSignature"],
         "sig-a"
     );
-    assert_eq!(
-        translated["contents"][0]["parts"][1]["thoughtSignature"],
-        "sig-b"
-    );
+    assert!(translated["contents"][0]["parts"][1]
+        .get("thoughtSignature")
+        .is_none());
     assert_eq!(
         translated["contents"][1]["parts"][0]["functionResponse"]["name"],
         "read_file"
@@ -644,4 +665,87 @@ fn gemini_tool_signature_roundtrip_rejects_invented_or_orphan_metadata() {
             "accepted invented or orphan signature metadata: {request}"
         );
     }
+}
+
+#[test]
+fn gemini_alias_uses_upstream_model_for_signature_policy_and_public_model_for_output() {
+    let unsigned_call = json!({"candidates": [{
+        "content": {"role": "model", "parts": [{
+            "functionCall": {"name": "read_file", "args": {}}
+        }]},
+        "finishReason": "STOP"
+    }]});
+    let mut strict =
+        GeminiSseMachine::new_for_upstream("claude-via-gemini", "gemini-3.1-pro-preview");
+    assert!(strict.process_chunk_checked(&unsigned_call).is_err());
+
+    let mut legacy = GeminiSseMachine::new_for_upstream("gemini-3-looking-alias", "gemini-2.5-pro");
+    legacy.process_chunk_checked(&unsigned_call).unwrap();
+    legacy.transport_close_checked().unwrap();
+    assert_eq!(
+        legacy.final_json_checked().unwrap()["model"],
+        "gemini-3-looking-alias"
+    );
+}
+
+#[test]
+fn late_usage_is_authoritative_in_the_stream_terminal_delta() {
+    let mut stream = GeminiSseMachine::new_streaming("gemini-2.5-pro");
+    let first = stream
+        .process_chunk_checked(&json!({"candidates": [{
+            "content": {"role": "model", "parts": [{"text": "hello"}]}
+        }]}))
+        .unwrap();
+    assert_eq!(first[0].data["message"]["usage"]["input_tokens"], 0);
+
+    stream
+        .process_chunk_checked(&json!({
+            "candidates": [{"finishReason": "STOP"}],
+            "usageMetadata": {"promptTokenCount": 11, "candidatesTokenCount": 7}
+        }))
+        .unwrap();
+    let terminal = stream.transport_close_checked().unwrap();
+    let usage = &terminal
+        .iter()
+        .find(|event| event.event == "message_delta")
+        .unwrap()
+        .data["usage"];
+    assert_eq!(usage, &json!({"input_tokens": 11, "output_tokens": 7}));
+}
+
+#[test]
+fn compatibility_finish_helpers_are_valid_typed_and_idempotent() {
+    let mut machine = GeminiSseMachine::new_streaming("gemini-2.5-pro");
+    let mut events = Vec::new();
+    machine.finish_stream("STOP", &mut events).unwrap();
+    assert_eq!(events.first().unwrap().event, "message_start");
+    assert_eq!(events.last().unwrap().event, "message_stop");
+    let count = events.len();
+    machine.finish_stream("STOP", &mut events).unwrap();
+    machine.finish(&mut events);
+    assert_eq!(events.len(), count);
+
+    let mut invalid = GeminiSseMachine::new_streaming("gemini-2.5-pro");
+    assert!(invalid.finish_stream("OTHER", &mut Vec::new()).is_err());
+    let mut once = Vec::new();
+    invalid.finish(&mut once);
+    invalid.finish(&mut once);
+    assert!(once.is_empty());
+}
+
+#[test]
+fn unary_adjacent_fragment_accumulation_stays_one_linear_string() {
+    let parts: Vec<_> = (0..4_096).map(|_| json!({"text": "x"})).collect();
+    let mut machine = GeminiSseMachine::new("gemini-2.5-pro");
+    machine
+        .process_chunk_checked(&json!({"candidates": [{
+            "content": {"role": "model", "parts": parts},
+            "finishReason": "STOP"
+        }]}))
+        .unwrap();
+    machine.transport_close_checked().unwrap();
+    let final_json = machine.final_json_checked().unwrap();
+    let content = final_json["content"].as_array().unwrap();
+    assert_eq!(content.len(), 1);
+    assert_eq!(content[0]["text"].as_str().unwrap().len(), 4_096);
 }
