@@ -1221,6 +1221,207 @@ struct HeldStreamState {
     hits: AtomicUsize,
 }
 
+#[derive(Default)]
+struct NativeLifetimeState {
+    accepted: Notify,
+    dropped: Notify,
+    drop_count: AtomicUsize,
+    requests: std::sync::Mutex<Vec<(axum::http::HeaderMap, serde_json::Value)>>,
+}
+
+// The pending upstream body owns its drop notification directly: no detached
+// producer task can outlive cancellation or hide a resource leak.
+struct NativeLifetimeBody {
+    first: Option<Bytes>,
+    state: Arc<NativeLifetimeState>,
+}
+
+impl futures_util::Stream for NativeLifetimeBody {
+    type Item = Result<Bytes, Infallible>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        match self.first.take() {
+            Some(bytes) => std::task::Poll::Ready(Some(Ok(bytes))),
+            None => std::task::Poll::Pending,
+        }
+    }
+}
+
+impl Drop for NativeLifetimeBody {
+    fn drop(&mut self) {
+        self.state.drop_count.fetch_add(1, Ordering::SeqCst);
+        self.state.dropped.notify_one();
+    }
+}
+
+async fn held_native_lifetime_stream(
+    State(state): State<Arc<NativeLifetimeState>>,
+    headers: axum::http::HeaderMap,
+    axum::Json(payload): axum::Json<serde_json::Value>,
+) -> Body {
+    state.requests.lock().unwrap().push((headers, payload));
+    state.accepted.notify_one();
+    Body::from_stream(NativeLifetimeBody {
+        first: Some(Bytes::from_static(
+            b"data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"synthetic native early\"}]}}]}}\n\n",
+        )),
+        state,
+    })
+}
+
+async fn native_lifetime_case(streaming: bool) {
+    use tower::ServiceExt;
+
+    let _env_guard = ANTIGRAVITY_ENV_LOCK
+        .get_or_init(|| tokio::sync::Mutex::const_new(()))
+        .lock()
+        .await;
+    let state = Arc::new(NativeLifetimeState::default());
+    // Fail rather than silently claiming coverage if loopback is unavailable.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let upstream_app = Router::new()
+        .route(
+            "/v1internal:streamGenerateContent",
+            post(held_native_lifetime_stream),
+        )
+        .route(
+            "/v1internal:fetchAvailableModels",
+            post(|| async {
+                axum::Json(json!({"models": {"gemini-3.8-flash-high": {"model": "synthetic"}}}))
+            }),
+        )
+        .with_state(state.clone());
+    let upstream = Gateway {
+        base_url: format!("http://{addr}"),
+        task: tokio::spawn(async move { axum::serve(listener, upstream_app).await.unwrap() }),
+    };
+    let dir = std::env::temp_dir().join(format!("shunt-native-lifetime-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&dir).unwrap();
+    let credential_path = dir.join("antigravity-auth.json");
+    let credential_bytes = serde_json::to_vec(&json!({
+        "access_token": "synthetic-lifetime-token",
+        "refresh_token": "synthetic-lifetime-refresh",
+        "project_id": "synthetic-lifetime-project",
+        "expiry_date": 4_102_444_800_000u64
+    }))
+    .unwrap();
+    std::fs::write(&credential_path, &credential_bytes).unwrap();
+    let before_mtime = std::fs::metadata(&credential_path)
+        .unwrap()
+        .modified()
+        .unwrap();
+    let _auth_file = EnvVarGuard::set("SHUNT_ANTIGRAVITY_AUTH_FILE", &credential_path);
+    let mut config = antigravity_fixture_config(upstream.base_url.clone());
+    config.server.max_concurrent_requests = 1;
+    config
+        .providers
+        .get_mut("antigravity")
+        .unwrap()
+        .retry
+        .max_retries = 2;
+    let (router, _, _) = server::build_router(config).unwrap();
+    let make_request = |streaming| {
+        axum::http::Request::builder()
+            .method("POST")
+            .uri("/v1/messages")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                request(streaming).replace("claude-via-gemini", "claude-via-antigravity"),
+            ))
+            .unwrap()
+    };
+    let deadline = std::time::Duration::from_secs(2);
+    let mut turn = Box::pin(router.clone().oneshot(make_request(streaming)));
+    let mut held_body = if streaming {
+        let response = tokio::time::timeout(deadline, &mut turn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        Some(response.into_body().into_data_stream())
+    } else {
+        tokio::time::timeout(deadline, async {
+            tokio::select! {
+                response = &mut turn => panic!("unary response completed before the provider terminal: {:?}", response.unwrap().status()),
+                _ = state.accepted.notified() => {}
+            }
+        }).await.expect("unary request reaches upstream");
+        None
+    };
+    if let Some(body) = held_body.as_mut() {
+        let first = tokio::time::timeout(deadline, body.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let first = String::from_utf8_lossy(&first);
+        assert!(first.contains("synthetic native early"), "{first}");
+        assert!(!first.contains("synthetic-lifetime-token"), "{first}");
+        assert!(!first.contains("message_stop"), "{first}");
+    }
+    let saturated = tokio::time::timeout(deadline, router.clone().oneshot(make_request(true)))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(saturated.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(state.requests.lock().unwrap().len(), 1);
+    drop(held_body);
+    drop(turn);
+    tokio::time::timeout(deadline, state.dropped.notified())
+        .await
+        .expect("cancellation drops native upstream body");
+    assert_eq!(state.drop_count.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        state.requests.lock().unwrap().len(),
+        1,
+        "no detached replay"
+    );
+    let next = tokio::time::timeout(deadline, router.oneshot(make_request(true)))
+        .await
+        .expect("admission slot is reusable")
+        .unwrap();
+    assert_eq!(next.status(), StatusCode::OK);
+    drop(next);
+    tokio::time::timeout(deadline, state.dropped.notified())
+        .await
+        .expect("second native body is released too");
+    assert_eq!(state.drop_count.load(Ordering::SeqCst), 2);
+    let captured = state.requests.lock().unwrap();
+    assert_eq!(
+        captured.len(),
+        2,
+        "only the two explicitly admitted requests ran"
+    );
+    for (headers, payload) in captured.iter() {
+        assert_eq!(headers["authorization"], "Bearer synthetic-lifetime-token");
+        assert_eq!(payload["project"], "synthetic-lifetime-project");
+    }
+    assert_eq!(std::fs::read(&credential_path).unwrap(), credential_bytes);
+    assert_eq!(
+        std::fs::metadata(&credential_path)
+            .unwrap()
+            .modified()
+            .unwrap(),
+        before_mtime
+    );
+    drop(captured);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
+async fn antigravity_native_lifetime_stream_drop_releases_upstream_and_capacity() {
+    native_lifetime_case(true).await;
+}
+
+#[tokio::test]
+async fn antigravity_native_lifetime_unary_cancellation_releases_upstream_and_capacity() {
+    native_lifetime_case(false).await;
+}
+
 async fn held_gemini_stream(State(state): State<Arc<HeldStreamState>>) -> Body {
     state.hits.fetch_add(1, Ordering::SeqCst);
     let (sender, receiver) = mpsc::channel::<Result<bytes::Bytes, Infallible>>(1);
