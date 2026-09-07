@@ -220,6 +220,12 @@ fn test_gemini_3_parallel_calls_keep_signature_on_first_call() {
                     "input": { "path": "b.tex" }
                 }
             ]
+        }, {
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "call_gemini_v1_cGFyYWxsZWwtc2lnbmF0dXJl", "content": "a"},
+                {"type": "tool_result", "tool_use_id": "toolu_parallel_unsigned", "content": "b"}
+            ]
         }]
     });
 
@@ -264,6 +270,9 @@ fn test_gemini_3_sequential_steps_keep_distinct_signatures() {
             ]},
             { "role": "assistant", "content": [
                 { "type": "tool_use", "id": "call_gemini_v1_c3RlcC0y", "name": "read_file", "input": { "path": "b.tex" } }
+            ]},
+            { "role": "user", "content": [
+                { "type": "tool_result", "tool_use_id": "call_gemini_v1_c3RlcC0y", "content": "b" }
             ]}
         ]
     });
@@ -323,7 +332,9 @@ fn test_unsigned_gemini_2_5_history_stays_unsigned() {
                 "name": "read_file",
                 "input": { "path": "a.tex" }
             }]
-        }]
+        }, {"role": "user", "content": [{
+            "type": "tool_result", "tool_use_id": "toolu_legacy", "content": "ok"
+        }]}]
     });
 
     let translated = translate_request_for_model(&request, "gemini-2.5-pro").unwrap();
@@ -731,6 +742,18 @@ fn compatibility_finish_helpers_are_valid_typed_and_idempotent() {
     invalid.finish(&mut once);
     invalid.finish(&mut once);
     assert!(once.is_empty());
+
+    let mut pending = GeminiSseMachine::new_streaming("gemini-2.5-pro");
+    let prefix = pending
+        .process_chunk_checked(&json!({"candidates": [{"finishReason": "STOP"}]}))
+        .unwrap();
+    assert_eq!(prefix.first().unwrap().event, "message_start");
+    let mut terminal = Vec::new();
+    pending.finish_stream("STOP", &mut terminal).unwrap();
+    assert_eq!(terminal.last().unwrap().event, "message_stop");
+    let terminal_count = terminal.len();
+    pending.finish_stream("STOP", &mut terminal).unwrap();
+    assert_eq!(terminal.len(), terminal_count);
 }
 
 #[test]

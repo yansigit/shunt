@@ -715,8 +715,21 @@ impl GeminiSseMachine {
         finish_reason: &str,
         events: &mut Vec<SseEvent>,
     ) -> Result<(), GeminiSemanticError> {
-        if self.terminal != TerminalState::Open {
-            return Ok(());
+        match self.terminal {
+            TerminalState::SuccessPending => {
+                if self.last_finish_reason.as_deref() != Some(finish_reason) {
+                    self.terminal = TerminalState::ProtocolFailed;
+                    return Err(GeminiSemanticError::protocol(
+                        "Gemini compatibility finish conflicts with the provider finish",
+                    ));
+                }
+                events.extend(self.transport_close_checked()?);
+                return Ok(());
+            }
+            TerminalState::SuccessEmitted
+            | TerminalState::ProviderFailed
+            | TerminalState::ProtocolFailed => return Ok(()),
+            TerminalState::Open => {}
         }
         if !matches!(finish_reason, "STOP" | "MAX_TOKENS" | "SAFETY") {
             self.terminal = TerminalState::ProtocolFailed;
