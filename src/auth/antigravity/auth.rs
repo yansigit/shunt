@@ -1387,6 +1387,77 @@ mod tests {
         assert!(target.received_requests().await.unwrap().is_empty());
     }
 
+    #[tokio::test]
+    async fn antigravity_native_origin_follows_same_origin_redirect_with_bearer() {
+        let server = MockServer::start().await;
+        let endpoint = format!("{}/v1internal:streamGenerateContent?alt=sse", server.uri());
+        Mock::given(method("POST"))
+            .and(path("/v1internal:streamGenerateContent"))
+            .respond_with(ResponseTemplate::new(307).insert_header("location", endpoint.clone()))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1internal:streamGenerateContent"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let client = crate::auth::shared::antigravity_inference_client(&server.uri()).unwrap();
+        client
+            .post(endpoint)
+            .bearer_auth("synthetic-antigravity-token")
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(
+            requests[1].headers.get("authorization").unwrap(),
+            "Bearer synthetic-antigravity-token"
+        );
+    }
+
+    #[tokio::test]
+    async fn antigravity_native_origin_bounds_redirect_loops_at_ten() {
+        let server = MockServer::start().await;
+        let endpoint = format!("{}/v1internal:streamGenerateContent?alt=sse", server.uri());
+        Mock::given(method("POST"))
+            .and(path("/v1internal:streamGenerateContent"))
+            .respond_with(ResponseTemplate::new(307).insert_header("location", endpoint.clone()))
+            .mount(&server)
+            .await;
+        let client = crate::auth::shared::antigravity_inference_client(&server.uri()).unwrap();
+        let error = client
+            .post(endpoint)
+            .bearer_auth("synthetic-antigravity-token")
+            .send()
+            .await
+            .expect_err("redirect loop must be bounded");
+        assert!(error.to_string().contains("redirect"));
+        assert!(!error.to_string().contains("synthetic-antigravity-token"));
+        assert!(server.received_requests().await.unwrap().len() <= 11);
+    }
+
+    #[test]
+    fn antigravity_native_origin_rejects_unsafe_initial_configuration_without_network() {
+        for configured in [
+            "http://daily-cloudcode-pa.googleapis.com",
+            "https://daily-cloudcode-pa.googleapis.com:444",
+            "https://daily-cloudcode-pa.googleapis.com/bad",
+            "https://daily-cloudcode-pa.googleapis.com?redirect=1",
+            "https://daily-cloudcode-pa.googleapis.com#fragment",
+        ] {
+            let error = crate::auth::shared::antigravity_inference_client(configured)
+                .expect_err("unsafe configured origin must fail before send");
+            let diagnostic = error.to_string();
+            assert!(!diagnostic.contains(configured));
+            assert!(!diagnostic.contains("Bearer"));
+        }
+    }
+
     fn write(path: &Path, stored: &StoredAuth) {
         write_stored(path, stored).unwrap();
     }
