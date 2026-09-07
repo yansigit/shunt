@@ -151,6 +151,10 @@ xAI 可能按订阅层级限制 OAuth 访问 —— 如果 `grok` 返回 403,请
 
 **Antigravity 有两种传输方式。** `antigravity` 提供方通过 HTTP 与 Google Antigravity 后端通信,使用 `shunt login antigravity` 认证 —— 这是一个使用 Antigravity 自有 OAuth 客户端与作用域的 Google 授权码流程,因此无法复用 Gemini CLI 的登录。它与 `gemini` 提供方使用相同的 Code Assist 协议,目前提供 Gemini 系列的 Antigravity 模型;Antigravity 同时提供的 Claude 模型需要尚未实现的请求改写(#368)。完整设置(登录与作用域、项目发现、模型 slug、thinking 以及适配器传递的内容)详见 [提供方 → Antigravity](https://shunt.dev/zh-cn/providers/antigravity/)。
 
+原生Antigravity使用标准HTTPS根地址 `daily-cloudcode-pa.googleapis.com` 和 `cloudcode-pa.googleapis.com`（规范化为daily），并检查重定向的确切origin。最新 `fetchAvailableModels` 证据必须允许确切的模型／effort组合才会推理，不猜测模型或折叠effort。两种客户端模式都使用 `streamGenerateContent?alt=sse`。请保留带作用域的 `call_antigravity_v2_` ID及工具历史顺序：会话由账号和规范化后的开场轮次生成，同账号下相同开场会共享会话。这些无密钥标签仅用于上下文检查，并非上游来源的密码学证明。 目录查询拒绝重定向，仅配置的端点可以提供推理准入证据。
+
+首次 `401` 允许同账号在内存中刷新并重放一次，保持项目／会话／正文相同，不新增凭据文件写回。输出、工具、解析／正文错误或发送结果不明的失败后均不重放；取消会释放上游工作和准入名额。证据为合成数据隔离测试，不保证实时可用性。Google AI Studio Web不在支持范围内。
+
 **`antigravity-cli` 已弃用，并且相当于执行任意代码。** 它以 agent 模式运行本地 `agy` 二进制文件：CLI 使用自己的工具完成工作，shunt 则通过 Anthropic SSE 流式返回其进度。因此它永远无法返回 `tool_use` 块；真正要求调用工具的请求 —— 即非空的 `tools` 数组，或值为 `any`/`tool` 的 `tool_choice` —— 会以 `400` 拒绝，而不是悄悄返回文本回答。即使同时提供了 `tools`，`tool_choice: none` 也不受此限制；没有工具的 `auto` 同样不受限制，因为两者都不强制调用工具。由于非交互式运行无法响应权限提示，`agy` 会使用 `--dangerously-skip-permissions` 运行，因此**应将此提供方视为以 shunt 运行用户的身份执行任意代码**。有两项设置可限制其范围：`sandbox`（默认值为 `true`）会传递 `--sandbox`，将读写限制在工作区内，这才是真正约束 agent 的设置；`workspace_roots` 仅决定 agent 可以从哪里*启动*，它会将请求系统提示中的 `Working directory:` 路径（由客户端控制的文本）限制为你所列根目录下的规范化路径。请保持沙箱开启，并仅绑定到回环地址。建议使用 `antigravity` 提供方，它没有这些风险。详见[提供方指南](https://shunt.dev/zh-cn/guides/providers/)。
 
 **从旧的 `antigravity` 迁移。** `kind = "antigravity"` 过去表示本地 CLI。仍按该含义编写的配置会按名称被拒绝,而不是被悄悄改指到别处;而路由到 `antigravity` 却没有凭据的提供方会拒绝启动 —— 在启动看似正常的情况下把传输方式、凭据和出口流量整个换掉,比直接失败更糟。`shunt check` 会执行同样的检查,因此 CI 和部署脚本能在上线前发现指向 `antigravity` 却没有存储凭据的路由,而不是等到启动时才发现。该检查只判断凭据是否存在 —— 它不会打开凭据,因此空的或过期的凭据仍会通过,之后在请求路径上失败。请运行 `shunt login antigravity`,或把路由指向 `antigravity-cli`。

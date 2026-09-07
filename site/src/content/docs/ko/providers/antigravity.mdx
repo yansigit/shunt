@@ -6,7 +6,7 @@ description: HTTP를 통해 Google Antigravity 백엔드에 도달하기 — 로
 내장 **`antigravity`** 프로바이더는 HTTP를 통해 `daily-cloudcode-pa.googleapis.com`에 있는 Google의
 **Antigravity** 백엔드에 도달합니다. 이 호스트는 Antigravity 클라이언트 자신이 디스커버리와 추론
 양쪽에 사용하는 `daily-` 컨트롤 플레인입니다. `gemini` 프로바이더와 동일한 Code Assist 프로토콜을 사용하며 —
-shunt는 Anthropic Messages를 `generateContent` / `streamGenerateContent`로 변환합니다 — 다만
+shunt는 Anthropic Messages를 `streamGenerateContent?alt=sse`로 변환합니다 — 다만
 Antigravity 구독 토큰으로 인증하고 프로젝트 디스커버리 과정에서 자신을 `ideType: ANTIGRAVITY`로
 식별합니다.
 
@@ -94,84 +94,28 @@ auth = "antigravity_oauth"
 레거시 `[providers.antigravity]` 테이블 형식도 계속 지원됩니다 — 다만 한 파일에서 `[[upstreams]]`와
 `[providers.*]`를 섞지 마세요.
 
-## 3. 모델 라우팅
+## 3. 정확한 카탈로그 모델 라우팅
 
-shunt는 이 프로바이더에 대해 모델 허용 목록을 두지 않습니다: 해석된 `upstream_model`이 적힌 그대로
-백엔드로 전송되고, 판단은 백엔드가 합니다. Antigravity는 Code Assist `gemini` 프로바이더가 받아들이지
-**않는** Gemini 계열 슬러그를 제공합니다 — 다만 **effort를 id에** 담아 두 가지 형태 중 하나로
-게시합니다: `-low` / `-medium` / `-high` 접미사(Pro에는 `-low`와 `-high`만 있습니다), 또는 effort를
-요청 필드로 받는 단일 `-tiered` id입니다. **어느 형태가 오는지는 계정마다 다르고 시간이 지나면
-바뀝니다** — 어떤 계정은 `gemini-3.8-flash-tiered`를, 다른 계정은 `gemini-3.8-flash-medium`을
-받습니다. 현재 카탈로그는 `agy models`로 확인할 수
-있으며, 이 글을 쓰는 시점에는 `gemini-3.8-flash-*`, `gemini-3.7-flash-*`, `gemini-3.6-flash-*`,
-`gemini-3.1-pro-low` / `-high`, `claude-sonnet-4-6`, `claude-opus-4-6-thinking`,
-`gpt-oss-120b-medium`이 들어 있습니다.
+네이티브 추론은 계정별 `fetchAvailableModels`의 최신 증거로 정확한 `upstream_model`을 확인해야 합니다. 크기가 제한된 카탈로그 스냅샷은 백엔드, 계정 지문, 프로젝트별로 구분됩니다. 성공한 캐시 항목은 10분 TTL 동안 유효하지만, 오래된 스냅샷이나 실패한 최초 조회로 추론을 허용하지 않습니다. 거부 전에 인증과 카탈로그 조회가 수행될 수 있지만, 지원하지 않는 조합은 추론에 도달하지 않습니다. 카탈로그 조회는 리디렉션을 거부하며, 구성된 엔드포인트의 증거만 추론 허용에 사용합니다.
 
-접미사가 없는 슬러그는 **제공되지 않습니다**: `daily-cloudcode-pa.googleapis.com`은 `404`로 답합니다.
-프로덕션 호스트에서는 이전의 shunt 요청 — 접미사 없는 id와 평범한 Code Assist 엔벨로프 — 이 요청량
-제한처럼 보이는 `429 RESOURCE_EXHAUSTED`("check quota")로 돌아왔습니다. 다만 탐침에서 두 입력을 함께
-바꾸었기 때문에 둘 중 무엇이 그 429를 만들었는지는 확인되지 않았습니다.
-
-두 형태 중 어느 쪽인지 추측하지 않도록, shunt는 요청 경로에서 계정 자신의 카탈로그
-(`fetchAvailableModels`)를 읽어 — 계정별 10분 캐시, 시간 제한, 실패 시 통과 — 그 계정이 실제로
-게시하는 id를 고릅니다.
-
-로컬 별칭을 정확한 Antigravity 슬러그에 매핑하세요:
+정확한 Gemini 카탈로그 ID를 사용하세요. 접미사 추가, 가까운 effort 선택, 사라진 모델의 재지정은 하지 않으며 Claude/GPT 항목도 이 네이티브 어댑터로 전달하지 않습니다. 접미사 없는 ID를 다른 모델로 확장하지 않습니다. 카탈로그는 바뀔 수 있으므로 아래는 구성 예시이지 현재 제공 여부를 보장하는 목록이 아닙니다.
 
 ```toml
-[[models]]
-id = "claude-gemini-3.6-flash-via-antigravity"
-display_name = "[AGY ] Gemini-3.6-Flash"
-
 [[routes]]
-model = "claude-gemini-3.6-flash-via-antigravity"
+model = "claude-gemini-via-antigravity"
 provider = "antigravity"
-upstream_model = "gemini-3.6-flash-medium"
+upstream_model = "gemini-3.8-flash-high"
 ```
 
-접미사를 직접 쓸 필요는 없습니다. 접미사가 없는 `gemini-*` id에 대해서는 shunt가 등급을 직접 해석해
-붙이며, 다음 신호 중 먼저 적용되는 것을 따릅니다:
+라우트/프로바이더의 `effort`가 요청의 `output_config.effort`보다 우선합니다. 명시한 effort는 접미사형 카탈로그 ID와 일치해야 합니다. 정확한 `-tiered` ID는 `generationConfig.thinkingConfig.thinkingLevel`에 `low`, `medium`, `high` 중 하나를 전달하며, 미지정 시 `medium`입니다. `xhigh`, `max`를 포함한 알 수 없는 값은 조용히 변환하지 않습니다. thinking budget은 생성 제어값으로 유지되며 다른 카탈로그 모델을 추측하는 데 사용하지 않습니다.
 
-1. `[[routes]]` 항목이나 프로바이더의 `effort` — 명시적 지정입니다. 여기서도 `xhigh`와 `max`는
-   `high`로 접히며, 대소문자와 앞뒤 공백은 무시됩니다. shunt가 모르는 등급은 적힌 대로(공백을 제거하고
-   소문자로) 통과하므로 카탈로그에 나중에 추가될 등급을 미리 지정할 수 있습니다.
-2. 요청의 `output_config.effort`(Claude Code는 `low`/`medium`/`high`/`xhigh`/`max`를 보내며,
-   `xhigh`와 `max`는 `high`로 접힙니다).
-3. `thinking.type = "enabled"` — `budget_tokens`가 2048 이하이면 `low`, 8192 이하이면 `medium`,
-   그보다 크면 `high`입니다. budget을 명시하지 않은 활성 블록은 변환된 요청이 싣는 것과 같은 기본값
-   `1024`를 사용하므로 `low`가 됩니다.
-4. 그 외에는 `medium`입니다.
+## 네이티브 전송과 복구
 
-그 등급이 무엇이 될지는 카탈로그가 정합니다. 계정이 `{id}-{등급}`을 게시하면 그것이 나갑니다.
-`{id}-tiered`만 게시하면 shunt는 tiered id를 보내고 등급은
-`generationConfig.thinkingConfig.thinkingLevel`에 실어 보냅니다(백엔드가 함께 받아들이므로 기존
-`thinkingBudget`은 그대로 둡니다). 둘 다 없지만 같은 모델의 다른 등급을 게시한다면 가장 가까운 게시
-등급이 이기고, 동점이면 더 높은 쪽이 됩니다 — `-pro` id의 `medium`이 `-high`가 되는 것은 Pro 전용
-규칙이 아니라 이 규칙 때문입니다.
+두 클라이언트 모드 모두 `streamGenerateContent?alt=sse`를 사용합니다. 스트리밍은 이벤트를 즉시 전달하며 비스트리밍만 제한된 크기로 누적합니다. 텍스트, 추론, 순서 있는 도구, 사용량, 종료 상태, 내장 오류를 하나의 검증된 디코더로 처리합니다. 잘못되거나 잘린 스트림, 불완전한 도구, 잘못되거나 중복된 종료는 오류로 처리합니다.
 
-직접 적어 넣은 접미사도 똑같이 다뤄집니다. 계정이 `gemini-3.6-flash-medium`을 더 이상 게시하지
-않는다면, 그 접미사는 여전히 원하는 등급을 말해 주므로 shunt는 카탈로그가 404임을 방금 확인한 id를
-그대로 보내는 대신 위 규칙으로 다시 해석합니다. 카탈로그가 그 계열을 전혀 모른다면 적어 넣은 값을
-그대로 둡니다. 직접 지정한 `-tiered` id는 id를 유지한 채 `effort`를 `thinkingLevel`로 계속 싣기
-때문에, 실제로 게시된 id를 그대로 적어도 effort 제어를 잃지 않습니다. 계정이 나중에 접미사 id로
-되돌아가면 그 pin도 같은 방식으로 다시 해석됩니다. id가 사라졌다는 증거는 방금 가져온 카탈로그뿐이므로,
-갱신에 실패해 마지막으로 알던 카탈로그를 쓰는 동안에는 모든 pin이 적힌 그대로 나갑니다.
+다운스트림 헤더나 출력 전의 최초 `401`에 한해 같은 계정의 메모리 내 갱신과 재전송을 한 번 허용합니다. 프로젝트, 카탈로그, 세션, 요청 ID, 본문은 동일하며 bearer만 바뀝니다. 두 번째 `401`, 갱신 실패, 계정 변경, 전송 여부가 불확실한 실패, 헤더/출력/도구 이후 오류에서는 재전송이나 프로바이더 전환을 하지 않습니다. 새 복구 경로는 자격 증명을 기록하지 않습니다. 기존 로그인/만료 갱신의 저장 동작은 그대로이며, 레거시 refresh-token 기반 신원이 바뀌면 거부합니다. 어느 모드에서든 취소하면 업스트림 본문과 요청 수용 슬롯이 해제됩니다.
 
-카탈로그를 쓸 수 없을 때(디스커버리 장애, `fetchAvailableModels`에 답하지 않는 백엔드)에는 Pro 조정을
-포함한 `-{등급}` 덧붙이기 — 0.40.0 동작 — 로 되돌아가므로, 조회 실패는 추측만 잃을 뿐 요청을
-잃지 않습니다. 실패한 조회는 1분 동안 기억한 뒤 다시 시도하므로, 닿지 않는 컨트롤 플레인의 비용은
-메시지마다가 아니라 1분에 한 번으로 제한되며, 조회 자체도 Gemini id에 대해서만 일어납니다. 설정에 적힌
-인식되지 않는 `effort`는 카탈로그가 *없을* 때 1번 규칙대로 적힌 그대로 덧붙여지며 조정되지 않습니다.
-카탈로그가 있으면 그 등급이 제공되지 않는다고 방금 확인한 셈이므로, 계정이 게시하는 등급으로 접힙니다.
-`-tiered` 경로에서는 백엔드가 모르는 `thinkingLevel`을 거부하므로 `medium`으로 접힙니다. 카탈로그가
-그대로 게시하는 id, 그리고 Gemini가 아닌 id(`claude-sonnet-4-6`, `gpt-oss-120b-medium`)는 적힌 그대로
-전송됩니다. 인식되지 않는 `output_config.effort`는 모델 id에 반영되지 않고 `medium`으로 되돌아갑니다.
-thinking을 명시적으로 끈 요청(`thinking.type = "disabled"`)에는 `thinkingLevel`이 붙지 않습니다.
-변환된 `thinkingBudget: 0`이 그대로 유지됩니다.
-
-Antigravity는 Claude 모델도 제공하지만, shunt는 아직 그 모델들이 필요로 하는 요청 재작성을 구현하지
-않았습니다([#368](https://github.com/pleaseai/shunt/issues/368)). 로컬에서 그런 슬러그를 거부하는 것은
-아무것도 없으며 — 적힌 그대로 백엔드에 도달합니다 — 그러니 당분간은 Gemini 계열 슬러그만 라우팅하세요.
+증거는 2026-09-07의 합성 데이터 기반 격리 라우터/루프백 테스트이며 실시간 모델 제공을 보장하지 않습니다. Google AI Studio Web은 제외됩니다. 영구 서명 저장, 범용 캐시/저장소 플랫폼, 계정 간 프로젝트 재사용, 진행 없음 판단에 따른 취소 휴리스틱은 추가하지 않습니다.
 
 ## 어댑터가 전달하는 것
 
@@ -181,14 +125,9 @@ Antigravity는 Claude 모델도 제공하지만, shunt는 아직 그 모델들�
 사용량은 Google이 보고한 수치입니다 — `promptTokenCount`와 `candidatesTokenCount`가 `input_tokens`와
 `output_tokens`에 매핑됩니다.
 
-**Thinking**은 요청을 따릅니다: `thinking.type = "enabled"`는 `budget_tokens`(기본값 `1024`)로부터
-`thinkingConfig.thinkingBudget`을 설정하고, `"disabled"`는 이를 `0`으로 설정합니다. 활성화된
-`thinking` 블록은 위 **모델 라우팅**에서 설명한 대로 모델의 effort 등급을 고르는 신호이기도 합니다.
+**Thinking**은 요청을 따릅니다. `thinking.type = "enabled"`는 `budget_tokens`(기본값 `1024`)로 `thinkingConfig.thinkingBudget`을 설정하고, `"disabled"`는 `0`으로 설정합니다.
 
-또한 모든 요청은 Antigravity 클라이언트가 보내는 **에이전트 신원**을 함께 전달합니다:
-`userAgent: "antigravity"`, `requestType: "agent"`, 요청마다 생성되는 `requestId`, 그리고 후속 턴이
-같은 세션에 도달하도록 대화에서 가장 먼저 나오는 사용자 텍스트에서 유도한 `sessionId`입니다. `gemini` 프로바이더의 Code Assist
-요청은 이 중 어느 것도 보내지 않습니다.
+모든 요청은 `model`, `project`, `userAgent: "antigravity"`, `requestType: "agent"`, 새 `requestId: "agent-<uuid>"`, `request.sessionId`를 전달합니다. 세션은 늘어나는 전체 기록이 아니라 위에서 설명한 계정과 정규화된 첫 사용자 메시지를 따릅니다. 일반 `gemini` Code Assist 엔벨로프는 변경되지 않습니다.
 
 **도구 스키마는 Gemini의 `Schema` 방언에 맞게 조정됩니다** — 이 프로바이더와, 같은 어댑터를 쓰는 `gemini`
 프로바이더 모두에서요. `$schema`, `$id`, `$comment`,
@@ -222,7 +161,7 @@ shunt run
 curl -sS http://127.0.0.1:3001/v1/messages \
   -H 'anthropic-version: 2023-06-01' \
   -H 'content-type: application/json' \
-  -d '{"model":"claude-gemini-3.6-flash-via-antigravity","max_tokens":16,"messages":[{"role":"user","content":"Reply with OK."}]}'
+  -d '{"model":"claude-gemini-via-antigravity","max_tokens":16,"messages":[{"role":"user","content":"Reply with OK."}]}'
 ```
 
 응답의 `x-gateway-upstream` 헤더가 `antigravity`를 가리키는지 확인한 다음,
@@ -230,25 +169,9 @@ curl -sS http://127.0.0.1:3001/v1/messages \
 
 <Aside type="note" title="오버라이드">
 
-`SHUNT_ANTIGRAVITY_AUTH_FILE`은 자격 증명 경로를 오버라이드합니다(빈 값이면 기본값으로 폴백합니다).
-`antigravity_oauth` 업스트림은 두 호스트에 고정됩니다: 받아들이는 비루프백 `base_url`은
-`daily-cloudcode-pa.googleapis.com`(기본값) 또는 예전 문서를 보고 작성한 구성이 계속 로드되도록
-검증 단계에서는 여전히 받아들여지는 `cloudcode-pa.googleapis.com`에 대한 HTTPS뿐입니다 — `daily-cloudcode-pa.sandbox.googleapis.com`을
-포함해 **다른 어떤 `googleapis.com` 호스트도 자격이 없습니다**. 로컬 프록시를 위해 루프백 호스트는
-허용됩니다. 그 외에는 구독 토큰을 조용히 오프오리진으로 내보내는 대신 구성 검증 단계에서 거부됩니다 —
-`providers.<name> uses auth = "antigravity_oauth" but base_url is not https; refusing to send a
-subscription token over plaintext`, 또는 이에 대응하는 `... host <host> is neither
-daily-cloudcode-pa.googleapis.com nor cloudcode-pa.googleapis.com; refusing to send a subscription
-token off-origin`입니다.
+`SHUNT_ANTIGRAVITY_AUTH_FILE`은 자격 증명 경로를 변경하며 빈 값이면 기본값을 사용합니다.
 
-프로덕션은 Antigravity를 서비스하지 않습니다 — `onboardUser`도, 추론도 그렇습니다. 추론은 첫 요청부터
-가짜처럼 보이는 `429 RESOURCE_EXHAUSTED`로 응답합니다. 기본 `base_url`은 이미 `daily-` 컨트롤 플레인을
-가리킵니다. 평범한 프로덕션에 고정된 `base_url` — 포트도 경로 프리픽스도 없는
-`cloudcode-pa.googleapis.com`에 대한 HTTPS — 도 여전히 로드되지만, 추론과 온보딩 모두
-`daily-cloudcode-pa.googleapis.com`으로 갑니다. 그리고 시작 시, `shunt check`, 리로드에서 해당 프로바이더
-이름을 담은 경고를 로그로 남기므로 `base_url`을 지우거나 daily 호스트로 바꿀 수 있습니다. 백엔드 앞에
-무언가가 놓여 있다면(루프백 프록시, 또는 두 호스트 중 하나에 명시적 포트나 경로 프리픽스가 붙은 것)
-그대로 두고 자기 자신을 통해 나갑니다.
+네이티브 추론은 정확한 표준 HTTPS 루트인 `https://daily-cloudcode-pa.googleapis.com` 또는 `https://cloudcode-pa.googleapis.com`을 사용합니다. 프로덕션 루트는 daily 컨트롤 플레인으로 정규화됩니다. 경로 접두사, 쿼리, 프래그먼트, 사용자 정보, 별도 프로덕션 포트는 설정하지 마세요. 루프백 루트는 로컬 프록시로 사용할 수 있지만 정확히 같은 오리진만 허용됩니다. 추론 리디렉션도 검증된 오리진과 정확한 SSE 경로/쿼리를 유지해야 하며, 유사 호스트나 다른 오리진은 bearer 전송 전에 거부됩니다.
 
 [`shunt login antigravity`](/reference/cli/#shunt-login-antigravity)는 **라우팅된** Antigravity
 업스트림을 상대로 — 또는 라우트를 아직 연결하지 않았다면 선언한 Antigravity 업스트림을 상대로 —

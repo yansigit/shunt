@@ -118,7 +118,13 @@ impl ReplayGateway {
             ),
         )
         .unwrap();
-        let mut config = Config::load(Some(&config_path)).unwrap();
+        let mut config = {
+            // Config::load reads global overrides used by sibling unit tests.
+            let _lock = crate::config::CONFIG_ENV_LOCK
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            Config::load(Some(&config_path)).unwrap()
+        };
         config.server.bind = "127.0.0.1:0".to_string();
         let listener = tokio::net::TcpListener::bind(config.server.bind_addr().unwrap())
             .await

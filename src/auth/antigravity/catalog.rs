@@ -244,7 +244,8 @@ pub async fn catalog_ids_for_account(
 
 /// Compatibility seam for existing unit fixtures; production native requests
 /// always use the account-aware variant above.
-pub async fn catalog_ids(
+#[cfg(test)]
+async fn catalog_ids(
     client: &reqwest::Client,
     base_url: &str,
     access_token: &str,
@@ -254,10 +255,13 @@ pub async fn catalog_ids(
 }
 
 async fn fetch_catalog(
-    client: &reqwest::Client,
+    _client: &reqwest::Client,
     base_url: &str,
     access_token: &str,
 ) -> Option<BTreeSet<String>> {
+    // The caller's general HTTP client may follow redirects. Catalog evidence
+    // must come from this exact validated endpoint, not a redirected source.
+    let client = crate::auth::shared::antigravity_catalog_client(base_url).ok()?;
     let url = format!("{base_url}/v1internal:fetchAvailableModels");
     // The catalog is account-scoped, so it is addressed exactly as inference
     // is: the subscription bearer plus the Antigravity client fingerprint.
@@ -375,6 +379,42 @@ mod tests {
             })
             .collect::<serde_json::Map<_, _>>();
         json!({ "models": models })
+    }
+
+    #[tokio::test]
+    async fn antigravity_native_origin_catalog_refuses_redirects_before_following() {
+        for off_origin in [false, true] {
+            let source = MockServer::start().await;
+            let destination = MockServer::start().await;
+            let target = if off_origin { &destination } else { &source };
+            Mock::given(path("/redirected-catalog"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(catalog_body(&["gemini-synthetic-high"])),
+                )
+                .mount(target)
+                .await;
+            Mock::given(path("/v1internal:fetchAvailableModels"))
+                .respond_with(
+                    ResponseTemplate::new(307)
+                        .insert_header("Location", format!("{}/redirected-catalog", target.uri())),
+                )
+                .mount(&source)
+                .await;
+            let result =
+                fetch_catalog(&reqwest::Client::new(), &source.uri(), "synthetic-token").await;
+            let requests = target.received_requests().await.unwrap();
+            assert!(
+                requests
+                    .iter()
+                    .all(|request| request.url.path() != "/redirected-catalog"),
+                "catalog redirects must not be followed, even within the same origin"
+            );
+            assert!(
+                result.is_none(),
+                "a redirect cannot authorize a catalog tuple"
+            );
+        }
     }
 
     #[tokio::test]

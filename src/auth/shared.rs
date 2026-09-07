@@ -220,6 +220,21 @@ pub(crate) fn antigravity_inference_client(
         .build()?)
 }
 
+/// Catalog evidence is accepted only from the configured canonical endpoint.
+/// Refuse redirects entirely: a sibling path is not authoritative evidence.
+pub(crate) fn antigravity_catalog_client(configured_base: &str) -> anyhow::Result<reqwest::Client> {
+    let base = configured_base.parse::<reqwest::Url>()?;
+    if !crate::auth::antigravity::auth::is_safe_inference_url(
+        &base.join("/v1internal:streamGenerateContent?alt=sse")?,
+        configured_base,
+    ) {
+        anyhow::bail!("unsafe Antigravity catalog origin")
+    }
+    Ok(reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?)
+}
+
 pub(crate) fn write_auth_file_atomic(path: &Path, value: &Value) -> io::Result<()> {
     let bytes = serde_json::to_vec_pretty(value)?;
     // Deliberately the no-mkdir entry point: a missing credential directory

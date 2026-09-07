@@ -1396,8 +1396,21 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // Serializes the process-wide auth-file override.
     async fn antigravity_native_affinity_production_default_resolver_once() {
-        let previous = std::env::var_os("SHUNT_ANTIGRAVITY_AUTH_FILE");
+        let _lock = crate::auth::antigravity::ANTIGRAVITY_AUTH_FILE_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        struct RestoreAuthPath(Option<std::ffi::OsString>);
+        impl Drop for RestoreAuthPath {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(value) => std::env::set_var("SHUNT_ANTIGRAVITY_AUTH_FILE", value),
+                    None => std::env::remove_var("SHUNT_ANTIGRAVITY_AUTH_FILE"),
+                }
+            }
+        }
+        let _restore = RestoreAuthPath(std::env::var_os("SHUNT_ANTIGRAVITY_AUTH_FILE"));
         let missing =
             std::env::temp_dir().join(format!("shunt-antigravity-missing-{}", std::process::id()));
         std::env::set_var("SHUNT_ANTIGRAVITY_AUTH_FILE", &missing);
@@ -1409,10 +1422,6 @@ mod tests {
             state.default_resolver_calls.unwrap().load(Ordering::SeqCst),
             1
         );
-        match previous {
-            Some(value) => std::env::set_var("SHUNT_ANTIGRAVITY_AUTH_FILE", value),
-            None => std::env::remove_var("SHUNT_ANTIGRAVITY_AUTH_FILE"),
-        }
     }
 
     /// `Config::default()` with `[server.auth]` bound to a unique env var and

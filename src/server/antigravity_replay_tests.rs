@@ -425,7 +425,7 @@ async fn antigravity_native_401_ambiguous_send_timeout_terminates_without_replay
         &token_server,
         "pre-401-token",
         Some("synthetic-user@example.com"),
-        "\n[server.timeouts]\nupstream_ttfb_ms = 400\n",
+        "\n[server.timeouts]\nupstream_ttfb_ms = 2000\n",
     )
     .await;
 

@@ -438,11 +438,6 @@ pub fn antigravity_exact_catalog_admission(
         // an inference dispatch.
         return Err("model is outside the native Antigravity Gemini catalog".into());
     }
-    if !catalog.ids.contains(upstream_model) {
-        return Err(format!(
-            "model {upstream_model} is not declared by the account catalog"
-        ));
-    }
     Ok(AntigravityModel::as_written(upstream_model))
 }
 
