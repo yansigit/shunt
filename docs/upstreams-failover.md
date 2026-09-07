@@ -158,6 +158,24 @@ Response headers on every proxied response (success or final failure):
 `x-gateway-upstream` (upstream name), `x-gateway-model` (client-requested id),
 `x-gateway-upstream-model` (mapped upstream id).
 
+### Gemini generation acceptance boundary
+
+Gemini Code Assist generation is a non-idempotent creation POST. Within one
+Gemini upstream, its bounded retry policy may reissue only a transient
+connection or timeout failure that resolves before response headers. A returned
+status is never retried against the same upstream because the provider may
+already have accepted the billable generation. The token, selected project,
+endpoint, and serialized request remain identical on a permitted pre-header
+retry.
+
+The ordered chain above still classifies a relayed status for cross-upstream
+advancement; that is a move to a separately configured route, not a same-upstream
+retry. There is no retry, account switch, route hop, or repair after response-body
+processing begins or any output or replay-unsafe tool activity occurs. Gemini
+also requires an authoritative provider finish plus clean closure, so malformed,
+truncated, or provider-error bodies fail explicitly without re-entering either
+the retry loop or the failover chain.
+
 ### Capability-aware fallback
 
 After resolving an ordered chain, shunt preserves the first (primary) route
