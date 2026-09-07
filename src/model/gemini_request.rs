@@ -167,9 +167,10 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
                 .and_then(Value::as_array)
                 .expect("has_tool_result requires array content");
             let mut matched = HashMap::with_capacity(expected.len());
-            for block in blocks.iter().filter(|block| {
-                block.get("type").and_then(Value::as_str) == Some("tool_result")
-            }) {
+            for block in blocks
+                .iter()
+                .filter(|block| block.get("type").and_then(Value::as_str) == Some("tool_result"))
+            {
                 let tool_use_id = block
                     .get("tool_use_id")
                     .and_then(Value::as_str)

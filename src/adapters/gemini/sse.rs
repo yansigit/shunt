@@ -290,10 +290,7 @@ mod tests {
             assert!(aligned.push_one(suffix).is_err());
 
             let mut delimiter_split = Decoder::with_limit(64);
-            assert_eq!(
-                delimiter_split.push_one(DONE).unwrap().1,
-                Some(Item::Done)
-            );
+            assert_eq!(delimiter_split.push_one(DONE).unwrap().1, Some(Item::Done));
             let cut = suffix.len() - 1;
             assert_eq!(
                 delimiter_split.push_one(&suffix[..cut]).unwrap(),

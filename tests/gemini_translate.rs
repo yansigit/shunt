@@ -719,16 +719,19 @@ fn gemini_parallel_tool_result_identity() {
     let translated = translate_request_for_model(&valid, "gemini-3.1-pro-preview").unwrap();
     let responses = translated["contents"][1]["parts"].as_array().unwrap();
     assert_eq!(responses[0]["functionResponse"]["name"], "first_tool");
-    assert_eq!(responses[0]["functionResponse"]["response"]["output"], "first");
+    assert_eq!(
+        responses[0]["functionResponse"]["response"]["output"],
+        "first"
+    );
     assert!(responses[0]["functionResponse"]["response"]
         .get("error")
         .is_none());
     assert_eq!(responses[1]["functionResponse"]["name"], "second_tool");
-    assert_eq!(responses[1]["functionResponse"]["response"]["output"], "second");
     assert_eq!(
-        responses[1]["functionResponse"]["response"]["error"],
-        true
+        responses[1]["functionResponse"]["response"]["output"],
+        "second"
     );
+    assert_eq!(responses[1]["functionResponse"]["response"]["error"], true);
 
     let invalid_result_batches = [
         json!([

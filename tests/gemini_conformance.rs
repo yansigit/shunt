@@ -728,7 +728,11 @@ async fn gemini_post_done_frames_real_gateway() {
         [FINISH, DONE, b" \r\n"].concat(),
     )])
     .await;
-    assert_eq!(whitespace.matches("event: message_stop").count(), 1, "{whitespace}");
+    assert_eq!(
+        whitespace.matches("event: message_stop").count(),
+        1,
+        "{whitespace}"
+    );
     assert!(!whitespace.contains("event: error"), "{whitespace}");
 }
 
