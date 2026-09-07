@@ -235,6 +235,67 @@ pub struct AntigravityCatalog<'a> {
     pub fresh: bool,
 }
 
+/// Authoritative native admission. Unlike the legacy resolver below this
+/// never invents, folds, clamps, or repins an id: the catalog must freshly
+/// declare the exact wire tuple requested by the client.
+pub fn antigravity_exact_catalog_admission(
+    upstream_model: &str,
+    route_effort: Option<&str>,
+    request: &Value,
+    catalog: AntigravityCatalog<'_>,
+) -> Result<AntigravityModel, String> {
+    if !catalog.fresh {
+        return Err("Antigravity catalog evidence is stale".to_string());
+    }
+    if upstream_model.starts_with(ANTIGRAVITY_GEMINI_PREFIX) {
+        if !catalog.ids.contains(upstream_model) {
+            return Err(format!(
+                "model {upstream_model} is not declared by the account catalog"
+            ));
+        }
+        let requested = route_effort
+            .or_else(|| {
+                request
+                    .pointer("/output_config/effort")
+                    .and_then(Value::as_str)
+            })
+            .map(normalize_effort);
+        if upstream_model.ends_with("-tiered") {
+            let effort = requested.unwrap_or_else(|| "medium".to_string());
+            if !matches!(effort.as_str(), "low" | "medium" | "high") {
+                return Err("unsupported Antigravity effort".into());
+            }
+            let level = match effort.as_str() {
+                "low" => "low",
+                "medium" => "medium",
+                _ => "high",
+            };
+            return Ok(AntigravityModel {
+                id: upstream_model.to_string(),
+                thinking_level: Some(level),
+            });
+        }
+        if let Some(effort) = requested {
+            let suffix = ANTIGRAVITY_EFFORT_TIERS
+                .iter()
+                .find(|tier| upstream_model.ends_with(*tier));
+            if suffix.copied() != Some(effort.as_str()) {
+                return Err(
+                    "requested effort does not match the catalog-declared model tuple".into(),
+                );
+            }
+        }
+    } else if route_effort.is_some() || request.pointer("/output_config/effort").is_some() {
+        return Err("effort is unsupported for this Antigravity catalog model".into());
+    }
+    if !catalog.ids.contains(upstream_model) {
+        return Err(format!(
+            "model {upstream_model} is not declared by the account catalog"
+        ));
+    }
+    Ok(AntigravityModel::as_written(upstream_model))
+}
+
 /// [`antigravity_upstream_model`] with the catalog's freshness carried along;
 /// the plain form is the fresh case.
 pub fn antigravity_upstream_model_with(
@@ -590,6 +651,38 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn antigravity_native_affinity_exact_admission_rejects_inference_guesses() {
+        let request = json!({"output_config":{"effort":"high"}});
+        let ids = ["gemini-3.8-flash-tiered", "claude-sonnet-4-6"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let catalog = AntigravityCatalog {
+            ids: &ids,
+            fresh: true,
+        };
+        assert!(
+            antigravity_exact_catalog_admission("gemini-3.8-flash", None, &request, catalog)
+                .is_err()
+        );
+        assert!(antigravity_exact_catalog_admission(
+            "gemini-3.8-flash-tiered",
+            Some("xhigh"),
+            &request,
+            catalog
+        )
+        .is_err());
+        assert!(antigravity_exact_catalog_admission("gpt-4", None, &request, catalog).is_err());
+        assert!(antigravity_exact_catalog_admission(
+            "claude-sonnet-4-6",
+            None,
+            &json!({}),
+            catalog
+        )
+        .is_ok());
+    }
 
     #[test]
     fn the_antigravity_envelope_carries_the_agent_identity() {

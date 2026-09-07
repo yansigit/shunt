@@ -140,7 +140,7 @@ async fn antigravity_native_affinity_tiered_only_catalog_decides_the_model_id_an
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/v1/messages"))
         .json(&json!({
-            "model": "gemini-3.8-flash",
+            "model": "gemini-3.8-flash-tiered",
             "max_tokens": 16,
             "messages": [{"role": "user", "content": "Reply with OK."}]
         }))

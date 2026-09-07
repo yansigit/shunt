@@ -15,8 +15,8 @@ use crate::{
     auth::{antigravity::auth::inference_base_url, Credential},
     config::AuthMode,
     model::antigravity_request::{
-        antigravity_model_needs_catalog, antigravity_request_id, antigravity_session_id,
-        antigravity_upstream_model_with, wrap_antigravity_envelope, AntigravityCatalog,
+        antigravity_exact_catalog_admission, antigravity_request_id, antigravity_session_id,
+        wrap_antigravity_envelope, AntigravityCatalog,
     },
     model::gemini::{map_gemini_error, GeminiSseMachine},
     model::gemini_request::{translate_request_for_model, wrap_code_assist_envelope},
@@ -327,34 +327,29 @@ async fn forward(
         // per TTL and never fails the client's request. It is skipped outright for
         // an id no catalog could reshape — only Gemini ids carry a tier — so a
         // Claude- or GPT-routed Antigravity provider never pays for it.
-        let catalog = if antigravity_model_needs_catalog(&route.upstream_model) {
-            crate::auth::antigravity::catalog::catalog_ids_for_account(
-                &state.http_client,
-                &inference_base,
-                &access_token,
-                account_fingerprint.as_deref().unwrap_or("legacy"),
-                &project_id,
-            )
-            .await
-        } else {
-            None
-        };
-        if antigravity_model_needs_catalog(&route.upstream_model)
-            && catalog.as_ref().is_none_or(|snapshot| !snapshot.fresh)
-        {
-            return Err(local_gemini_error(
+        let catalog = crate::auth::antigravity::catalog::catalog_ids_for_account(
+            &state.http_client,
+            &inference_base,
+            &access_token,
+            account_fingerprint.as_deref().unwrap_or("legacy"),
+            &project_id,
+        )
+        .await;
+        let snapshot = catalog.as_ref().ok_or_else(|| {
+            local_gemini_error(
                 "Antigravity model admission requires fresh account catalog evidence",
-            ));
-        }
-        let model = antigravity_upstream_model_with(
+            )
+        })?;
+        let model = antigravity_exact_catalog_admission(
             &route.upstream_model,
             route.effort.as_deref(),
             json_body,
-            catalog.as_ref().map(|catalog| AntigravityCatalog {
-                ids: &catalog.ids,
-                fresh: catalog.fresh,
-            }),
-        );
+            AntigravityCatalog {
+                ids: &snapshot.ids,
+                fresh: snapshot.fresh,
+            },
+        )
+        .map_err(local_gemini_error)?;
         if let Some(level) = model.thinking_level {
             set_thinking_level(&mut inner_req, level);
         }
