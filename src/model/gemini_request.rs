@@ -3,7 +3,7 @@
 use axum::response::IntoResponse;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde_json::{json, Map, Value};
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::adapters::AdapterError;
 
@@ -158,6 +158,67 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
         let mut function_call_index = 0usize;
         let mut saw_tool_result = false;
         let mut message_tools = VecDeque::new();
+        let mut ordered_tool_results = if has_tool_result {
+            let expected = outstanding_batches.front().ok_or_else(|| {
+                bad_request("tool_result references an unknown or already-consumed tool-use batch")
+            })?;
+            let blocks = message
+                .get("content")
+                .and_then(Value::as_array)
+                .expect("has_tool_result requires array content");
+            let mut matched = HashMap::with_capacity(expected.len());
+            for block in blocks.iter().filter(|block| {
+                block.get("type").and_then(Value::as_str) == Some("tool_result")
+            }) {
+                let tool_use_id = block
+                    .get("tool_use_id")
+                    .and_then(Value::as_str)
+                    .filter(|id| !id.is_empty())
+                    .ok_or_else(|| bad_request("tool_result tool_use_id must be non-empty"))?;
+                let Some((_, name)) = expected.iter().find(|(id, _)| id == tool_use_id) else {
+                    return Err(bad_request(format!(
+                        "tool_result references unknown tool_use_id {tool_use_id} or one already consumed"
+                    )));
+                };
+                let output = extract_tool_result_content(block)?;
+                let mut response = Map::new();
+                response.insert("output".to_string(), output);
+                if block.get("is_error").and_then(Value::as_bool) == Some(true) {
+                    response.insert("error".to_string(), Value::Bool(true));
+                }
+                let function_response = json!({
+                    "functionResponse": {
+                        "name": name,
+                        "response": response
+                    }
+                });
+                if matched
+                    .insert(tool_use_id.to_string(), function_response)
+                    .is_some()
+                {
+                    return Err(bad_request(format!(
+                        "duplicate tool_result for tool_use_id {tool_use_id}"
+                    )));
+                }
+            }
+            if matched.len() != expected.len() {
+                return Err(bad_request(
+                    "Gemini tool-result batch must answer every parallel call exactly once",
+                ));
+            }
+            Some(
+                expected
+                    .iter()
+                    .map(|(id, _)| {
+                        matched
+                            .remove(id)
+                            .expect("complete identity mapping was validated")
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        } else {
+            None
+        };
 
         if let Some(content) = message.get("content") {
             match content {
@@ -272,39 +333,14 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
                                         "tool_result blocks are only valid in user messages",
                                     ));
                                 }
-                                let tool_use_id = block
-                                    .get("tool_use_id")
-                                    .and_then(Value::as_str)
-                                    .filter(|id| !id.is_empty())
-                                    .ok_or_else(|| {
-                                        bad_request("tool_result tool_use_id must be non-empty")
-                                    })?;
-                                let (expected_id, name) = outstanding_batches
-                                    .front_mut()
-                                    .and_then(VecDeque::pop_front)
-                                    .ok_or_else(|| {
-                                        bad_request(format!(
-                                            "tool_result references unknown tool_use_id {tool_use_id} or one already consumed"
-                                        ))
-                                    })?;
-                                if expected_id != tool_use_id {
-                                    return Err(bad_request(format!(
-                                        "tool_result order is ambiguous: expected {expected_id}, received {tool_use_id}"
-                                    )));
+                                if !saw_tool_result {
+                                    parts.extend(
+                                        ordered_tool_results
+                                            .take()
+                                            .expect("tool-result batch was prevalidated"),
+                                    );
+                                    saw_tool_result = true;
                                 }
-                                saw_tool_result = true;
-                                let output_val = extract_tool_result_content(block)?;
-                                let mut response = Map::new();
-                                response.insert("output".to_string(), output_val);
-                                if block.get("is_error").and_then(Value::as_bool) == Some(true) {
-                                    response.insert("error".to_string(), Value::Bool(true));
-                                }
-                                parts.push(json!({
-                                    "functionResponse": {
-                                        "name": name,
-                                        "response": response
-                                    }
-                                }));
                             }
                             _ => {}
                         }
@@ -326,14 +362,6 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
             outstanding_batches.push_back(message_tools);
         }
         if saw_tool_result {
-            if outstanding_batches
-                .front()
-                .is_some_and(|batch| !batch.is_empty())
-            {
-                return Err(bad_request(
-                    "Gemini tool-result batch must answer every parallel call exactly once",
-                ));
-            }
             outstanding_batches.pop_front();
         }
     }
