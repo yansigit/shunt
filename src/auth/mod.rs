@@ -102,21 +102,17 @@ pub(crate) trait CredentialResolver: Send + Sync {
     ) -> CredentialFuture<'a>;
 }
 
-#[derive(Debug, Default)]
-pub(crate) struct DefaultCredentialResolver;
-
-#[cfg(test)]
-static DEFAULT_RESOLVER_CALLS: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
-
-#[cfg(test)]
-pub(crate) fn reset_default_resolver_calls() {
-    DEFAULT_RESOLVER_CALLS.store(0, std::sync::atomic::Ordering::SeqCst);
+#[derive(Debug, Clone)]
+pub(crate) struct DefaultCredentialResolver {
+    pub(crate) calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
-#[cfg(test)]
-pub(crate) fn default_resolver_calls() -> usize {
-    DEFAULT_RESOLVER_CALLS.load(std::sync::atomic::Ordering::SeqCst)
+impl Default for DefaultCredentialResolver {
+    fn default() -> Self {
+        Self {
+            calls: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        }
+    }
 }
 
 impl CredentialResolver for DefaultCredentialResolver {
@@ -126,8 +122,7 @@ impl CredentialResolver for DefaultCredentialResolver {
         route: &'a Route,
         client: &'a reqwest::Client,
     ) -> CredentialFuture<'a> {
-        #[cfg(test)]
-        DEFAULT_RESOLVER_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Box::pin(resolve_credential(config, route, client))
     }
 }

@@ -57,6 +57,8 @@ pub struct AppState {
     /// `state.config.server.bind_addr()`.
     pub boot_is_loopback: bool,
     credential_resolver: Arc<dyn CredentialResolver>,
+    #[cfg(test)]
+    default_resolver_calls: Option<Arc<std::sync::atomic::AtomicUsize>>,
     /// The live, hot-swappable runtime state a reload updates. Private so the
     /// only way in is a snapshot method that keeps `config`/`inbound_auth`/
     /// `admin_auth` consistent with it.
@@ -66,13 +68,18 @@ pub struct AppState {
 struct RequestDependencies {
     http_client: reqwest::Client,
     credential_resolver: Arc<dyn CredentialResolver>,
+    #[cfg(test)]
+    default_resolver_calls: Option<Arc<std::sync::atomic::AtomicUsize>>,
 }
 
 impl RequestDependencies {
     fn production(http_client: reqwest::Client) -> Self {
+        let resolver = DefaultCredentialResolver::default();
         Self {
             http_client,
-            credential_resolver: Arc::new(DefaultCredentialResolver),
+            #[cfg(test)]
+            default_resolver_calls: Some(Arc::clone(&resolver.calls)),
+            credential_resolver: Arc::new(resolver),
         }
     }
 }
@@ -139,6 +146,8 @@ impl AppState {
             admin_stores,
             gateway_stores,
             boot_is_loopback,
+            #[cfg(test)]
+            default_resolver_calls: dependencies.default_resolver_calls,
             credential_resolver: dependencies.credential_resolver,
             shared,
         }
@@ -162,6 +171,8 @@ impl AppState {
             RequestDependencies {
                 http_client: self.http_client.clone(),
                 credential_resolver: self.credential_resolver.clone(),
+                #[cfg(test)]
+                default_resolver_calls: self.default_resolver_calls.clone(),
             },
             self.accounts.clone(),
             self.status.clone(),
@@ -198,11 +209,25 @@ fn boot_is_loopback(config: &Config) -> bool {
 /// that hot-swap the same store and background tasks (the usage poller) that
 /// share the same [`AccountPool`] the request handlers use.
 pub fn build_router(config: Config) -> Result<(Router, SharedState, AppState), ConfigError> {
-    build_router_with_dependencies(
-        config,
-        reqwest::Client::new(),
-        Arc::new(DefaultCredentialResolver),
-    )
+    let resolver = DefaultCredentialResolver::default();
+    #[cfg(test)]
+    let resolver_calls = Arc::clone(&resolver.calls);
+    let result = build_router_with_dependencies(config, reqwest::Client::new(), Arc::new(resolver));
+    #[cfg(test)]
+    return attach_default_resolver_calls(result, resolver_calls);
+    #[cfg(not(test))]
+    result
+}
+
+#[cfg(test)]
+fn attach_default_resolver_calls(
+    mut result: Result<(Router, SharedState, AppState), ConfigError>,
+    calls: Arc<std::sync::atomic::AtomicUsize>,
+) -> Result<(Router, SharedState, AppState), ConfigError> {
+    if let Ok((_, _, state)) = result.as_mut() {
+        state.default_resolver_calls = Some(calls);
+    }
+    result
 }
 
 fn build_router_with_dependencies(
@@ -260,6 +285,8 @@ fn build_router_with_dependencies(
         RequestDependencies {
             http_client,
             credential_resolver,
+            #[cfg(test)]
+            default_resolver_calls: None,
         },
         Arc::new(AccountPool::new()),
         Arc::new(StatusStore::new()),
@@ -439,10 +466,7 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::{
-        auth::{
-            default_resolver_calls, reset_default_resolver_calls, Credential, CredentialFuture,
-            CredentialResolver,
-        },
+        auth::{Credential, CredentialFuture, CredentialResolver},
         config::{
             AccountConfig, AuthMode, Config, InboundAuthConfig, OauthUsageConfig, RetryConfig,
             RouteConfig, UsageEndpointConfig,
@@ -649,6 +673,37 @@ mod tests {
                     access_token: self.access_token.to_string(),
                     project_id: self.project_id.to_string(),
                     account_fingerprint: self.account_fingerprint.to_string(),
+                })
+            })
+        }
+    }
+
+    #[derive(Clone)]
+    struct MutableNativeTuple {
+        access_token: String,
+        project_id: String,
+        account_fingerprint: String,
+    }
+
+    struct SwappingNativeResolver {
+        tuple: Arc<Mutex<MutableNativeTuple>>,
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl CredentialResolver for SwappingNativeResolver {
+        fn resolve<'a>(
+            &'a self,
+            _: &'a Config,
+            _: &'a Route,
+            _: &'a reqwest::Client,
+        ) -> CredentialFuture<'a> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let tuple = self.tuple.lock().unwrap().clone();
+            Box::pin(async move {
+                Ok(Credential::AntigravityOauth {
+                    access_token: tuple.access_token,
+                    project_id: tuple.project_id,
+                    account_fingerprint: tuple.account_fingerprint,
                 })
             })
         }
@@ -1094,17 +1149,91 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn antigravity_native_affinity_inflight_swap_keeps_a_tuple_immutable() {
+        let upstream = start_native_upstream(true, "gemini-3.8-flash-medium").await;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let tuple = Arc::new(Mutex::new(MutableNativeTuple {
+            access_token: "token-a".into(),
+            project_id: "project-a".into(),
+            account_fingerprint: "account-a".into(),
+        }));
+        let resolver = Arc::new(SwappingNativeResolver {
+            tuple: tuple.clone(),
+            calls: calls.clone(),
+        });
+        let mut config = antigravity_config(upstream.base_url.clone(), "project-a");
+        config.server.max_concurrent_requests = 2;
+        let router = build_router_with_dependencies(config, reqwest::Client::new(), resolver)
+            .unwrap()
+            .0;
+        let first = router.clone().oneshot(native_request(true)).await.unwrap();
+        assert_eq!(first.status(), StatusCode::OK);
+        let mut first_body = first.into_body().into_data_stream();
+        let _ = tokio::time::timeout(Duration::from_secs(1), first_body.next())
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if upstream
+                    .state
+                    .requests
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|r| r.path_and_query.contains("streamGenerateContent"))
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("request A reaches inference");
+        *tuple.lock().unwrap() = MutableNativeTuple {
+            access_token: "token-b".into(),
+            project_id: "project-b".into(),
+            account_fingerprint: "account-b".into(),
+        };
+        let second = router.oneshot(native_request(true)).await.unwrap();
+        assert_eq!(second.status(), StatusCode::OK);
+        drop(second);
+        drop(first_body);
+        tokio::time::timeout(Duration::from_secs(1), upstream.state.dropped.notified())
+            .await
+            .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        let requests = upstream.state.requests.lock().unwrap();
+        let inference: Vec<_> = requests
+            .iter()
+            .filter(|r| r.path_and_query.contains("streamGenerateContent"))
+            .collect();
+        assert_eq!(inference.len(), 2);
+        assert_eq!(
+            inference[0].authorization.as_deref(),
+            Some("Bearer token-a")
+        );
+        assert_eq!(inference[0].body["project"], "project-a");
+        assert_eq!(
+            inference[1].authorization.as_deref(),
+            Some("Bearer token-b")
+        );
+        assert_eq!(inference[1].body["project"], "project-b");
+    }
+
+    #[tokio::test]
     async fn antigravity_native_affinity_production_default_resolver_once() {
         let previous = std::env::var_os("SHUNT_ANTIGRAVITY_AUTH_FILE");
         let missing =
             std::env::temp_dir().join(format!("shunt-antigravity-missing-{}", std::process::id()));
         std::env::set_var("SHUNT_ANTIGRAVITY_AUTH_FILE", &missing);
-        reset_default_resolver_calls();
         let config = antigravity_config("http://127.0.0.1:1".to_string(), "default-project");
-        let router = build_router(config).unwrap().0;
+        let (router, _, state) = build_router(config).unwrap();
         let response = router.oneshot(native_request(false)).await.unwrap();
         assert!(!response.status().is_success());
-        assert_eq!(default_resolver_calls(), 1);
+        assert_eq!(
+            state.default_resolver_calls.unwrap().load(Ordering::SeqCst),
+            1
+        );
         match previous {
             Some(value) => std::env::set_var("SHUNT_ANTIGRAVITY_AUTH_FILE", value),
             None => std::env::remove_var("SHUNT_ANTIGRAVITY_AUTH_FILE"),
