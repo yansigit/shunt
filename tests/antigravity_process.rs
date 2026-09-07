@@ -31,6 +31,7 @@ use shunt::{
     server,
 };
 use tokio::task::JoinHandle;
+use tower::ServiceExt;
 
 /// Model id the fixture config routes to the stub.
 const MODEL: &str = "agy-test-model";
@@ -192,7 +193,7 @@ fn can_bind_loopback() -> bool {
     std::net::TcpListener::bind("127.0.0.1:0").is_ok()
 }
 
-async fn start_gateway() -> TestGateway {
+fn fixture_config() -> Config {
     let dir = stub_agy().parent().unwrap();
     // One config file per gateway, never a shared name. Tests in a binary run
     // in parallel, and `fs::write` truncates before it writes: with a single
@@ -228,7 +229,11 @@ async fn start_gateway() -> TestGateway {
     )
     .unwrap();
 
-    let mut config = Config::load(Some(&config_path)).expect("fixture config should load");
+    Config::load(Some(&config_path)).expect("fixture config should load")
+}
+
+async fn start_gateway() -> TestGateway {
+    let mut config = fixture_config();
     config.server.bind = "127.0.0.1:0".to_string();
     let listener = tokio::net::TcpListener::bind(config.server.bind_addr().unwrap())
         .await
@@ -242,6 +247,12 @@ async fn start_gateway() -> TestGateway {
         base_url: format!("http://{addr}"),
         task,
     }
+}
+
+fn test_router() -> axum::Router {
+    server::build_router(fixture_config())
+        .expect("fixture router should build")
+        .0
 }
 
 async fn start_gateway_after_unsandboxed_loopback_reload() -> TestGateway {
@@ -303,6 +314,40 @@ async fn turn(gateway: &TestGateway, marker: &str, stream: bool) -> (reqwest::St
         let response = request.await.expect("request should reach the gateway");
         let status = response.status();
         let text = response.text().await.expect("body should complete");
+        (status, text)
+    })
+    .await
+    .expect("the turn must finish within the guard rather than hang")
+}
+
+/// Drive the real router and response body without involving socket framing.
+///
+/// The descendant-lifetime regressions are about the adapter's child process
+/// and body stream. Keeping those assertions in-process avoids an unrelated,
+/// intermittent macOS hyper/reqwest HTTP/1 end-of-body stall while still
+/// requiring the real stream to terminate inside [`REQUEST_GUARD`].
+async fn router_turn(marker: &str, stream: bool) -> (reqwest::StatusCode, String) {
+    let body = serde_json::json!({
+        "model": MODEL,
+        "max_tokens": 64,
+        "stream": stream,
+        "messages": [{ "role": "user", "content": marker }],
+    });
+    let request = axum::http::Request::post("/v1/messages")
+        .header(axum::http::header::CONTENT_TYPE, "application/json")
+        .body(axum::body::Body::from(body.to_string()))
+        .expect("fixture request should build");
+
+    tokio::time::timeout(REQUEST_GUARD, async {
+        let response = test_router()
+            .oneshot(request)
+            .await
+            .expect("request should reach the router");
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .expect("body should complete");
+        let text = String::from_utf8(bytes.to_vec()).expect("response body should be UTF-8");
         (status, text)
     })
     .await
@@ -456,16 +501,12 @@ async fn assert_process_exited(pid: libc::pid_t) {
 
 #[tokio::test]
 async fn streaming_finishes_when_a_descendant_holds_stdout_open() {
-    if !can_bind_loopback() {
-        return;
-    }
-    let gateway = start_gateway().await;
     let holder = HolderGuard::new("stream-hold");
     // Regression: the stub emits a terminal SUCCESS result, then leaves a
     // background `sleep` holding the inherited stdout pipe. Reading to EOF
     // instead of stopping at the result stalls a *finished* turn until the
     // deadline and then reports it as a failure.
-    let (status, body) = turn(&gateway, "MODE=result-then-hold TAG=stream-hold", true).await;
+    let (status, body) = router_turn("MODE=result-then-hold TAG=stream-hold", true).await;
 
     assert_eq!(status, reqwest::StatusCode::OK);
     assert!(body.contains("hello"), "body: {body}");
@@ -479,12 +520,8 @@ async fn streaming_finishes_when_a_descendant_holds_stdout_open() {
 
 #[tokio::test]
 async fn non_streaming_finishes_when_a_descendant_holds_stdout_open() {
-    if !can_bind_loopback() {
-        return;
-    }
-    let gateway = start_gateway().await;
     let holder = HolderGuard::new("non-stream-hold");
-    let (status, body) = turn(&gateway, "MODE=result-then-hold TAG=non-stream-hold", false).await;
+    let (status, body) = router_turn("MODE=result-then-hold TAG=non-stream-hold", false).await;
 
     assert_eq!(status, reqwest::StatusCode::OK);
     let json: Value = serde_json::from_str(&body).expect("a non-streaming turn returns JSON");

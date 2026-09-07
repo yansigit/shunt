@@ -34,9 +34,24 @@ check_unchanged() {
 
 check_unchanged "credential persistence" \
   src/auth \
+  ':(exclude)src/auth/mod.rs' \
   src/state_persist.rs \
   src/gateway/persist.rs \
   src/gateway/store.rs
+
+# Plan 10-07 deliberately adds one crate-private resolver boundary to
+# `src/auth/mod.rs` so hermetic tests can inject a synthetic Google OAuth
+# identity. Pin that file's complete phase diff byte-for-byte: this permits the
+# reviewed seam while continuing to reject any credential resolution or
+# writeback change hidden elsewhere in the module.
+expected_auth_mod_diff_sha256=d4931b1ab6407f4f0f9801c01cb95e9308ba9b69fda009b768be504be54fc1bd
+auth_mod_diff_sha256=$(
+  git diff --no-ext-diff "$phase_base"..HEAD -- src/auth/mod.rs | shasum -a 256 | awk '{print $1}'
+)
+if [[ "$auth_mod_diff_sha256" != "$expected_auth_mod_diff_sha256" ]]; then
+  echo "phase 10 scope audit: unexpected src/auth/mod.rs change" >&2
+  exit 1
+fi
 check_unchanged "Antigravity implementation" \
   src/adapters/antigravity.rs \
   src/adapters/antigravity \
