@@ -269,6 +269,49 @@ mod tests {
     }
 
     #[test]
+    fn gemini_post_done_frames() {
+        const DONE: &[u8] = b"data: [DONE]\n\n";
+        let suffixes = [
+            b": keepalive\n\n".as_slice(),
+            b"data:\n\n",
+            b"unknown: ignored\n\n",
+            b"data: {}\n\n",
+            b"data: [DONE]\n\n",
+        ];
+
+        for suffix in suffixes {
+            let combined = [DONE, suffix].concat();
+            let mut coalesced = Decoder::with_limit(64);
+            let (used, item) = coalesced.push_one(&combined).unwrap();
+            assert_eq!(used, DONE.len());
+            assert_eq!(item, Some(Item::Done));
+            assert!(coalesced.push_one(&combined[used..]).is_err());
+            assert!(coalesced.push_one(b"data: {}\n\n").is_err());
+
+            let mut aligned = Decoder::with_limit(64);
+            assert_eq!(aligned.push_one(DONE).unwrap().1, Some(Item::Done));
+            assert!(aligned.push_one(suffix).is_err());
+
+            let mut delimiter_split = Decoder::with_limit(64);
+            assert_eq!(
+                delimiter_split.push_one(DONE).unwrap().1,
+                Some(Item::Done)
+            );
+            let cut = suffix.len() - 1;
+            assert_eq!(
+                delimiter_split.push_one(&suffix[..cut]).unwrap(),
+                (cut, None)
+            );
+            assert!(delimiter_split.push_one(&suffix[cut..]).is_err());
+        }
+
+        let mut whitespace = Decoder::with_limit(64);
+        assert_eq!(whitespace.push_one(DONE).unwrap().1, Some(Item::Done));
+        assert_eq!(whitespace.push_one(b" \r\n").unwrap(), (3, None));
+        whitespace.finish().unwrap();
+    }
+
+    #[test]
     fn gemini_sse_valid_prefix_survives_a_later_malformed_frame_regardless_of_split() {
         let valid = b"data: {\"n\":1}\n\n";
         let invalid = b"data: nope\n\n";

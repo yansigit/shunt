@@ -686,6 +686,53 @@ async fn gemini_streaming_framing_rejects_trailing_data_and_duplicate_done_befor
 }
 
 #[tokio::test]
+async fn gemini_post_done_frames_real_gateway() {
+    if !can_bind_loopback() {
+        return;
+    }
+    const FINISH: &[u8] = b"data: {\"candidates\":[{\"finishReason\":\"STOP\"}]}\n\n";
+    const DONE: &[u8] = b"data: [DONE]\n\n";
+    let suffixes = [
+        b": keepalive\n\n".as_slice(),
+        b"data:\n\n",
+        b"unknown: ignored\n\n",
+        b"data: {}\n\n",
+        b"data: [DONE]\n\n",
+    ];
+
+    for suffix in suffixes {
+        let coalesced = bytes::Bytes::from([FINISH, DONE, suffix].concat());
+        let aligned = vec![
+            bytes::Bytes::from_static(FINISH),
+            bytes::Bytes::from_static(DONE),
+            bytes::Bytes::copy_from_slice(suffix),
+        ];
+        let cut = suffix.len() - 1;
+        let delimiter_split = vec![
+            bytes::Bytes::from_static(FINISH),
+            bytes::Bytes::from_static(DONE),
+            bytes::Bytes::copy_from_slice(&suffix[..cut]),
+            bytes::Bytes::copy_from_slice(&suffix[cut..]),
+        ];
+        for body in [
+            split_streaming_gateway_response(vec![coalesced]).await,
+            split_streaming_gateway_response(aligned).await,
+            split_streaming_gateway_response(delimiter_split).await,
+        ] {
+            assert_eq!(body.matches("event: error").count(), 1, "{body}");
+            assert!(!body.contains("event: message_stop"), "{body}");
+        }
+    }
+
+    let whitespace = split_streaming_gateway_response(vec![bytes::Bytes::from(
+        [FINISH, DONE, b" \r\n"].concat(),
+    )])
+    .await;
+    assert_eq!(whitespace.matches("event: message_stop").count(), 1, "{whitespace}");
+    assert!(!whitespace.contains("event: error"), "{whitespace}");
+}
+
+#[tokio::test]
 async fn gemini_streaming_framing_rejects_cut_stream_without_synthetic_success() {
     if !can_bind_loopback() {
         return;
