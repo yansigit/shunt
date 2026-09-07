@@ -71,14 +71,15 @@ Full phase goals, requirements, success criteria, and plan references are kept i
   3. Malformed, oversized, invalid-UTF-8, or prematurely terminated events fail as protocol errors without silent loss or synthesized success.
   4. Generation retries occur only for proven replay-safe pre-commit failures and never after output or replay-unsafe tool activity.
 
-**Plans**: 5 plans
+**Plans**: 5/5 plans executed
 
 Plans:
-- [ ] 10-01-PLAN.md — Checked Gemini semantic state and authentic tool/signature round trip
-- [ ] 10-02-PLAN.md — Bounded byte SSE and unary transport integration
-- [ ] 10-03-PLAN.md — Immutable identity, non-idempotent retry, parity, and cancellation
-- [ ] 10-04-PLAN.md — English engineering, configuration, and troubleshooting contract
-- [ ] 10-05-PLAN.md — Maintained locale parity, deterministic scope checks, and final release gates
+
+- [x] 10-01-PLAN.md — Checked Gemini semantic state and authentic tool/signature round trip
+- [x] 10-02-PLAN.md — Bounded byte SSE and unary transport integration
+- [x] 10-03-PLAN.md — Immutable identity, non-idempotent retry, parity, and cancellation
+- [x] 10-04-PLAN.md — English engineering, configuration, and troubleshooting contract
+- [x] 10-05-PLAN.md — Maintained locale parity, deterministic scope checks, and final release gates
 
 ### Phase 11: Antigravity Protocol and Credential Hardening
 
@@ -173,7 +174,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 1–8. OpenCodex Port | v1 | 25/25 | Complete | 2026-09-06 |
 | 9. Provider Conformance Foundation | v2 | 4/4 | Complete    | 2026-09-06 |
-| 10. Gemini Semantic Hardening | v2 | 0/TBD | Not started | - |
+| 10. Gemini Semantic Hardening | v2 | 5/5 | In Progress|  |
 | 11. Antigravity Protocol and Credential Hardening | v2 | 0/TBD | Not started | - |
 | 12. Cursor Evidence-Backed Hardening | v2 | 0/TBD | Not started | - |
 | 13. Generic OpenAI Chat Completions | v2 | 0/TBD | Not started | - |

@@ -20,11 +20,11 @@ requirement maps to exactly one roadmap phase after roadmap creation.
 
 ### Gemini / Google Code Assist
 
-- [ ] **GEM-01**: Gemini requests preserve Google OAuth identity and the selected project in the Code Assist envelope for the full request lifetime.
-- [ ] **GEM-02**: Gemini streaming relays text, reasoning, function calls, function results, usage, and terminal state incrementally and in order.
-- [ ] **GEM-03**: Gemini streaming and non-streaming modes produce equivalent content, tool, usage, finish, and provider-error semantics from the same upstream transcript.
-- [ ] **GEM-04**: Gemini rejects malformed, oversized, invalid-UTF-8, or prematurely terminated upstream events with a protocol error instead of silently dropping them or synthesizing success.
-- [ ] **GEM-05**: Gemini generation requests retry only when the failure is proven replay-safe and no output or replay-unsafe tool activity has occurred.
+- [x] **GEM-01**: Gemini requests preserve Google OAuth identity and the selected project in the Code Assist envelope for the full request lifetime.
+- [x] **GEM-02**: Gemini streaming relays text, reasoning, function calls, function results, usage, and terminal state incrementally and in order.
+- [x] **GEM-03**: Gemini streaming and non-streaming modes produce equivalent content, tool, usage, finish, and provider-error semantics from the same upstream transcript.
+- [x] **GEM-04**: Gemini rejects malformed, oversized, invalid-UTF-8, or prematurely terminated upstream events with a protocol error instead of silently dropping them or synthesizing success.
+- [x] **GEM-05**: Gemini generation requests retry only when the failure is proven replay-safe and no output or replay-unsafe tool activity has occurred.
 
 ### Antigravity
 
@@ -131,11 +131,11 @@ Each committed requirement has exactly one owning phase.
 | PRES-03 | Phase 9 | Complete |
 | PRES-04 | Phase 9 | Complete |
 | PRES-05 | Phase 9 | Complete |
-| GEM-01 | Phase 10 | Pending |
-| GEM-02 | Phase 10 | Pending |
-| GEM-03 | Phase 10 | Pending |
-| GEM-04 | Phase 10 | Pending |
-| GEM-05 | Phase 10 | Pending |
+| GEM-01 | Phase 10 | Complete |
+| GEM-02 | Phase 10 | Complete |
+| GEM-03 | Phase 10 | Complete |
+| GEM-04 | Phase 10 | Complete |
+| GEM-05 | Phase 10 | Complete |
 | ANT-01 | Phase 11 | Pending |
 | ANT-02 | Phase 11 | Pending |
 | ANT-03 | Phase 11 | Pending |

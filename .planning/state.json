@@ -16,7 +16,7 @@
     {
       "number": "10",
       "name": "Gemini Semantic Hardening",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "11",
@@ -51,8 +51,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (plan phase 10)",
-    "reason": "Phase 10 of 8 — needs a plan"
+    "label": "Advance to the next step (verify)",
+    "reason": "Phase 10 of 8 · 25% · ready to verify"
   },
-  "updated_at": "2026-09-06T22:45:55.740Z"
+  "updated_at": "2026-09-07T00:44:45.349Z"
 }
