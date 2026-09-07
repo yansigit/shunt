@@ -100,6 +100,11 @@ cursor = "cursor:default"
 
 ## 검증
 
+명시적인 종료 신호 없이 업스트림이 EOF로 끝나면 성공이 아니라 오류로 처리됩니다.
+네이티브 MCP 호출은 Cursor의 `tool_call_id`를 응답의 `tool_use.id`에 그대로 유지합니다.
+ID가 없으면 새 ID를 생성하지 않고 오류를 반환합니다. 이 동작은 격리된 프로토콜 테스트로
+검증되며, 모든 Cursor 모델이나 구독에서 실제로 사용할 수 있음을 보장하지는 않습니다.
+
 ```bash
 shunt check    # -> config ok
 shunt run
@@ -135,4 +140,3 @@ curl -sS http://127.0.0.1:3001/v1/messages \
 저촉될 수 있습니다. 사용에 따른 책임은 본인에게 있습니다.
 
 </Aside>
-

@@ -100,6 +100,11 @@ Cursor MCP 工具调用(模型调用的某个工具会以带 `stop_reason: "tool
 
 ## 校验
 
+上游在没有明确终止信号的情况下到达 EOF 时，将返回错误，而不是成功结束。
+原生 MCP 调用会把 Cursor 的 `tool_call_id` 原样保留在响应的 `tool_use.id` 中；
+缺少 ID 时会报错，不会生成替代 ID。这些行为已通过隔离的协议测试验证，
+但这并不代表每个 Cursor 模型或订阅都已通过实际可用性验证。
+
 ```bash
 shunt check    # -> config ok
 shunt run
@@ -135,4 +140,3 @@ agent 主机(必须仍是一个 HTTPS 的 `cursor.sh` 主机),`SHUNT_CURSOR_AUTH
 Cursor 的条款或触发账号层面的处置。使用风险自负。
 
 </Aside>
-

@@ -115,6 +115,12 @@ Composer reaches for a built-in. Retrying is the mitigation in both cases.
 
 ## Verify
 
+An upstream EOF without an authoritative terminal is an error, not a successful
+completion. Native MCP calls preserve Cursor's `tool_call_id` in the returned
+`tool_use.id`; a missing ID is an error rather than a generated replacement.
+These contracts are covered by isolated protocol tests, which do not establish
+live availability for every Cursor model or subscription.
+
 ```bash
 shunt check    # -> config ok
 shunt run
@@ -150,4 +156,3 @@ Reusing a Cursor subscription from an unofficial client is your own call — it 
 Cursor's terms or account enforcement. Use at your own risk.
 
 </Aside>
-
