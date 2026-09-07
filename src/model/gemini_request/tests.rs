@@ -797,6 +797,49 @@ fn gemini_tool_signature_roundtrip_keeps_legacy_calls_unsigned() {
 }
 
 #[test]
+fn rejects_tool_blocks_in_the_wrong_message_direction_and_unknown_roles() {
+    let invalid = [
+        json!({"messages": [{"role": "user", "content": [{
+            "type": "tool_use", "id": "toolu_wrong", "name": "read", "input": {}
+        }]}]}),
+        json!({"messages": [{"role": "assistant", "content": [{
+            "type": "tool_result", "tool_use_id": "toolu_wrong", "content": "x"
+        }]}]}),
+        json!({"messages": [{"role": "operator", "content": "x"}]}),
+        json!({"messages": [{"content": "x"}]}),
+    ];
+
+    for request in invalid {
+        assert!(translate_request(&request).is_err(), "accepted {request}");
+    }
+}
+
+#[test]
+fn tool_result_batches_are_consumed_once_in_original_call_order() {
+    let calls = json!({"role": "assistant", "content": [
+        {"type": "tool_use", "id": "toolu_a", "name": "same", "input": {}},
+        {"type": "tool_use", "id": "toolu_b", "name": "same", "input": {}}
+    ]});
+    let cases = [
+        json!({"messages": [calls.clone(), {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_b", "content": "B"},
+            {"type": "tool_result", "tool_use_id": "toolu_a", "content": "A"}
+        ]}]}),
+        json!({"messages": [calls.clone(), {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_a", "content": "A"},
+            {"type": "tool_result", "tool_use_id": "toolu_a", "content": "again"}
+        ]}]}),
+        json!({"messages": [calls, {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_a", "content": "A"}
+        ]}]}),
+    ];
+
+    for request in cases {
+        assert!(translate_request(&request).is_err(), "accepted {request}");
+    }
+}
+
+#[test]
 fn the_code_assist_envelope_carries_none_of_the_agent_fields() {
     // The `gemini` provider talks to production Code Assist as the Gemini
     // CLI. Sending Antigravity's client identity there would misidentify

@@ -3,7 +3,7 @@
 use axum::response::IntoResponse;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde_json::{json, Map, Value};
-use std::collections::HashMap;
+use std::collections::{HashSet, VecDeque};
 
 use crate::adapters::AdapterError;
 
@@ -112,16 +112,23 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
     };
 
     let mut contents = Vec::new();
-    let mut tool_names = HashMap::new();
+    let mut seen_tool_ids = HashSet::new();
+    let mut outstanding_batches: VecDeque<VecDeque<(String, String)>> = VecDeque::new();
 
     for message in messages {
         let role = match message.get("role").and_then(Value::as_str) {
             Some("user") => "user",
             Some("assistant") => "model",
-            _ => "user",
+            // Claude Code can insert mid-conversation system reminders. Keep
+            // their established user-turn compatibility mapping explicit.
+            Some("system") => "user",
+            Some(other) => return Err(bad_request(format!("unsupported message role {other}"))),
+            None => return Err(bad_request("message role must be present")),
         };
-
         let mut parts = Vec::new();
+        let mut function_call_index = 0usize;
+        let mut saw_tool_result = false;
+        let mut message_tools = VecDeque::new();
 
         if let Some(content) = message.get("content") {
             match content {
@@ -178,6 +185,11 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
                                 }
                             }
                             "tool_use" => {
+                                if role != "model" {
+                                    return Err(bad_request(
+                                        "tool_use blocks are only valid in assistant messages",
+                                    ));
+                                }
                                 let name = block
                                     .get("name")
                                     .and_then(Value::as_str)
@@ -198,16 +210,16 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
                                 if id.len() > MAX_TOOL_USE_ID_BYTES {
                                     return Err(bad_request("Gemini tool_use id exceeds limit"));
                                 }
-                                if tool_names
-                                    .insert(id.to_string(), name.to_string())
-                                    .is_some()
-                                {
+                                if !seen_tool_ids.insert(id.to_string()) {
                                     return Err(bad_request(
                                         "duplicate Gemini tool_use id is ambiguous",
                                     ));
                                 }
                                 let signature = decode_tool_use_signature(id)?;
-                                if model.starts_with(GEMINI_3_MODEL_PREFIX) && signature.is_none() {
+                                if model.starts_with(GEMINI_3_MODEL_PREFIX)
+                                    && function_call_index == 0
+                                    && signature.is_none()
+                                {
                                     return Err(bad_request(
                                         "Gemini 3 tool history requires an authentic thought signature",
                                     ));
@@ -222,8 +234,15 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
                                     part["thoughtSignature"] = Value::String(signature);
                                 }
                                 parts.push(part);
+                                message_tools.push_back((id.to_string(), name.to_string()));
+                                function_call_index += 1;
                             }
                             "tool_result" => {
+                                if role != "user" {
+                                    return Err(bad_request(
+                                        "tool_result blocks are only valid in user messages",
+                                    ));
+                                }
                                 let tool_use_id = block
                                     .get("tool_use_id")
                                     .and_then(Value::as_str)
@@ -231,14 +250,20 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
                                     .ok_or_else(|| {
                                         bad_request("tool_result tool_use_id must be non-empty")
                                     })?;
-                                let name = tool_names
-                                    .get(tool_use_id)
-                                    .map(String::as_str)
+                                let (expected_id, name) = outstanding_batches
+                                    .front_mut()
+                                    .and_then(VecDeque::pop_front)
                                     .ok_or_else(|| {
                                         bad_request(format!(
-                                            "tool_result references unknown tool_use_id {tool_use_id}"
+                                            "tool_result references unknown tool_use_id {tool_use_id} or one already consumed"
                                         ))
                                     })?;
+                                if expected_id != tool_use_id {
+                                    return Err(bad_request(format!(
+                                        "tool_result order is ambiguous: expected {expected_id}, received {tool_use_id}"
+                                    )));
+                                }
+                                saw_tool_result = true;
                                 let output_val = extract_tool_result_content(block)?;
                                 let mut response = Map::new();
                                 response.insert("output".to_string(), output_val);
@@ -262,6 +287,20 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
 
         if !parts.is_empty() {
             push_content(&mut contents, role, parts);
+        }
+        if !message_tools.is_empty() {
+            outstanding_batches.push_back(message_tools);
+        }
+        if saw_tool_result {
+            if outstanding_batches
+                .front()
+                .is_some_and(|batch| !batch.is_empty())
+            {
+                return Err(bad_request(
+                    "Gemini tool-result batch must answer every parallel call exactly once",
+                ));
+            }
+            outstanding_batches.pop_front();
         }
     }
 
