@@ -71,7 +71,7 @@ Full phase goals, requirements, success criteria, and plan references are kept i
   3. Malformed, oversized, invalid-UTF-8, or prematurely terminated events fail as protocol errors without silent loss or synthesized success.
   4. Generation retries occur only for proven replay-safe pre-commit failures and never after output or replay-unsafe tool activity.
 
-**Plans**: 5/7 plans executed; 2 gap-closure plans ready
+**Plans**: 7/7 plans executed and verified
 
 Plans:
 **Wave 1**
@@ -114,27 +114,34 @@ Plans:
   3. Streaming and non-streaming clients receive equivalent text, reasoning, sequential tool history, authentic matching thought signatures, usage, terminal state, and embedded provider errors from the always-SSE upstream.
   4. Malformed wrappers, incomplete tools, or unsafe signature state fail closed, while a 401 permits at most one account-bound pre-commit refresh and replay without changing credential-file writeback behavior.
 
-**Plans**: 7 plans
+**Plans**: 4/7 plans executed
 
 **Wave 1**
-- [ ] 11-01-PLAN.md — Always-SSE bounded semantic and terminal path.
+
+- [x] 11-01-PLAN.md — Always-SSE bounded semantic and terminal path.
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 11-02-PLAN.md — Canonical-origin and redirect credential safety.
+
+- [x] 11-02-PLAN.md — Canonical-origin and redirect credential safety.
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 11-03-PLAN.md — Request-local account affinity and exact catalog admission.
+
+- [x] 11-03-PLAN.md — Request-local account affinity and exact catalog admission.
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 11-04-PLAN.md — Exact envelope/session and authentic tool-signature history.
+
+- [x] 11-04-PLAN.md — Exact envelope/session and authentic tool-signature history.
 
 **Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 11-05-PLAN.md — One bounded same-account pre-commit 401 replay.
 
 **Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 11-06-PLAN.md — Integrated real-router parity, cancellation, and lifetime evidence.
 
 **Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 11-07-PLAN.md — Locale-complete documentation and release/scope gates.
 
 ### Phase 12: Cursor Evidence-Backed Hardening
@@ -217,7 +224,7 @@ Plans:
 | 1–8. OpenCodex Port | v1 | 25/25 | Complete | 2026-09-06 |
 | 9. Provider Conformance Foundation | v2 | 4/4 | Complete    | 2026-09-06 |
 | 10. Gemini Semantic Hardening | v2 | 7/7 | Complete | 2026-09-07 |
-| 11. Antigravity Protocol and Credential Hardening | v2 | 0/TBD | Not started | - |
+| 11. Antigravity Protocol and Credential Hardening | v2 | 4/7 | In Progress|  |
 | 12. Cursor Evidence-Backed Hardening | v2 | 0/TBD | Not started | - |
 | 13. Generic OpenAI Chat Completions | v2 | 0/TBD | Not started | - |
 | 14. Command Code Product Separation | v2 | 0/TBD | Not started | - |
