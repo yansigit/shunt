@@ -357,6 +357,18 @@ origin과 무관하게, 유지된 각 슬롯은 그 슬롯이 실제로 담고 �
 
 이름만 있는 항목은 `shunt login claude --name <name> --mode <mode>`(`<mode>`는 `oauth`, `import`, `setup-token` 중 하나)로 만든 `~/.shunt/accounts/claude/<name>.json`을 읽습니다. 대화형 CLI는 이 세 mode를 묻고 갱신 가능한 OAuth를 권장합니다. `--long-lived`는 `--mode setup-token`의 deprecated alias입니다. `SHUNT_CLAUDE_ACCOUNTS_DIR`로 스토어 디렉터리를 재정의할 수 있습니다. `[[providers.<name>.accounts]]`에 명시적으로 나열된 계정 목록이 비어 있으면 스토어 디렉터리의 유효한 계정 파일을 모두 스캔합니다. 갱신 가능한 OAuth/import 파일은 provider가 refresh token을 회전할 때 제자리에서 갱신되므로 파일마다 활성 owner가 하나만 있어야 합니다. 실행 중인 여러 shunt 프로세스에서 파일을 공유하거나 독립적으로 복사하지 마세요. 프로세스마다 별도로 프로비저닝하거나, 적절한 경우 정적 setup token을 사용하세요.
 
+### Gemini Code Assist 응답 계약
+
+<!-- shunt-contract: gemini-code-assist strict-terminal malformed-fails non-idempotent-preheader tool-result-roundtrip no-writeback ai-studio-web-excluded -->
+
+내장 Gemini 경로(`kind = "gemini"`와 `auth = "google_oauth"`)는 기존 Google Code Assist `v1internal:generateContent` / `v1internal:streamGenerateContent` 엔드포인트, `{model, project, request}` envelope, `google_oauth` source를 계속 사용합니다. 선택한 하나의 token/project 쌍은 응답 수명 전체에서 유지됩니다. 이 동작은 구성 키나 provider mode를 추가하지 않으며, shunt는 Gemini credential 파일을 쓰거나 migration하거나 refresh-write하지 않습니다.
+
+스트리밍 응답과 unary 응답은 text, reasoning, function call, usage, finish, provider error에 동일한 순서 기반 semantic state를 사용합니다. 성공하려면 지원되는 명시적 provider finish 뒤에 transport가 정상적으로 닫혀야 합니다. `[DONE]`이나 EOF만으로는 성공이 아닙니다. 잘못된 UTF-8, malformed JSON 또는 지원 필드, oversized data, 여러 candidate, truncated response, embedded provider error는 버리거나 synthetic completion으로 바꾸지 않고 명시적으로 실패합니다. 스트리밍은 incremental 상태를 유지하며, unary 응답만 고정된 bound 안에서 수집됩니다.
+
+진짜 Gemini function call은 client `tool_use`가 되고, 일치하는 client `tool_result`는 다음 요청의 `functionResponse`가 되며 정확한 pairing과 authentic thought signature를 보존합니다. Gemini generation은 non-idempotent입니다. 동일한 upstream은 응답 header 이전에 발생했음이 입증된 transient connection 또는 timeout failure만, 동일하게 선택된 identity와 payload로 재시도할 수 있습니다. 반환된 status 또는 body-time failure는 재시도하지 않으며, output이나 tool activity 이후에는 repair하거나 redispatch하지 않습니다.
+
+이 계약은 Antigravity policy를 Gemini에 적용하지 않으며 Google AI Studio Web 지원, cookie/SAPISIDHASH 인증, browser integration, durable history 또는 credential writeback을 추가하지 않습니다.
+
 ## `[[routes]]`
 
 레거시 exact-match 라우팅 항목 — 일치하는 `[models.upstream_model]` 항목 다음에 확인됩니다:

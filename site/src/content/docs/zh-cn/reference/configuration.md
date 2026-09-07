@@ -328,6 +328,18 @@ codex-fallback = "gpt-5.2"
 
 只带名称的条目读取 `~/.shunt/accounts/claude/<name>.json`,该文件由 `shunt login claude --name <name> --mode oauth|import|setup-token` 创建。交互式 CLI 会提示选择这三种 mode,并推荐可刷新的 OAuth。`--long-lived` 保留为 `--mode setup-token` 的 deprecated alias。`SHUNT_CLAUDE_ACCOUNTS_DIR` 可覆盖存储目录。可刷新的 OAuth/import 文件会在 provider 轮换 refresh token 时原地更新,因此每个文件只能有一个正在运行的 owner。不要在多个 shunt 进程之间共享或独立复制该文件。请为每个进程分别预配,或在适合时使用静态 setup token。
 
+### Gemini Code Assist 响应契约
+
+<!-- shunt-contract: gemini-code-assist strict-terminal malformed-fails non-idempotent-preheader tool-result-roundtrip no-writeback ai-studio-web-excluded -->
+
+内置 Gemini 路径（`kind = "gemini"` 且 `auth = "google_oauth"`）继续使用现有 Google Code Assist `v1internal:generateContent` / `v1internal:streamGenerateContent` 端点、`{model, project, request}` envelope 与 `google_oauth` source。选定的一组 token/project 在响应的整个 lifetime 内保持不变。此行为不增加配置键或 provider mode，shunt 也不会写入、迁移或 refresh-write Gemini credential 文件。
+
+Streaming 与 unary 响应对 text、reasoning、function call、usage、finish 和 provider error 使用同一个有序 semantic state。成功需要受支持的明确 provider finish，随后 transport 正常关闭；只有 `[DONE]` 或 EOF 不算成功。无效 UTF-8、malformed JSON 或受支持字段、oversized data、多个 candidate、truncated response 以及 embedded provider error 会明确失败，而不会被丢弃或转换为 synthetic completion。Streaming 保持 incremental；只有 unary 响应会在固定 bound 内收集。
+
+真实的 Gemini function call 会成为客户端 `tool_use`；匹配的客户端 `tool_result` 会成为下一次请求的 `functionResponse`，并保留精确 pairing 与 authentic thought signature。Gemini generation 是 non-idempotent 的：同一 upstream 仅可重试被证明发生在响应 header 之前的 transient connection 或 timeout failure，并且使用同一选定 identity 与 payload。它绝不会重试已返回的 status 或 body-time failure，也不会在 output 或 tool activity 之后 repair 或 redispatch。
+
+此契约不会把 Antigravity policy 应用于 Gemini，也不会增加 Google AI Studio Web 支持、cookie/SAPISIDHASH 认证、browser integration、durable history 或 credential writeback。
+
 ## `[[routes]]`
 
 旧式的精确匹配路由条目 —— 在匹配的 `[models.upstream_model]` 条目之后检查:

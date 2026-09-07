@@ -328,6 +328,18 @@ origin に関係なく、保持された各スロットはそのスロットが�
 
 名前だけのエントリーは、`shunt login claude --name <name> --mode oauth|import|setup-token` で作成した `~/.shunt/accounts/claude/<name>.json` を読み取ります。対話型 CLI はこの 3 つの mode を提示し、リフレッシュ可能な OAuth を推奨します。`--long-lived` は `--mode setup-token` の deprecated alias です。`SHUNT_CLAUDE_ACCOUNTS_DIR` でストアディレクトリを上書きできます。リフレッシュ可能な OAuth/import ファイルは provider が refresh token をローテーションすると同じ場所に更新されるため、ファイルごとに稼働中の owner は 1 つだけにしてください。複数の shunt プロセスで共有したり、独立してコピーしたりしないでください。プロセスごとに個別にプロビジョニングするか、適切な場合は静的な setup token を使ってください。
 
+### Gemini Code Assist のレスポンス契約
+
+<!-- shunt-contract: gemini-code-assist strict-terminal malformed-fails non-idempotent-preheader tool-result-roundtrip no-writeback ai-studio-web-excluded -->
+
+組み込みの Gemini パス（`kind = "gemini"` と `auth = "google_oauth"`）は、既存の Google Code Assist `v1internal:generateContent` / `v1internal:streamGenerateContent` エンドポイント、`{model, project, request}` envelope、`google_oauth` source を引き続き使用します。選択した 1 組の token/project はレスポンスの全 lifetime にわたって維持されます。この動作は設定キーや provider mode を追加せず、shunt は Gemini credential ファイルへの書き込み、migration、refresh-write を行いません。
+
+Streaming と unary のレスポンスは、text、reasoning、function call、usage、finish、provider error に同じ順序付き semantic state を使用します。成功には、サポートされる明示的な provider finish の後に transport が正常に閉じることが必要です。`[DONE]` や EOF だけでは成功になりません。不正な UTF-8、malformed JSON またはサポート対象フィールド、oversized data、複数 candidate、truncated response、embedded provider error は、破棄したり synthetic completion に変換したりせず明示的に失敗します。Streaming は incremental のままで、unary レスポンスだけが固定 bound 内で収集されます。
+
+真正な Gemini function call は client の `tool_use` になり、対応する client の `tool_result` は次のリクエストの `functionResponse` となって、正確な pairing と authentic thought signature を保持します。Gemini generation は non-idempotent です。同じ upstream が再試行できるのは、レスポンス header より前に発生したことが証明された transient connection または timeout failure のみで、選択した identity と payload も同一です。返された status や body-time failure は再試行せず、output または tool activity の後に repair や redispatch を行いません。
+
+この契約は Antigravity policy を Gemini に適用せず、Google AI Studio Web サポート、cookie/SAPISIDHASH 認証、browser integration、durable history、credential writeback を追加しません。
+
 ## `[[routes]]`
 
 レガシーな厳密一致ルーティングエントリ — 一致する `[models.upstream_model]` エントリの後にチェックされます。
