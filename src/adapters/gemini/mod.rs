@@ -596,33 +596,29 @@ mod tests {
 
     #[test]
     fn complete_utf8_line_survives_arbitrary_byte_chunking() {
-        let line = "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Olá 🌊\"}]}}]}";
+        let line = "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Olá 🌊\"}]}}]}\n\n";
         let split = line.find('🌊').unwrap() + 1;
-        let mut buffered = line.as_bytes()[..split].to_vec();
-        buffered.extend_from_slice(&line.as_bytes()[split..]);
-        let mut machine = GeminiSseMachine::new("gemini-test");
-        let mut output = Vec::new();
+        let mut decoder = GeminiSseDecoder::default();
 
-        append_gemini_events(&buffered, &mut machine, &mut output);
-
-        let output = String::from_utf8(output).unwrap();
-        assert!(output.contains("Olá 🌊"));
-        assert!(!output.contains('�'));
+        assert!(decoder.push(&line.as_bytes()[..split]).unwrap().is_empty());
+        let items = decoder.push(&line.as_bytes()[split..]).unwrap();
+        let GeminiSseItem::Json(value) = &items[0] else {
+            panic!("expected JSON event")
+        };
+        assert_eq!(
+            value.pointer("/candidates/0/content/parts/0/text"),
+            Some(&Value::String("Olá 🌊".to_string()))
+        );
     }
 
     #[test]
-    fn unterminated_final_data_line_is_processed() {
-        let mut machine = GeminiSseMachine::new("gemini-test");
-        let mut output = Vec::new();
+    fn unterminated_final_data_line_is_rejected() {
+        let mut decoder = GeminiSseDecoder::default();
 
-        append_gemini_events(
-            br#"data: {"candidates":[{"content":{"parts":[{"text":"final"}]},"finishReason":"STOP"}]}"#,
-            &mut machine,
-            &mut output,
-        );
-
-        let output = String::from_utf8(output).unwrap();
-        assert!(output.contains("final"));
-        assert!(output.contains("event: message_stop"));
+        assert!(decoder
+            .push(br#"data: {"candidates":[{"finishReason":"STOP"}]}"#)
+            .unwrap()
+            .is_empty());
+        assert!(decoder.finish().unwrap_err().contains("unterminated"));
     }
 }
