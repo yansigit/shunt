@@ -988,6 +988,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn antigravity_native_tool_signature_rejects_empty_and_roundtrips_nonempty() {
+        assert!(!encode_tool_use_id("").is_empty());
+        let encoded = encode_tool_use_id("synthetic-signature");
+        assert!(!encoded.is_empty());
+    }
+
+    #[test]
     fn sse_machine_emits_text_stream() {
         let mut machine = GeminiSseMachine::new("gemini-3-flash-preview");
 

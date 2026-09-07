@@ -15,7 +15,7 @@ use crate::{
     auth::{antigravity::auth::inference_base_url, Credential},
     config::AuthMode,
     model::antigravity_request::{
-        antigravity_exact_catalog_admission, antigravity_request_id, antigravity_session_id,
+        antigravity_exact_catalog_admission, antigravity_request_id, antigravity_scoped_session_id,
         wrap_antigravity_envelope, AntigravityCatalog,
     },
     model::gemini::{map_gemini_error, GeminiSseMachine},
@@ -352,7 +352,10 @@ async fn forward(
         if let Some(level) = model.thinking_level {
             set_thinking_level(&mut inner_req, level);
         }
-        let session_id = antigravity_session_id(&inner_req);
+        let session_id = antigravity_scoped_session_id(
+            account_fingerprint.as_deref().unwrap_or("legacy"),
+            &inner_req,
+        );
         let envelope = wrap_antigravity_envelope(
             &model.id,
             &project_id,
