@@ -94,9 +94,7 @@ async fn gemini_identity_retry_never_retries_returned_transient_statuses() {
     for status in [429, 502, 503, 504, 529] {
         let upstream = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path(
-                "/v1beta/models/gemini-2.5-pro:generateContent",
-            ))
+            .and(path("/v1beta/models/gemini-2.5-pro:generateContent"))
             .respond_with(ResponseTemplate::new(status).set_body_json(json!({
                 "error": {"message": "synthetic transient"}
             })))
@@ -130,6 +128,310 @@ async fn gemini_identity_retry_never_retries_returned_transient_statuses() {
             })
         );
     }
+}
+
+fn tool_use_id_from_sse(body: &str) -> String {
+    body.lines()
+        .filter_map(|line| line.strip_prefix("data: "))
+        .filter_map(|data| serde_json::from_str::<serde_json::Value>(data).ok())
+        .find_map(|event| {
+            (event["type"] == "content_block_start" && event["content_block"]["type"] == "tool_use")
+                .then(|| event["content_block"]["id"].as_str().map(str::to_string))
+                .flatten()
+        })
+        .expect("translated stream must contain a tool_use id")
+}
+
+#[tokio::test]
+async fn gemini_no_post_header_replay_rejects_body_failures_after_one_attempt() {
+    if !can_bind_loopback() {
+        return;
+    }
+
+    for body in [
+        b"data: not-json\n\n".as_slice(),
+        b"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"visible\"}]}}]}\n\n"
+            .as_slice(),
+        b"data: {\"response\":{\"error\":{\"code\":429,\"status\":\"RESOURCE_EXHAUSTED\",\"message\":\"quota\"}}}\n\n"
+            .as_slice(),
+    ] {
+        let upstream = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(
+                "/v1beta/models/gemini-2.5-pro:streamGenerateContent",
+            ))
+            .and(query_param("alt", "sse"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_bytes(body),
+            )
+            .expect(1)
+            .mount(&upstream)
+            .await;
+        let gateway = start_gateway_with_config(gemini_config_with_retry(upstream.uri(), 2)).await;
+        let response = reqwest::Client::new()
+            .post(format!("{}/v1/messages", gateway.base_url))
+            .body(request(true))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let translated = response.text().await.unwrap();
+        assert_eq!(translated.matches("event: error").count(), 1, "{translated}");
+        assert_eq!(upstream.received_requests().await.unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn gemini_no_post_header_replay_rejects_assistant_function_response_in_both_modes() {
+    if !can_bind_loopback() {
+        return;
+    }
+
+    let document = json!({
+        "candidates": [{
+            "content": {"parts": [{
+                "functionResponse": {"name": "lookup", "response": {"output": "bad direction"}}
+            }]},
+            "finishReason": "STOP"
+        }]
+    });
+    for streaming in [false, true] {
+        let upstream = MockServer::start().await;
+        let expected_path = if streaming {
+            "/v1beta/models/gemini-2.5-pro:streamGenerateContent"
+        } else {
+            "/v1beta/models/gemini-2.5-pro:generateContent"
+        };
+        let mut mock = Mock::given(method("POST")).and(path(expected_path));
+        if streaming {
+            mock = mock.and(query_param("alt", "sse"));
+        }
+        let response_body = if streaming {
+            format!("data: {document}\n\n")
+        } else {
+            document.to_string()
+        };
+        mock.respond_with(
+            ResponseTemplate::new(200)
+                .insert_header(
+                    "content-type",
+                    if streaming {
+                        "text/event-stream"
+                    } else {
+                        "application/json"
+                    },
+                )
+                .set_body_string(response_body),
+        )
+        .expect(1)
+        .mount(&upstream)
+        .await;
+        let gateway = start_gateway_with_config(gemini_config_with_retry(upstream.uri(), 2)).await;
+        let response = reqwest::Client::new()
+            .post(format!("{}/v1/messages", gateway.base_url))
+            .body(request(streaming))
+            .send()
+            .await
+            .unwrap();
+        if streaming {
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = response.text().await.unwrap();
+            assert!(body.contains("assistant-side Gemini functionResponse is unsupported"));
+            assert_eq!(body.matches("event: error").count(), 1);
+        } else {
+            assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+            let body = response.text().await.unwrap();
+            assert!(body.contains("assistant-side Gemini functionResponse is unsupported"));
+        }
+        assert_eq!(upstream.received_requests().await.unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn gemini_no_post_header_replay_preserves_tool_call_result_pairing_next_turn() {
+    if !can_bind_loopback() {
+        return;
+    }
+
+    let upstream = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/v1beta/models/gemini-2.5-pro:streamGenerateContent",
+        ))
+        .and(query_param("alt", "sse"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(concat!(
+                    "data: {\"candidates\":[{\"content\":{\"parts\":[{\"functionCall\":{\"name\":\"lookup\",\"args\":{\"term\":\"fixture\"}},\"thoughtSignature\":\"sig-fixture\"}]}}]}\n\n",
+                    "data: {\"candidates\":[{\"finishReason\":\"STOP\"}]}\n\n"
+                )),
+        )
+        .expect(1)
+        .mount(&upstream)
+        .await;
+    let gateway = start_gateway(upstream.uri()).await;
+    let first = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .body(request(true))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    let tool_use_id = tool_use_id_from_sse(&first);
+    assert!(tool_use_id.starts_with("call_gemini_v1_"));
+
+    upstream.reset().await;
+    Mock::given(method("POST"))
+        .and(path("/v1beta/models/gemini-2.5-pro:generateContent"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "candidates": [{
+                "content": {"parts": [{"text": "done"}]},
+                "finishReason": "STOP"
+            }]
+        })))
+        .expect(1)
+        .mount(&upstream)
+        .await;
+    let next_request = json!({
+        "model": "claude-via-gemini",
+        "max_tokens": 64,
+        "stream": false,
+        "messages": [
+            {"role": "user", "content": "fixture"},
+            {"role": "assistant", "content": [{
+                "type": "tool_use", "id": tool_use_id, "name": "lookup",
+                "input": {"term": "fixture"}
+            }]},
+            {"role": "user", "content": [{
+                "type": "tool_result", "tool_use_id": tool_use_id, "content": "result-fixture"
+            }]}
+        ]
+    });
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .json(&next_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let requests = upstream.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    let translated = requests[0].body_json::<serde_json::Value>().unwrap();
+    assert_eq!(
+        translated["contents"][1]["parts"][0],
+        json!({
+            "functionCall": {"name": "lookup", "args": {"term": "fixture"}},
+            "thoughtSignature": "sig-fixture"
+        })
+    );
+    assert_eq!(
+        translated["contents"][2]["parts"][0]["functionResponse"],
+        json!({"name": "lookup", "response": {"output": "result-fixture"}})
+    );
+}
+
+#[tokio::test]
+async fn gemini_no_post_header_replay_rejects_orphan_result_before_dispatch() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let upstream = MockServer::start().await;
+    let gateway = start_gateway(upstream.uri()).await;
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .json(&json!({
+            "model": "claude-via-gemini",
+            "max_tokens": 64,
+            "messages": [{"role": "user", "content": [{
+                "type": "tool_result", "tool_use_id": "missing", "content": "orphan"
+            }]}]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(upstream.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn gemini_no_post_header_replay_streaming_and_unary_tool_transcripts_agree() {
+    if !can_bind_loopback() {
+        return;
+    }
+
+    let document = json!({
+        "candidates": [{
+            "content": {"parts": [
+                {"text": "before tool"},
+                {
+                    "functionCall": {"name": "lookup", "args": {"term": "fixture"}},
+                    "thoughtSignature": "sig-parity"
+                }
+            ]},
+            "finishReason": "STOP"
+        }],
+        "usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 4}
+    });
+
+    let unary = unary_gateway_response(serde_json::to_vec(&document).unwrap()).await;
+    assert_eq!(unary.status(), StatusCode::OK);
+    let unary: serde_json::Value = unary.json().await.unwrap();
+
+    let streaming = streaming_gateway_response(format!("data: {document}\n\n").as_bytes()).await;
+    let events: Vec<serde_json::Value> = streaming
+        .lines()
+        .filter_map(|line| line.strip_prefix("data: "))
+        .filter_map(|data| serde_json::from_str(data).ok())
+        .collect();
+    let streamed_text = events
+        .iter()
+        .find_map(|event| {
+            event
+                .pointer("/delta/text")
+                .and_then(|value| value.as_str())
+        })
+        .unwrap();
+    let streamed_tool = events
+        .iter()
+        .find_map(|event| {
+            (event["content_block"]["type"] == "tool_use").then_some(&event["content_block"])
+        })
+        .unwrap();
+    let streamed_args: serde_json::Value = serde_json::from_str(
+        events
+            .iter()
+            .find_map(|event| {
+                event
+                    .pointer("/delta/partial_json")
+                    .and_then(|value| value.as_str())
+            })
+            .unwrap(),
+    )
+    .unwrap();
+    let streamed_finish = events
+        .iter()
+        .find_map(|event| {
+            event
+                .pointer("/delta/stop_reason")
+                .and_then(|value| value.as_str())
+        })
+        .unwrap();
+    let streamed_usage = events.iter().find_map(|event| event.get("usage")).unwrap();
+
+    assert_eq!(unary["content"][0]["text"], streamed_text);
+    assert_eq!(unary["content"][1]["id"], streamed_tool["id"]);
+    assert_eq!(unary["content"][1]["name"], streamed_tool["name"]);
+    assert_eq!(unary["content"][1]["input"], streamed_args);
+    assert_eq!(unary["stop_reason"], streamed_finish);
+    assert_eq!(
+        unary["usage"]["output_tokens"],
+        streamed_usage["output_tokens"]
+    );
 }
 
 fn request(stream: bool) -> String {
