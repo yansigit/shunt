@@ -5,11 +5,11 @@ milestone_name: Provider Compatibility
 current_phase: 12
 current_phase_name: Cursor Evidence-Backed Hardening
 current_plan: 3
-status: needs_decision
-stopped_at: Phase 12 plan 03 requires approval for request-local KV protocol support
+status: executing
+stopped_at: Phase 12 plan 03 request-local KV architecture approved; implementation resumed
 last_updated: "2026-09-07T22:45:12.678Z"
 last_activity: 2026-09-07
-last_activity_desc: Plans 01–02 verified; authentic tool IDs fixed; structured history architecture decision pending
+last_activity_desc: User approved bounded memory-only per-request KV/blob support; plan 03 resumed
 state_head: db2397e48b04ee1e5d0d9732fd8e2d4b08459f7d
 progress:
   total_phases: 8
@@ -31,11 +31,11 @@ See: `.planning/PROJECT.md` (updated 2026-09-07 after Phase 11)
 
 ## Current Position
 
-Phase: 12 (Cursor Evidence-Backed Hardening) — ARCHITECTURE DECISION
+Phase: 12 (Cursor Evidence-Backed Hardening) — EXECUTING
 Current Plan: 3
 Total Plans in Phase: 8
 Status: 2 of 8 plans summarized; plan 03 partial
-Last activity: 2026-09-07 — Plans 01–02 verified; plan 03 preserves authentic output tool IDs. Structured history requires a bounded request-local KV/blob protocol addition; see 12-03-CHECKPOINT.md.
+Last activity: 2026-09-07 — Plans 01–02 verified; plan 03 preserves authentic output tool IDs. User approved bounded request-local KV/blob protocol support; implementation resumed.
 
 ## Performance Metrics
 
@@ -131,7 +131,7 @@ The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent O
 ## Session Continuity
 
 Last session: 2026-09-07T19:45:00Z
-Stopped at: Phase 12 plan 03 architecture decision (12-03-CHECKPOINT.md)
+Stopped at: Phase 12 plan 03 resumed after architecture approval
 Resume file: None
 
 ## Operator Next Steps

@@ -28,9 +28,9 @@ Approve a narrowly scoped, bounded in-memory KV/blob exchange owned by a single 
 
 Reject structured tool-history continuation explicitly until such a transport is approved. This reduces supported behavior and cannot be reported as full completion of CUR-03 without revising the requirements and documentation.
 
-## Awaiting
+## Decision — Approved
 
-User approval for the bounded request-local KV/blob protocol addition. Do not create a complete 12-03 SUMMARY or advance phase verification while this decision is pending. Plans 04–08 and phases 13–16 remain pending.
+The user explicitly approved the bounded, memory-only, per-request KV/blob protocol addition on 2026-09-07. Proceed with implementation and verification, preserving the no-persistence/no-credential-change boundary. Do not create a complete 12-03 SUMMARY until structured history and the admission guard are actually verified. Plans 04–08 and phases 13–16 remain pending.
 
 ## Verified partial implementation
 
