@@ -1015,6 +1015,35 @@ mod tests {
             }
         }
 
+        // One account may legitimately have multiple projects; project remains
+        // part of the immutable tuple and must not collapse to the first one.
+        let upstream_project_b = start_native_upstream(false, "gemini-3.8-flash-medium").await;
+        let calls_project_b = Arc::new(AtomicUsize::new(0));
+        let router_project_b = native_router(
+            antigravity_config(upstream_project_b.base_url.clone(), "project-b"),
+            calls_project_b.clone(),
+            "token-a",
+            "project-b",
+            "account-a",
+            reqwest::Client::new(),
+        );
+        let response = router_project_b
+            .oneshot(native_request(false))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let _ = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(calls_project_b.load(Ordering::SeqCst), 1);
+        {
+            let project_b_requests = upstream_project_b.state.requests.lock().unwrap();
+            let request = project_b_requests
+                .iter()
+                .find(|r| r.path_and_query.contains("streamGenerateContent"))
+                .unwrap();
+            assert_eq!(request.authorization.as_deref(), Some("Bearer token-a"));
+            assert_eq!(request.body["project"], "project-b");
+        }
+
         // Same project with a different account is a separate request-local tuple.
         let upstream_b = start_native_upstream(false, "gemini-3.8-flash-medium").await;
         let calls_b = Arc::new(AtomicUsize::new(0));
