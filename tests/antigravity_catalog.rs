@@ -192,8 +192,13 @@ async fn antigravity_native_affinity_rejected_catalog_tuple_has_zero_inference_h
         .mount(&backend)
         .await;
 
-    let dir =
-        std::env::temp_dir().join(format!("shunt-antigravity-negative-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!(
+        "shunt-antigravity-negative-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let credential_path = dir.join("antigravity-auth.json");
     let expiry = (std::time::SystemTime::now() + Duration::from_secs(3600))
