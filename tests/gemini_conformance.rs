@@ -133,13 +133,21 @@ fn antigravity_fixture_config(base_url: String) -> Config {
     config.routes = vec![RouteConfig {
         model: "claude-via-antigravity".to_string(),
         provider: "antigravity".to_string(),
-        // A non-Gemini model keeps catalog discovery out of this transport
-        // fixture; the inference request itself is still native Antigravity.
-        upstream_model: Some("claude-sonnet-4-6".to_string()),
+        upstream_model: Some("gemini-3.8-flash-high".to_string()),
         effort: None,
         service_tier: None,
     }];
     config
+}
+
+async fn mount_antigravity_catalog(backend: &MockServer) {
+    Mock::given(method("POST"))
+        .and(path("/v1internal:fetchAvailableModels"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "models": {"gemini-3.8-flash-high": {"model": "fixture"}}
+        })))
+        .mount(backend)
+        .await;
 }
 
 #[tokio::test]
@@ -153,6 +161,7 @@ async fn antigravity_native_sse_real_loopback_both_downstream_modes() {
         .await;
 
     let backend = MockServer::start().await;
+    mount_antigravity_catalog(&backend).await;
     let transcript = concat!(
         "data: {\"response\":{\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"native\"}]}}]}}\n\n",
         "data: {\"response\":{\"candidates\":[{\"finishReason\":\"STOP\"}]}}\n\n",
@@ -244,8 +253,20 @@ async fn antigravity_native_sse_real_loopback_both_downstream_modes() {
     );
 
     let requests = backend.received_requests().await.unwrap();
-    assert_eq!(requests.len(), 2);
-    for request in requests {
+    assert_eq!(requests.len(), 3);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.url.path() == "/v1internal:fetchAvailableModels")
+            .count(),
+        1
+    );
+    let inference: Vec<_> = requests
+        .iter()
+        .filter(|request| request.url.path() == "/v1internal:streamGenerateContent")
+        .collect();
+    assert_eq!(inference.len(), 2);
+    for request in inference {
         assert_eq!(request.url.path(), "/v1internal:streamGenerateContent");
         assert_eq!(request.url.query(), Some("alt=sse"));
         assert_eq!(
@@ -274,7 +295,9 @@ async fn antigravity_native_sse_streams_before_upstream_completion() {
     let release_for_backend = release.clone();
     let backend_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let backend_addr = backend_listener.local_addr().unwrap();
-    let backend = Router::new().route(
+    let backend = Router::new().route("/v1internal:fetchAvailableModels", post(|| async {
+        axum::Json(json!({"models": {"gemini-3.8-flash-high": {"model": "fixture"}}}))
+    })).route(
         "/v1internal:streamGenerateContent",
         post(move || {
             let release = release_for_backend.clone();
@@ -344,6 +367,7 @@ async fn antigravity_native_sse_streams_before_upstream_completion() {
 
 async fn run_antigravity_native_case(body: Vec<u8>, streaming: bool) -> (StatusCode, String) {
     let backend = MockServer::start().await;
+    mount_antigravity_catalog(&backend).await;
     Mock::given(method("POST"))
         .and(path("/v1internal:streamGenerateContent"))
         .and(query_param("alt", "sse"))

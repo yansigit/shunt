@@ -1035,6 +1035,167 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn antigravity_native_tool_signature_real_router_roundtrip_and_rejection() {
+        use wiremock::{
+            matchers::{method, path},
+            Mock, MockServer, ResponseTemplate,
+        };
+
+        for streaming in [false, true] {
+            let project = if streaming {
+                "scope-fixture-stream"
+            } else {
+                "scope-fixture-unary"
+            };
+            let upstream = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/v1internal:fetchAvailableModels"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                    "models":{"gemini-3.8-flash-medium":{}}
+                })))
+                .expect(1)
+                .mount(&upstream)
+                .await;
+            let transcript = format!(
+                "data: {}\n\ndata: [DONE]\n\n",
+                json!({"response":{
+                    "candidates":[{"content":{"parts":[{
+                        "functionCall":{"name":"lookup","args":{}},
+                        "thoughtSignature":"upstream-original-signature"
+                    }]},"finishReason":"STOP"}]
+                }})
+            );
+            Mock::given(method("POST"))
+                .and(path("/v1internal:streamGenerateContent"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("content-type", "text/event-stream")
+                        .set_body_string(transcript),
+                )
+                .expect(2)
+                .mount(&upstream)
+                .await;
+            let calls = Arc::new(AtomicUsize::new(0));
+            let router = native_router(
+                antigravity_config(upstream.uri(), project),
+                calls,
+                "token-a",
+                project,
+                "account-a",
+                reqwest::Client::new(),
+            );
+            let make_request = |body: &Value| {
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/messages")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap()
+            };
+            let mut request = json!({"model":"gemini-3.8-flash-medium", "max_tokens":64,
+                "stream":streaming, "messages":[{"role":"user","content":"opening"}]});
+            let response = router
+                .clone()
+                .oneshot(make_request(&request))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let tool = if streaming {
+                String::from_utf8(bytes.to_vec())
+                    .unwrap()
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("data: "))
+                    .filter_map(|data| serde_json::from_str::<Value>(data).ok())
+                    .find_map(|event| {
+                        (event["content_block"]["type"] == "tool_use")
+                            .then(|| event["content_block"].clone())
+                    })
+                    .unwrap()
+            } else {
+                serde_json::from_slice::<Value>(&bytes).unwrap()["content"][0].clone()
+            };
+            assert!(tool["id"]
+                .as_str()
+                .unwrap()
+                .starts_with("call_antigravity_v2_"));
+            request["messages"].as_array_mut().unwrap().extend([
+                json!({"role":"assistant","content":[tool.clone()]}),
+                json!({"role":"user","content":[{"type":"tool_result","tool_use_id":tool["id"],"content":"done"}]})
+            ]);
+            let response = router
+                .clone()
+                .oneshot(make_request(&request))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let _ = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let captured = upstream.received_requests().await.unwrap();
+            let inference: Vec<Value> = captured
+                .iter()
+                .filter(|request| request.url.path() == "/v1internal:streamGenerateContent")
+                .map(|request| request.body_json().unwrap())
+                .collect();
+            assert_eq!(inference.len(), 2);
+            assert_eq!(
+                inference[0]["request"]["sessionId"],
+                inference[1]["request"]["sessionId"]
+            );
+            assert_eq!(
+                inference[1]["request"]["contents"][1]["parts"][0]["thoughtSignature"],
+                "upstream-original-signature"
+            );
+            assert_eq!(
+                inference[1]["request"]["contents"][2]["parts"][0]["functionResponse"]["name"],
+                "lookup"
+            );
+            for mutation in ["account", "opening", "arguments", "orphan", "duplicate"] {
+                let mut invalid = request.clone();
+                let target = if mutation == "account" {
+                    native_router(
+                        antigravity_config(upstream.uri(), project),
+                        Arc::new(AtomicUsize::new(0)),
+                        "token-b",
+                        project,
+                        "account-b",
+                        reqwest::Client::new(),
+                    )
+                } else {
+                    router.clone()
+                };
+                match mutation {
+                    "opening" => invalid["messages"][0]["content"] = json!("another opening"),
+                    "arguments" => {
+                        invalid["messages"][1]["content"][0]["input"] = json!({"changed":true})
+                    }
+                    "orphan" => {
+                        invalid["messages"][2]["content"][0]["tool_use_id"] = json!("unknown")
+                    }
+                    "duplicate" => {
+                        let result = invalid["messages"][2]["content"][0].clone();
+                        invalid["messages"][2]["content"]
+                            .as_array_mut()
+                            .unwrap()
+                            .push(result);
+                    }
+                    _ => {}
+                }
+                let response = target.oneshot(make_request(&invalid)).await.unwrap();
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{mutation}");
+                let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+                let error = String::from_utf8_lossy(&bytes);
+                assert!(!error.contains(tool["id"].as_str().unwrap()));
+                assert_eq!(
+                    upstream.received_requests().await.unwrap().len(),
+                    captured.len(),
+                    "{mutation} must fail before any upstream request"
+                );
+            }
+            upstream.verify().await;
+        }
+    }
+
+    #[tokio::test]
     async fn antigravity_native_affinity_injected_resolver_once_and_tuple_distinct() {
         let upstream = start_native_upstream(false, "gemini-3.8-flash-medium").await;
         let calls = Arc::new(AtomicUsize::new(0));

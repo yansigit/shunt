@@ -6,6 +6,7 @@ use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::adapters::AdapterError;
+use crate::model::antigravity_request::AntigravityToolContext;
 
 const MAX_SCHEMA_DEPTH: usize = 64;
 const GEMINI_3_MODEL_PREFIX: &str = "gemini-3";
@@ -37,6 +38,14 @@ pub fn translate_request(request: &Value) -> Result<Value, AdapterError> {
 
 /// Translate a request using the resolved Gemini model id.
 pub fn translate_request_for_model(request: &Value, model: &str) -> Result<Value, AdapterError> {
+    translate_request_for_model_with_context(request, model, None)
+}
+
+pub fn translate_request_for_model_with_context(
+    request: &Value,
+    model: &str,
+    context: Option<&AntigravityToolContext>,
+) -> Result<Value, AdapterError> {
     let mut out = Map::new();
 
     // 1. System instruction
@@ -45,7 +54,7 @@ pub fn translate_request_for_model(request: &Value, model: &str) -> Result<Value
     }
 
     // 2. Contents (multi-turn history)
-    let contents = translate_messages(request, model)?;
+    let contents = translate_messages(request, model, context)?;
     out.insert("contents".to_string(), Value::Array(contents));
 
     // 3. Generation Config
@@ -106,13 +115,18 @@ fn translate_system_instruction(request: &Value) -> Option<Value> {
     }
 }
 
-fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, AdapterError> {
+fn translate_messages(
+    request: &Value,
+    model: &str,
+    context: Option<&AntigravityToolContext>,
+) -> Result<Vec<Value>, AdapterError> {
     let Some(messages) = request.get("messages").and_then(Value::as_array) else {
         return Ok(Vec::new());
     };
 
     let mut contents = Vec::new();
     let mut seen_tool_ids = HashSet::new();
+    let mut tool_ordinal = 0usize;
     let mut outstanding_batches: VecDeque<VecDeque<(String, String)>> = VecDeque::new();
 
     for message in messages {
@@ -166,7 +180,7 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
             let expected = match outstanding_batches.front() {
                 Some(expected) => expected,
                 None => {
-                    let tool_use_id = blocks
+                    let _tool_use_id = blocks
                         .iter()
                         .find(|block| {
                             block.get("type").and_then(Value::as_str) == Some("tool_result")
@@ -175,9 +189,9 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
                         .and_then(Value::as_str)
                         .filter(|id| !id.is_empty())
                         .ok_or_else(|| bad_request("tool_result tool_use_id must be non-empty"))?;
-                    return Err(bad_request(format!(
-                        "tool_result references unknown tool_use_id {tool_use_id} or one already consumed"
-                    )));
+                    return Err(bad_request(
+                        "tool_result references unknown tool_use_id or one already consumed",
+                    ));
                 }
             };
             let mut matched = HashMap::with_capacity(expected.len());
@@ -191,9 +205,9 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
                     .filter(|id| !id.is_empty())
                     .ok_or_else(|| bad_request("tool_result tool_use_id must be non-empty"))?;
                 let Some((_, name)) = expected.iter().find(|(id, _)| id == tool_use_id) else {
-                    return Err(bad_request(format!(
-                        "tool_result references unknown tool_use_id {tool_use_id} or one already consumed"
-                    )));
+                    return Err(bad_request(
+                        "tool_result references unknown tool_use_id or one already consumed",
+                    ));
                 };
                 let output = extract_tool_result_content(block)?;
                 let mut response = Map::new();
@@ -211,9 +225,7 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
                     .insert(tool_use_id.to_string(), function_response)
                     .is_some()
                 {
-                    return Err(bad_request(format!(
-                        "duplicate tool_result for tool_use_id {tool_use_id}"
-                    )));
+                    return Err(bad_request("duplicate tool_result for tool_use_id"));
                 }
             }
             if matched.len() != expected.len() {
@@ -320,7 +332,14 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
                                         "duplicate Gemini tool_use id is ambiguous",
                                     ));
                                 }
-                                let signature = decode_tool_use_signature(id)?;
+                                let signature = if let Some(context) = context {
+                                    context
+                                        .decode(id, name, &input, tool_ordinal)
+                                        .map_err(bad_request)?
+                                } else {
+                                    decode_tool_use_signature(id)?
+                                };
+                                tool_ordinal += 1;
                                 if model.starts_with(GEMINI_3_MODEL_PREFIX)
                                     && function_call_index == 0
                                     && signature.is_none()
@@ -415,6 +434,11 @@ fn push_content(contents: &mut Vec<Value>, role: &str, parts: Vec<Value>) {
 }
 
 fn decode_tool_use_signature(id: &str) -> Result<Option<String>, AdapterError> {
+    if id.starts_with("call_antigravity_") {
+        return Err(bad_request(
+            "Antigravity tool identity requires native account scope",
+        ));
+    }
     let Some(encoded) = id.strip_prefix(GEMINI_TOOL_USE_ID_PREFIX) else {
         return Ok(None);
     };

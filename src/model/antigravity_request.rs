@@ -8,8 +8,129 @@
 
 use std::collections::BTreeSet;
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+
+/// Request-local scope used to bind opaque tool identities to one account and
+/// conversation. It is never serialized or persisted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AntigravityToolContext {
+    pub session: String,
+    scope_tag: String,
+    pub output_ordinal: usize,
+}
+
+impl AntigravityToolContext {
+    pub fn new(account: impl Into<String>, session: impl Into<String>) -> Self {
+        let account = account.into();
+        let session = session.into();
+        let scope_tag = digest_tag("scope", &json!([account, session]));
+        Self {
+            session,
+            scope_tag,
+            output_ordinal: 0,
+        }
+    }
+
+    pub fn with_history(mut self, request: &Value) -> Self {
+        self.output_ordinal = request["messages"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|message| message["role"] == "assistant")
+            .flat_map(|message| message["content"].as_array().into_iter().flatten())
+            .filter(|block| block["type"] == "tool_use")
+            .count();
+        self
+    }
+
+    pub fn encode(&self, signature: &str, name: &str, args: &Value, ordinal: usize) -> String {
+        let signature = (!signature.is_empty()).then_some(signature.to_owned());
+        let envelope = ToolEnvelope {
+            upstream_signature: signature.clone(),
+            scope_tag: self.scope_tag.clone(),
+            call_tag: digest_tag("call", &json!([signature, name, args, ordinal])),
+        };
+        format!(
+            "call_antigravity_v2_{}",
+            URL_SAFE_NO_PAD.encode(serde_json::to_vec(&envelope).expect("serializable envelope"))
+        )
+    }
+
+    pub fn decode(
+        &self,
+        id: &str,
+        name: &str,
+        args: &Value,
+        ordinal: usize,
+    ) -> Result<Option<String>, &'static str> {
+        let invalid = "invalid or mismatched Antigravity tool identity";
+        if id.len() > 96 * 1024 {
+            return Err(invalid);
+        }
+        let encoded = id.strip_prefix("call_antigravity_v2_").ok_or(invalid)?;
+        let bytes = URL_SAFE_NO_PAD.decode(encoded).map_err(|_| invalid)?;
+        let envelope: ToolEnvelope = serde_json::from_slice(&bytes).map_err(|_| invalid)?;
+        if envelope
+            .upstream_signature
+            .as_ref()
+            .is_some_and(|signature| signature.is_empty() || signature.len() > 64 * 1024)
+            || envelope.scope_tag != self.scope_tag
+            || envelope.call_tag
+                != digest_tag(
+                    "call",
+                    &json!([envelope.upstream_signature, name, args, ordinal]),
+                )
+        {
+            return Err(invalid);
+        }
+        Ok(envelope.upstream_signature)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ToolEnvelope {
+    upstream_signature: Option<String>,
+    scope_tag: String,
+    call_tag: String,
+}
+
+// Context binding only: these unkeyed digests are not authentication/MACs.
+fn digest_tag(domain: &str, value: &Value) -> String {
+    let mut canonical = value.clone();
+    canonical.sort_all_objects();
+    normalize_integral_numbers(&mut canonical);
+    let mut hasher = Sha256::new();
+    hasher.update(b"shunt.antigravity.v2\0");
+    hasher.update(domain.as_bytes());
+    hasher.update([0]);
+    hasher.update(serde_json::to_vec(&canonical).expect("serializable JSON"));
+    URL_SAFE_NO_PAD.encode(hasher.finalize())
+}
+
+// JSON clients can render 1.0 as 1 (and -0.0 as 0). Normalize only exact
+// integral floats; never round integer inputs through f64, which would merge
+// distinct integers above 2^53. Bounds are exclusive where f64 rounds MAX up.
+fn normalize_integral_numbers(value: &mut Value) {
+    match value {
+        Value::Object(object) => object.values_mut().for_each(normalize_integral_numbers),
+        Value::Array(array) => array.iter_mut().for_each(normalize_integral_numbers),
+        Value::Number(number) if number.is_f64() => {
+            let float = number.as_f64().expect("JSON float");
+            if float.fract() == 0.0 {
+                if (0.0..18_446_744_073_709_551_616.0).contains(&float) {
+                    *number = (float as u64).into();
+                } else if (i64::MIN as f64..0.0).contains(&float) {
+                    *number = (float as i64).into();
+                }
+            }
+        }
+        _ => {}
+    }
+}
 
 /// Client identity the Antigravity client sends on every request.
 const ANTIGRAVITY_USER_AGENT: &str = "antigravity";
@@ -108,15 +229,23 @@ pub fn antigravity_session_id(request: &Value) -> String {
 }
 
 /// Opaque account/conversation-scoped session identity for native requests.
-/// The bounded conversation seed is combined with the private account tuple,
-/// so identical prompts in different accounts cannot collide.
+/// The opening user turn is combined with the private account tuple. Identical
+/// openings within an account intentionally share a session; later turns and
+/// generation settings never change it.
 pub fn antigravity_scoped_session_id(account: &str, request: &Value) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"shunt.antigravity.session/v1\0");
     hasher.update(account.as_bytes());
     hasher.update([0]);
-    let conversation = serde_json::to_vec(request).unwrap_or_default();
-    hasher.update(&conversation[..conversation.len().min(SESSION_SEED_LIMIT)]);
+    let opening = request
+        .get("messages")
+        .or_else(|| request.get("contents"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|message| message["role"] == "user")
+        .unwrap_or(&Value::Null);
+    hasher.update(digest_tag("opening", opening));
     let digest = hasher.finalize();
     let mut bytes = [0u8; 8];
     bytes.copy_from_slice(&digest[..8]);

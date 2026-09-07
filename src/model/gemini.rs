@@ -6,6 +6,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde_json::{json, Value};
 
 use crate::adapters::AdapterError;
+use crate::model::antigravity_request::AntigravityToolContext;
 
 const GEMINI_TOOL_USE_ID_PREFIX: &str = "call_gemini_v1_";
 const MAX_RETAINED_SEMANTIC_BYTES: usize = 32 * 1024 * 1024;
@@ -122,6 +123,7 @@ pub struct GeminiSseMachine {
     block_index: usize,
     active_block: Option<ActiveBlock>,
     saw_tool_use: bool,
+    tool_count: usize,
     input_tokens: u64,
     output_tokens: u64,
     last_finish_reason: Option<String>,
@@ -129,6 +131,7 @@ pub struct GeminiSseMachine {
     content: Vec<Value>,
     retained_bytes: usize,
     part_count: usize,
+    antigravity_context: Option<AntigravityToolContext>,
 }
 
 impl GeminiSseMachine {
@@ -148,6 +151,7 @@ impl GeminiSseMachine {
             block_index: 0,
             active_block: None,
             saw_tool_use: false,
+            tool_count: 0,
             input_tokens: 0,
             output_tokens: 0,
             last_finish_reason: None,
@@ -155,7 +159,13 @@ impl GeminiSseMachine {
             content: Vec::new(),
             retained_bytes: 0,
             part_count: 0,
+            antigravity_context: None,
         }
+    }
+
+    pub fn with_antigravity_context(mut self, context: AntigravityToolContext) -> Self {
+        self.antigravity_context = Some(context);
+        self
     }
 
     /// Construct a machine for incremental relay. Streamed text/reasoning is
@@ -365,12 +375,15 @@ impl GeminiSseMachine {
                             ));
                         }
                         let mut function_call_seen = self.saw_tool_use;
+                        let mut tool_ordinal = self.tool_count;
                         for raw_part in raw_parts {
                             let is_function_call = raw_part.get("functionCall").is_some();
                             let require_signature = is_function_call && !function_call_seen;
-                            let (part, cost) = self.validate_part(raw_part, require_signature)?;
+                            let (part, cost) =
+                                self.validate_part(raw_part, require_signature, tool_ordinal)?;
                             if is_function_call {
                                 function_call_seen = true;
+                                tool_ordinal += 1;
                             }
                             retained_bytes = retained_bytes.checked_add(cost).ok_or_else(|| {
                                 GeminiSemanticError::protocol(
@@ -399,6 +412,7 @@ impl GeminiSseMachine {
         &self,
         raw: &Value,
         require_signature: bool,
+        tool_ordinal: usize,
     ) -> Result<(CheckedPart, usize), GeminiSemanticError> {
         let part = raw
             .as_object()
@@ -490,7 +504,14 @@ impl GeminiSseMachine {
                     "Gemini thoughtSignature exceeds limit",
                 ));
             }
-            let id = if signature.is_empty() {
+            let id = if let Some(context) = &self.antigravity_context {
+                context.encode(
+                    signature,
+                    name,
+                    &args,
+                    context.output_ordinal + tool_ordinal,
+                )
+            } else if signature.is_empty() {
                 format!("call_{:012x}", rand::random::<u64>())
             } else {
                 encode_tool_use_id(signature)
@@ -614,6 +635,7 @@ impl GeminiSseMachine {
             }
             CheckedPart::Tool { name, args, id } => {
                 self.saw_tool_use = true;
+                self.tool_count += 1;
                 self.close_active_block(events);
                 let idx = self.block_index;
                 events.push(SseEvent {
@@ -989,9 +1011,31 @@ mod tests {
 
     #[test]
     fn antigravity_native_tool_signature_rejects_empty_and_roundtrips_nonempty() {
-        assert!(!encode_tool_use_id("").is_empty());
-        let encoded = encode_tool_use_id("synthetic-signature");
-        assert!(!encoded.is_empty());
+        let context = AntigravityToolContext::new("fixture-account", "fixture-session");
+        for signature in ["", "upstream-signature"] {
+            let mut machine =
+                GeminiSseMachine::new("gemini-3.8-flash").with_antigravity_context(context.clone());
+            let result =
+                machine.process_chunk_checked(&json!({"candidates":[{"content":{"parts":[{
+                "functionCall":{"name":"lookup","args":{}}, "thoughtSignature":signature
+            }]},"finishReason":"STOP"}]}));
+            if signature.is_empty() {
+                assert!(result.is_err());
+                assert!(!machine.is_started());
+            } else {
+                result.unwrap();
+                machine.transport_close_checked().unwrap();
+                let response = machine.final_json_checked().unwrap();
+                let id = response["content"][0]["id"].as_str().unwrap();
+                assert_eq!(
+                    context
+                        .decode(id, "lookup", &json!({}), 0)
+                        .unwrap()
+                        .as_deref(),
+                    Some(signature)
+                );
+            }
+        }
     }
 
     #[test]

@@ -16,10 +16,10 @@ use crate::{
     config::AuthMode,
     model::antigravity_request::{
         antigravity_exact_catalog_admission, antigravity_request_id, antigravity_scoped_session_id,
-        wrap_antigravity_envelope, AntigravityCatalog,
+        wrap_antigravity_envelope, AntigravityCatalog, AntigravityToolContext,
     },
     model::gemini::{map_gemini_error, GeminiSseMachine},
-    model::gemini_request::{translate_request_for_model, wrap_code_assist_envelope},
+    model::gemini_request::wrap_code_assist_envelope,
     request::RequestBody,
     routing::Route,
     server::AppState,
@@ -197,10 +197,14 @@ async fn collect_antigravity_sse(
     response: reqwest::Response,
     route_model: &str,
     upstream_model: &str,
+    context: Option<AntigravityToolContext>,
 ) -> Result<GeminiSseMachine, AdapterError> {
     let mut bytes = response.bytes_stream();
     let mut decoder = GeminiSseDecoder::default();
     let mut machine = GeminiSseMachine::new_for_upstream(route_model, upstream_model);
+    if let Some(context) = context {
+        machine = machine.with_antigravity_context(context);
+    }
     let mut pending = None::<Bytes>;
 
     loop {
@@ -285,7 +289,25 @@ async fn forward(
     let json_body = body.json();
     let is_streaming = json_body.get("stream").and_then(Value::as_bool) == Some(true);
 
-    let mut inner_req = translate_request_for_model(json_body, &route.upstream_model)?;
+    let antigravity_context = if provider.auth == AuthMode::AntigravityOauth {
+        Some(
+            AntigravityToolContext::new(
+                account_fingerprint.as_deref().unwrap_or("legacy"),
+                antigravity_scoped_session_id(
+                    account_fingerprint.as_deref().unwrap_or("legacy"),
+                    json_body,
+                ),
+            )
+            .with_history(json_body),
+        )
+    } else {
+        None
+    };
+    let mut inner_req = crate::model::gemini_request::translate_request_for_model_with_context(
+        json_body,
+        &route.upstream_model,
+        antigravity_context.as_ref(),
+    )?;
 
     let base_url = provider.base_url.trim_end_matches('/');
 
@@ -352,16 +374,16 @@ async fn forward(
         if let Some(level) = model.thinking_level {
             set_thinking_level(&mut inner_req, level);
         }
-        let session_id = antigravity_scoped_session_id(
-            account_fingerprint.as_deref().unwrap_or("legacy"),
-            &inner_req,
-        );
+        let session_id = antigravity_context
+            .as_ref()
+            .map(|c| c.session.as_str())
+            .unwrap_or("-");
         let envelope = wrap_antigravity_envelope(
             &model.id,
             &project_id,
             inner_req,
             &antigravity_request_id(),
-            &session_id,
+            session_id,
         );
         (endpoint, envelope)
     } else if is_code_assist {
@@ -437,8 +459,11 @@ async fn forward(
 
     if is_streaming {
         let byte_stream = response.bytes_stream();
-        let machine =
+        let mut machine =
             GeminiSseMachine::new_streaming_for_upstream(&route.model, &route.upstream_model);
+        if let Some(context) = antigravity_context.clone() {
+            machine = machine.with_antigravity_context(context);
+        }
         let decoder = GeminiSseDecoder::default();
 
         let sse_stream = futures_util::stream::unfold(
@@ -582,8 +607,13 @@ async fn forward(
 
         Ok((StatusCode::OK, response_res))
     } else if provider.auth == AuthMode::AntigravityOauth {
-        let machine =
-            collect_antigravity_sse(response, &route.model, &route.upstream_model).await?;
+        let machine = collect_antigravity_sse(
+            response,
+            &route.model,
+            &route.upstream_model,
+            antigravity_context.clone(),
+        )
+        .await?;
         let final_json = machine
             .final_json_checked()
             .map_err(|error| local_gemini_error(error.to_string()))?;

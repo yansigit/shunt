@@ -26,6 +26,12 @@ is your own call — nothing here can shield the account.
 
 </Aside>
 
+## Native tool history
+
+Native OAuth responses use opaque `call_antigravity_v2_` tool IDs. Preserve these IDs and the original tool names, arguments, and history order when returning tool results. Legacy `call_gemini_v1_` IDs remain valid for non-native Gemini but are rejected by native Antigravity; start a new conversation when migrating old native history.
+
+The session is derived from the account and canonical opening user turn, so follow-ups keep the same session. Identical openings in the same account share a session. Tags bind the account/session and each call's upstream signature, name, arguments, and conversation-wide ordinal. They are unkeyed context checks, not cryptographic proof of upstream origin: deliberately recomputed tags cannot be detected. Upstream signatures are preserved without synthesis, and no signature cache or signing key is persisted.
+
 ## Quick start
 
 Let a coding agent wire it up for you — `shunt add` prints an embedded setup blueprint

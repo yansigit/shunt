@@ -87,13 +87,9 @@ static CATALOG_FETCH_SLOTS: LazyLock<Mutex<HashMap<String, Arc<tokio::sync::Mute
 /// previous account's catalog for up to [`CATALOG_TTL`] after
 /// `shunt login antigravity` swaps the credential under a running gateway,
 /// and every request in that window may pick an id the new account cannot
-/// use. The account is identified by its Code Assist project: it is what the
-/// backend itself scopes the request by (the envelope's `project`), it is
-/// stable across the hourly access-token refresh — so the last-known-good set
-/// survives a rotation that lands during a control-plane outage — and it
-/// changes with the account. Only a credential with no project at all falls
-/// back to a fingerprint of the bearer; that is a truncated SHA-256 so the
-/// map never holds a token in the clear.
+/// use. Native callers supply the private account fingerprint separately
+/// from the Code Assist project; a project alone does not identify an account.
+/// Never pass the raw bearer as the fingerprint.
 fn cache_key(base_url: &str, account_fingerprint: &str, project_id: &str) -> String {
     format!("{base_url}#account:{account_fingerprint}#project:{project_id}")
 }
@@ -470,7 +466,7 @@ mod tests {
             let entry = cache
                 .get_mut(&cache_key(
                     &super::super::auth::inference_base_url(&server.uri()),
-                    "token",
+                    "legacy",
                     "",
                 ))
                 .expect("the primed entry");
@@ -749,7 +745,7 @@ mod tests {
         let client = reqwest::Client::new();
         clear_for_test(&server.uri());
         let base = super::super::auth::inference_base_url(&server.uri());
-        let old_key = cache_key(&base, "token", "proj-abandoned");
+        let old_key = cache_key(&base, "legacy", "proj-abandoned");
 
         catalog_ids(&client, &server.uri(), "token", "proj-abandoned")
             .await
@@ -768,37 +764,41 @@ mod tests {
         assert!(!cache().contains_key(&old_key), "the old entry is gone");
         assert!(!slots_for_test().contains(&old_key), "and so is its slot");
         assert!(
-            slots_for_test().contains(&cache_key(&base, "token", "proj-current")),
+            slots_for_test().contains(&cache_key(&base, "legacy", "proj-current")),
             "the live key keeps its slot"
         );
         clear_for_test(&server.uri());
     }
 
     #[test]
-    fn the_cache_key_is_the_project_and_never_the_bearer() {
-        let by_project = cache_key("https://example.test", "ya29.secret-bearer", "proj-1");
-        assert_eq!(by_project, "https://example.test#project:proj-1");
+    fn the_cache_key_binds_account_and_project_without_accepting_a_bearer_argument() {
+        let by_project = cache_key("https://example.test", "opaque-account-1", "proj-1");
         assert_eq!(
             by_project,
-            cache_key("https://example.test", "ya29.rotated-bearer", "proj-1"),
-            "a token refresh on the same project is the same account"
+            "https://example.test#account:opaque-account-1#project:proj-1"
+        );
+        assert_eq!(
+            by_project,
+            cache_key("https://example.test", "opaque-account-1", "proj-1"),
+            "a bearer rotation cannot affect an unchanged account fingerprint"
         );
         assert_ne!(
             by_project,
-            cache_key("https://example.test", "ya29.secret-bearer", "proj-2")
+            cache_key("https://example.test", "opaque-account-1", "proj-2")
         );
-
-        // No project: fall back to the bearer, fingerprinted.
-        let by_token = cache_key("https://example.test", "ya29.secret-bearer", "");
-        assert!(by_token.starts_with("https://example.test#token:"));
-        assert!(!by_token.contains("secret"));
         assert_ne!(
-            by_token,
-            cache_key("https://example.test", "ya29.other-bearer", "")
+            by_project,
+            cache_key("https://example.test", "opaque-account-2", "proj-1")
+        );
+        let without_project = cache_key("https://example.test", "opaque-account-1", "");
+        assert!(!without_project.contains("secret-bearer"));
+        assert_ne!(
+            without_project,
+            cache_key("https://example.test", "opaque-account-2", "")
         );
         assert_eq!(
-            by_token,
-            cache_key("https://example.test", "ya29.secret-bearer", "")
+            without_project,
+            cache_key("https://example.test", "opaque-account-1", "")
         );
     }
 }
