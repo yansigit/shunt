@@ -159,13 +159,27 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
         let mut saw_tool_result = false;
         let mut message_tools = VecDeque::new();
         let mut ordered_tool_results = if has_tool_result {
-            let expected = outstanding_batches.front().ok_or_else(|| {
-                bad_request("tool_result references an unknown or already-consumed tool-use batch")
-            })?;
             let blocks = message
                 .get("content")
                 .and_then(Value::as_array)
                 .expect("has_tool_result requires array content");
+            let expected = match outstanding_batches.front() {
+                Some(expected) => expected,
+                None => {
+                    let tool_use_id = blocks
+                        .iter()
+                        .find(|block| {
+                            block.get("type").and_then(Value::as_str) == Some("tool_result")
+                        })
+                        .and_then(|block| block.get("tool_use_id"))
+                        .and_then(Value::as_str)
+                        .filter(|id| !id.is_empty())
+                        .ok_or_else(|| bad_request("tool_result tool_use_id must be non-empty"))?;
+                    return Err(bad_request(format!(
+                        "tool_result references unknown tool_use_id {tool_use_id} or one already consumed"
+                    )));
+                }
+            };
             let mut matched = HashMap::with_capacity(expected.len());
             for block in blocks
                 .iter()

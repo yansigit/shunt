@@ -812,17 +812,22 @@ fn rejects_tool_blocks_in_the_wrong_message_direction_and_unknown_roles() {
 }
 
 #[test]
-fn tool_result_batches_are_consumed_once_in_original_call_order() {
+fn tool_result_batches_are_identity_addressed_and_consumed_once() {
     let calls = json!({"role": "assistant", "content": [
         {"type": "tool_use", "id": "toolu_a", "name": "same", "input": {}},
         {"type": "tool_use", "id": "toolu_b", "name": "same", "input": {}}
     ]});
-    let cases = [
+    let reversed = json!({"messages": [calls.clone(), {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "toolu_b", "content": "B"},
+        {"type": "tool_result", "tool_use_id": "toolu_a", "content": "A"}
+    ]}]});
+    let translated = translate_request(&reversed).unwrap();
+    let responses = translated["contents"][1]["parts"].as_array().unwrap();
+    assert_eq!(responses[0]["functionResponse"]["response"]["output"], "A");
+    assert_eq!(responses[1]["functionResponse"]["response"]["output"], "B");
+
+    let invalid = [
         json!({"messages": [calls.clone()]}),
-        json!({"messages": [calls.clone(), {"role": "user", "content": [
-            {"type": "tool_result", "tool_use_id": "toolu_b", "content": "B"},
-            {"type": "tool_result", "tool_use_id": "toolu_a", "content": "A"}
-        ]}]}),
         json!({"messages": [calls.clone(), {"role": "user", "content": [
             {"type": "tool_result", "tool_use_id": "toolu_a", "content": "A"},
             {"type": "tool_result", "tool_use_id": "toolu_a", "content": "again"}
@@ -832,7 +837,7 @@ fn tool_result_batches_are_consumed_once_in_original_call_order() {
         ]}]}),
     ];
 
-    for request in cases {
+    for request in invalid {
         assert!(translate_request(&request).is_err(), "accepted {request}");
     }
 }
