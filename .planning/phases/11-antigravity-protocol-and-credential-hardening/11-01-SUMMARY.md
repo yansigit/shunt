@@ -62,7 +62,7 @@ Native Antigravity now uses one always-SSE upstream method while preserving incr
 
 - Added a shared method selector proving Antigravity uses `streamGenerateContent?alt=sse` for both client modes.
 - Added an incremental Antigravity SSE collector for downstream non-streaming requests.
-- Added hermetic real-loopback native fixtures for both downstream modes, including semantic parity, valid split/coalesced framing, strict failure closure, and exact event-cap/cap+1 bounds.
+- Added hermetic real-loopback native fixtures for both downstream modes, including explicit normalized semantic parity, valid split/coalesced framing, strict failure closure, exact event-cap/cap+1 bounds, and delayed upstream chunking that proves streaming output arrives before upstream completion.
 - Preserved ordinary Gemini API-key and Google OAuth behavior.
 - Reused Phase 10's strict decoder and semantic terminal handling, including post-`[DONE]` rejection.
 
@@ -75,7 +75,7 @@ Native Antigravity now uses one always-SSE upstream method while preserving incr
 
 ## Verification
 
-- `cargo test --all-features --test gemini_conformance antigravity_native_sse -- --nocapture`
+- `cargo test --all-features --test gemini_conformance antigravity_native_sse -- --nocapture` (4 passed)
 - `cargo test --all-features gemini_post_done_frames`
 - `cargo test --all-features --test gemini_translate gemini_known_part_strictness`
 - `cargo clippy --all-targets --all-features -- -D warnings`
