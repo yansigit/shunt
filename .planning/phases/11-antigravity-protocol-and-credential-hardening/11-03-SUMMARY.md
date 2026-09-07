@@ -1,0 +1,22 @@
+---
+phase: 11-antigravity-protocol-and-credential-hardening
+plan: "03"
+status: complete
+---
+
+# Plan 11-03 Summary
+
+Implemented request-local Antigravity account affinity and strict catalog admission.
+
+- Added an opaque, versioned, domain-separated SHA-256 fingerprint derived from normalized persisted email, with a separate non-durable refresh-token fallback for legacy stores.
+- Carried the fingerprint with the Antigravity credential and keyed catalog caching by account fingerprint plus project, preserving single-flight behavior.
+- Added an authoritative fresh-catalog gate before native inference dispatch; catalog misses and stale-only evidence now fail closed without an inference request.
+- Updated synthetic credential fixtures and the native catalog integration filter.
+
+Verification:
+
+- `cargo test --all-features --test antigravity_catalog antigravity_native_affinity -- --test-threads=1` (1 passed)
+- `cargo fmt --all --check` (passed)
+- `cargo clippy --all-targets --all-features -- -D warnings` (passed)
+
+Commit: `97ede48 feat(11-03): bind Antigravity account catalog admission`
