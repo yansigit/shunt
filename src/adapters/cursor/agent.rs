@@ -52,9 +52,8 @@ use crate::adapters::cursor::response::CursorStreamEvent;
 
 /// Default agent host. Cursor serves the CLI/agent `AgentService/Run` path here,
 /// not on the old `api2.cursor.sh` (issue #170).
-/// Wider-than-private visibility is test-only (12-02): the destination-pin
-/// regression asserts these proven values byte-for-byte without a public
-/// re-export or a behavior change.
+/// Visible within the adapter so its destination-pin regression can assert
+/// these values byte-for-byte; not publicly re-exported.
 pub(super) const AGENT_BASE_URL: &str = "https://agentn.global.api5.cursor.sh";
 pub(super) const AGENT_PATH: &str = "/agent.v1.AgentService/Run";
 /// Client version advertised to Cursor's agent service. Must track a currently
