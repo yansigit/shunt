@@ -30,7 +30,7 @@ Full phase goals, requirements, success criteria, and plan references are kept i
 ### 🚧 v2 Provider Compatibility (In Progress)
 
 - [x] **Phase 9: Provider Conformance Foundation** - Make preservation, safety, credential, terminal, cancellation, and retry commitments executable across provider fixtures. (completed 2026-09-06)
-- [ ] **Phase 10: Gemini Semantic Hardening** - Give streaming and non-streaming Google Code Assist turns one strict, replay-safe semantic contract.
+- [x] **Phase 10: Gemini Semantic Hardening** - Give streaming and non-streaming Google Code Assist turns one strict, replay-safe semantic contract. (completed 2026-09-07)
 - [ ] **Phase 11: Antigravity Protocol and Credential Hardening** - Enforce Antigravity's exact Cloud Code Assist envelope, identity, destination, model, signature, tool, and SSE rules.
 - [ ] **Phase 12: Cursor Evidence-Backed Hardening** - Correct Cursor profiles, continuation, tools, terminal handling, cancellation, and pre-output failover from verified evidence.
 - [ ] **Phase 13: Generic OpenAI Chat Completions** - Add a bounded OpenAI Chat transport with complete Anthropic message, tool, image, streaming, and error translation.
@@ -96,11 +96,11 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 10-06-PLAN.md — ID-addressed parallel results, strict Part semantics, and post-DONE framing
+- [x] 10-06-PLAN.md — ID-addressed parallel results, strict Part semantics, and post-DONE framing
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 10-07-PLAN.md — Hermetic Code Assist OAuth lifetime evidence and final release gates
+- [x] 10-07-PLAN.md — Hermetic Code Assist OAuth lifetime evidence and final release gates
 
 ### Phase 11: Antigravity Protocol and Credential Hardening
 
@@ -195,7 +195,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 1–8. OpenCodex Port | v1 | 25/25 | Complete | 2026-09-06 |
 | 9. Provider Conformance Foundation | v2 | 4/4 | Complete    | 2026-09-06 |
-| 10. Gemini Semantic Hardening | v2 | 5/5 | In Progress|  |
+| 10. Gemini Semantic Hardening | v2 | 7/7 | Complete | 2026-09-07 |
 | 11. Antigravity Protocol and Credential Hardening | v2 | 0/TBD | Not started | - |
 | 12. Cursor Evidence-Backed Hardening | v2 | 0/TBD | Not started | - |
 | 13. Generic OpenAI Chat Completions | v2 | 0/TBD | Not started | - |

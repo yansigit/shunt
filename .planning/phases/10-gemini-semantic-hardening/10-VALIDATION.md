@@ -1,7 +1,7 @@
 ---
 phase: "10"
 slug: "gemini-semantic-hardening"
-status: gaps_planned
+status: complete
 nyquist_compliant: true
 wave_0_complete: true
 created: "2026-09-06"
@@ -39,11 +39,11 @@ updated: "2026-09-07"
 | 10-04-02 | 04 | 4 | GEM-01..05 | T-10-12 | English configuration/troubleshooting Gemini terminal/retry `rg` checks | passed |
 | 10-05-01 | 05 | 5 | GEM-01..05 | T-10-14 | six-file maintained-locale non-empty/Gemini contract loop | passed |
 | 10-05-02 | 05 | 5 | GEM-01..05 | T-10-15, T-10-16 | `bash scripts/check_phase10_scope.sh` then format, Clippy, and workspace gates | passed |
-| 10-06-01 | 06 | 6 | GEM-02, GEM-04 | T-10-G06-01, T-10-G06-02 | `cargo test --all-features gemini_parallel_tool_result_identity` | pending |
-| 10-06-02 | 06 | 6 | GEM-02, GEM-03, GEM-04 | T-10-G06-03, T-10-G06-04 | `cargo test --all-features --test gemini_translate gemini_known_part_strictness` | pending |
-| 10-06-03 | 06 | 6 | GEM-04 | T-10-G06-05 | `cargo test --all-features gemini_post_done_frames` | pending |
-| 10-07-01 | 07 | 7 | GEM-01, GEM-05 | T-10-G07-02, T-10-G07-03, T-10-G07-04 | `cargo test --all-features gemini_google_oauth_code_assist_lifetime` | pending |
-| 10-07-02 | 07 | 7 | GEM-01..05 | T-10-G07-05, T-10-G07-06 | focused gap suites plus scope, format, Clippy, and serial workspace gates | pending |
+| 10-06-01 | 06 | 6 | GEM-02, GEM-04 | T-10-G06-01, T-10-G06-02 | `cargo test --all-features gemini_parallel_tool_result_identity` | passed |
+| 10-06-02 | 06 | 6 | GEM-02, GEM-03, GEM-04 | T-10-G06-03, T-10-G06-04 | `cargo test --all-features --test gemini_translate gemini_known_part_strictness` | passed |
+| 10-06-03 | 06 | 6 | GEM-04 | T-10-G06-05 | `cargo test --all-features gemini_post_done_frames` | passed |
+| 10-07-01 | 07 | 7 | GEM-01, GEM-05 | T-10-G07-02, T-10-G07-03, T-10-G07-04 | `cargo test --all-features gemini_google_oauth_code_assist_lifetime` | passed |
+| 10-07-02 | 07 | 7 | GEM-01..05 | T-10-G07-05, T-10-G07-06 | focused gap suites plus scope, format, Clippy, and serial workspace gates | passed |
 
 ## Sampling Rate
 
@@ -81,8 +81,8 @@ None. Live Gemini credentials are intentionally outside this phase's evidence ne
 
 ## Validation Sign-Off
 
-- [x] All thirteen completed baseline tasks and five pending gap-closure tasks have an automated pass/fail command.
-- [ ] GEM-01 through GEM-05 each map to complete real behavioral evidence; OAuth Code Assist lifetime closure is pending 10-07-01.
-- [ ] Strict terminal, parser bounds, stream/unary parity, tool/signature authenticity, retry safety, and cancellation are complete after Plans 10-06 and 10-07 pass.
+- [x] All thirteen baseline tasks and five gap-closure tasks have an automated pass/fail command.
+- [x] GEM-01 through GEM-05 each map to complete real behavioral evidence, including hermetic OAuth Code Assist lifetime coverage.
+- [x] Strict terminal, parser bounds, stream/unary parity, tool/signature authenticity, retry safety, and cancellation evidence is complete.
 - [x] Final repository gates are in the last wave.
 - [x] Google AI Studio Web and credential writeback remain exclusions only.

@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v2
 milestone_name: Provider Compatibility
-current_phase: 10
-current_phase_name: gemini-semantic-hardening
-status: executing
-stopped_at: Completed Phase 10 execution; verification pending
-last_updated: "2026-09-07T02:15:47.085Z"
-last_activity: 2026-09-06
-last_activity_desc: Phase 10 execution started
-state_head: 93fa20b9e65c5018a0061d6bb9b8f3b1bb8b1865
+current_phase: 11
+current_phase_name: antigravity-protocol-and-credential-hardening
+status: planning
+stopped_at: Phase 10 verified 14/14; Phase 11 ready to plan
+last_updated: "2026-09-07T03:43:32Z"
+last_activity: 2026-09-07
+last_activity_desc: Phase 10 completed and verified
+state_head: 72fbb3e27683f0b3e26f6374e9cd0da65a7617b4
 progress:
   total_phases: 8
-  completed_phases: 2
-  total_plans: 11
-  completed_plans: 9
-  percent: 25
+  completed_phases: 3
+  total_plans: 13
+  completed_plans: 11
+  percent: 38
 total_plans_in_phase: 0
 current_plan: 0
 ---
@@ -27,14 +27,14 @@ current_plan: 0
 See: `.planning/PROJECT.md` (updated 2026-09-06 after Phase 9)
 
 **Core value:** Protocol-faithful, streaming-safe client behavior in a bounded, lean gateway.
-**Current focus:** Phase 10 — gemini-semantic-hardening
+**Current focus:** Phase 11 — antigravity-protocol-and-credential-hardening
 
 ## Current Position
 
-Phase: 10 (gemini-semantic-hardening) — READY TO EXECUTE
-Plan: 5 of 5
-Status: Ready to execute
-Last activity: 2026-09-06 — Phase 10 execution started
+Phase: 11 (antigravity-protocol-and-credential-hardening) — READY TO PLAN
+Plan: 0 of TBD
+Status: Ready to plan
+Last activity: 2026-09-07 — Phase 10 completed and verified 14/14
 
 ## Performance Metrics
 
@@ -103,6 +103,9 @@ Last activity: 2026-09-06 — Phase 10 execution started
 - [Phase 09]: Complete bounded framing plus an authoritative provider terminal is required for clean completion; malformed, duplicate, or cut streams fail closed.
 - [Phase 09]: Semantic commitment gates only production-reachable WebSocket fallback and continuation recovery; generic HTTP retry remains structurally pre-response.
 - [Phase 09]: Provider credentials are redacted and rebound per destination without changing credential-file writeback.
+- [Phase 10]: Parallel Gemini tool results are selected by authentic unique ID and emitted in original assistant call order.
+- [Phase 10]: Known unsupported Part semantics and every completed post-DONE frame fail closed in streaming and unary paths.
+- [Phase 10]: Google OAuth Code Assist credentials resolve once per request; only proven pre-connect failures retry, while ambiguous post-send failures remain single-attempt.
 
 ### Pending Todos
 
