@@ -20,8 +20,8 @@ Verification:
 - `cargo fmt --all --check` (passed)
 - `cargo clippy --all-targets --all-features -- -D warnings` (passed)
 
-Added a full exact model/effort positive and negative matrix, same-project cross-account cache isolation, request-local legacy refresh rotation coverage, and a real-router rejected-tuple fixture asserting zero inference hits. Six focused tests are selected by `antigravity_native_affinity` (four library, two integration).
+Added a full exact model/effort positive and negative matrix, same-project cross-account cache isolation, request-local legacy refresh rotation coverage, and a real-router rejected-tuple fixture asserting zero inference hits. Native real-router lifetime fixtures now prove injected resolution once per request, production-default resolution once per request via a cfg(test)-only counter, distinct account/project/token observations, and prompt cancellation release of held streaming ownership. Seven focused library tests are selected by `antigravity_native_affinity`.
 
 The native-path comments and discovery diagnostics now describe fail-closed admission accurately rather than the removed fail-open heuristic.
 
-Commits: `97ede48 feat(11-03): bind Antigravity account catalog admission`, `ff9f5a2 fix(11-03): enforce exact Antigravity catalog tuples`, `f337037 test(11-03): prove native affinity admission matrix`
+Commits: `97ede48 feat(11-03): bind Antigravity account catalog admission`, `ff9f5a2 fix(11-03): enforce exact Antigravity catalog tuples`, `f337037 test(11-03): prove native affinity admission matrix`, `4d333f8 test(11-03): prove native credential affinity lifetime`
