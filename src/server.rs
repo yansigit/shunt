@@ -348,17 +348,300 @@ async fn health() -> Json<HealthResponse> {
 
 #[cfg(test)]
 mod tests {
-    use axum::{
-        body::{Body, HttpBody},
-        http::{Request, StatusCode},
+    use std::{
+        convert::Infallible,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc, Mutex,
+        },
     };
+
+    use axum::{
+        body::{to_bytes, Body, HttpBody},
+        extract::{OriginalUri, State},
+        http::{HeaderMap, Request, StatusCode},
+        response::{IntoResponse, Response},
+        Router,
+    };
+    use futures_util::{stream, StreamExt};
+    use serde_json::{json, Value};
+    use tokio::{sync::mpsc, task::JoinHandle};
     use tower::ServiceExt;
 
-    use crate::config::{
-        AccountConfig, Config, InboundAuthConfig, OauthUsageConfig, UsageEndpointConfig,
+    use crate::{
+        adapters::AdapterError,
+        auth::{Credential, CredentialFuture, CredentialResolver},
+        config::{
+            AccountConfig, AuthMode, Config, InboundAuthConfig, OauthUsageConfig, RetryConfig,
+            RouteConfig, UsageEndpointConfig,
+        },
+        routing::Route,
     };
 
-    use super::build_router;
+    use super::{build_router, build_router_with_dependencies};
+
+    const SYNTHETIC_BEARER: &str = "synthetic-test-bearer-marker";
+    const SYNTHETIC_PROJECT: &str = "synthetic-test-project-marker";
+
+    struct SyntheticGoogleOauthResolver {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl CredentialResolver for SyntheticGoogleOauthResolver {
+        fn resolve<'a>(
+            &'a self,
+            _config: &'a Config,
+            _route: &'a Route,
+            _client: &'a reqwest::Client,
+        ) -> CredentialFuture<'a> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async {
+                Ok(Credential::GoogleOauth {
+                    access_token: SYNTHETIC_BEARER.to_string(),
+                    project_id: SYNTHETIC_PROJECT.to_string(),
+                })
+            })
+        }
+    }
+
+    #[derive(Debug)]
+    struct CapturedGoogleRequest {
+        path_and_query: String,
+        authorization: Option<String>,
+        api_key: Option<String>,
+        body: Value,
+    }
+
+    struct GoogleUpstreamState {
+        requests: Mutex<Vec<CapturedGoogleRequest>>,
+        hold_stream: bool,
+        dropped: Arc<tokio::sync::Notify>,
+    }
+
+    async fn google_upstream(
+        State(state): State<Arc<GoogleUpstreamState>>,
+        OriginalUri(uri): OriginalUri,
+        headers: HeaderMap,
+        body: Body,
+    ) -> Response {
+        let bytes = to_bytes(body, usize::MAX).await.unwrap();
+        state.requests.lock().unwrap().push(CapturedGoogleRequest {
+            path_and_query: uri
+                .path_and_query()
+                .map(ToString::to_string)
+                .unwrap_or_default(),
+            authorization: headers
+                .get("authorization")
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string),
+            api_key: headers
+                .get("x-goog-api-key")
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string),
+            body: serde_json::from_slice(&bytes).unwrap(),
+        });
+
+        if uri.path().contains("streamGenerateContent") {
+            if state.hold_stream {
+                let (sender, receiver) = mpsc::channel::<Result<bytes::Bytes, Infallible>>(1);
+                sender
+                    .send(Ok(bytes::Bytes::from_static(
+                        b"data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"early\"}]}}]}}\n\n",
+                    )))
+                    .await
+                    .unwrap();
+                let dropped = state.dropped.clone();
+                tokio::spawn(async move {
+                    sender.closed().await;
+                    dropped.notify_one();
+                });
+                return Body::from_stream(stream::unfold(receiver, |mut receiver| async move {
+                    receiver.recv().await.map(|item| (item, receiver))
+                }))
+                .into_response();
+            }
+            return (
+                [("content-type", "text/event-stream")],
+                concat!(
+                    "data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"stream-ok\"}]},\"finishReason\":\"STOP\"}]}}\n\n",
+                    "data: [DONE]\n\n"
+                ),
+            )
+                .into_response();
+        }
+
+        axum::Json(json!({
+            "response": {
+                "candidates": [{
+                    "content": {"parts": [{"text": "unary-ok"}]},
+                    "finishReason": "STOP"
+                }]
+            }
+        }))
+        .into_response()
+    }
+
+    struct TestUpstream {
+        base_url: String,
+        state: Arc<GoogleUpstreamState>,
+        task: JoinHandle<()>,
+    }
+
+    impl Drop for TestUpstream {
+        fn drop(&mut self) {
+            self.task.abort();
+        }
+    }
+
+    async fn start_google_upstream(hold_stream: bool) -> TestUpstream {
+        let state = Arc::new(GoogleUpstreamState {
+            requests: Mutex::new(Vec::new()),
+            hold_stream,
+            dropped: Arc::new(tokio::sync::Notify::new()),
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = Router::new().fallback(google_upstream).with_state(state.clone());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        TestUpstream {
+            base_url: format!("http://{address}"),
+            state,
+            task,
+        }
+    }
+
+    fn google_oauth_config(base_url: String, max_retries: u32, capacity: usize) -> Config {
+        let mut config = Config::default();
+        let provider = config.providers.get_mut("gemini").unwrap();
+        provider.base_url = base_url;
+        provider.auth = AuthMode::GoogleOauth;
+        provider.retry = RetryConfig {
+            max_retries,
+            initial_backoff_ms: 1,
+            max_backoff_ms: 2,
+            ..RetryConfig::default()
+        };
+        config.server.default_provider = "gemini".to_string();
+        config.server.max_concurrent_requests = capacity;
+        config.routes = vec![RouteConfig {
+            model: "claude-via-google-oauth".to_string(),
+            provider: "gemini".to_string(),
+            upstream_model: Some("gemini-2.5-pro".to_string()),
+            effort: None,
+            service_tier: None,
+        }];
+        config
+    }
+
+    fn google_request(stream: bool) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri("/v1/messages")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                json!({
+                    "model": "claude-via-google-oauth",
+                    "max_tokens": 64,
+                    "stream": stream,
+                    "messages": [{"role": "user", "content": "synthetic fixture"}]
+                })
+                .to_string(),
+            ))
+            .unwrap()
+    }
+
+    fn oauth_router(
+        config: Config,
+        calls: Arc<AtomicUsize>,
+    ) -> Router {
+        build_router_with_dependencies(
+            config,
+            reqwest::Client::new(),
+            Arc::new(SyntheticGoogleOauthResolver { calls }),
+        )
+        .unwrap()
+        .0
+    }
+
+    fn assert_google_request(request: &CapturedGoogleRequest, streaming: bool) {
+        let method = if streaming {
+            "streamGenerateContent?alt=sse"
+        } else {
+            "generateContent"
+        };
+        assert_eq!(request.path_and_query, format!("/v1internal:{method}"));
+        assert_eq!(
+            request.authorization.as_deref(),
+            Some("Bearer synthetic-test-bearer-marker")
+        );
+        assert_eq!(request.api_key, None);
+        assert_eq!(request.body["model"], "gemini-2.5-pro");
+        assert_eq!(request.body["project"], SYNTHETIC_PROJECT);
+        assert_eq!(
+            request.body.pointer("/request/contents/0/parts/0/text"),
+            Some(&json!("synthetic fixture"))
+        );
+    }
+
+    #[tokio::test]
+    async fn gemini_google_oauth_code_assist_lifetime_unary_and_streaming() {
+        for streaming in [false, true] {
+            let upstream = start_google_upstream(false).await;
+            let calls = Arc::new(AtomicUsize::new(0));
+            let router = oauth_router(google_oauth_config(upstream.base_url.clone(), 1, 0), calls.clone());
+            let response = router.oneshot(google_request(streaming)).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let downstream = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let downstream = String::from_utf8(downstream.to_vec()).unwrap();
+            assert!(!downstream.contains(SYNTHETIC_BEARER));
+            assert!(!downstream.contains(SYNTHETIC_PROJECT));
+            assert_eq!(calls.load(Ordering::SeqCst), 1);
+            let requests = upstream.state.requests.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            assert_google_request(&requests[0], streaming);
+        }
+    }
+
+    #[tokio::test]
+    async fn gemini_google_oauth_code_assist_lifetime_cancellation_releases_capacity() {
+        let upstream = start_google_upstream(true).await;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let router = oauth_router(google_oauth_config(upstream.base_url.clone(), 2, 1), calls.clone());
+        let first = router.clone().oneshot(google_request(true)).await.unwrap();
+        assert_eq!(first.status(), StatusCode::OK);
+        let mut first_body = first.into_body().into_data_stream();
+        let chunk = tokio::time::timeout(std::time::Duration::from_secs(1), first_body.next())
+            .await
+            .expect("first translated chunk")
+            .unwrap()
+            .unwrap();
+        assert!(String::from_utf8_lossy(&chunk).contains("early"));
+
+        let saturated = router.clone().oneshot(google_request(true)).await.unwrap();
+        assert_eq!(saturated.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        drop(first_body);
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            upstream.state.dropped.notified(),
+        )
+        .await
+        .expect("dropping downstream body cancels upstream body");
+
+        let reacquired = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            router.oneshot(google_request(true)),
+        )
+        .await
+        .expect("capacity reacquired")
+        .unwrap();
+        assert_eq!(reacquired.status(), StatusCode::OK);
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        let requests = upstream.state.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_google_request(&requests[0], true);
+        assert_google_request(&requests[1], true);
+    }
 
     /// `Config::default()` with `[server.auth]` bound to a unique env var and
     /// `[server.usage]` enabled, plus the built-in `codex` provider given one
