@@ -91,7 +91,7 @@ async fn router_turn(terminal: bool, stream: bool) -> (StatusCode, String) {
             // Schema-derived AgentServerMessage.f1 / InteractionUpdate.f1 /
             // TextDeltaUpdate.f1, not the retired protobuf module.
             let text = [0x0a, 6, 0x0a, 4, 0x0a, 2, b'O', b'K'];
-            let mut body = encode_connect_frame(&text, 0).to_vec();
+            let mut body = encode_connect_frame(text, 0).to_vec();
             if terminal {
                 body.extend_from_slice(&encode_connect_frame(b"{}", 2));
             }

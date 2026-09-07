@@ -1570,7 +1570,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn event_stream_treats_clean_eof_as_end() {
+    async fn cursor_terminal_tracer_event_stream_rejects_clean_eof() {
         let events: Vec<_> = turn_from_frames(Vec::new())
             .await
             .into_event_stream()
@@ -1578,7 +1578,11 @@ mod tests {
             .await;
 
         assert_eq!(events.len(), 1);
-        assert!(matches!(&events[0], Ok(CursorStreamEvent::End)));
+        assert!(events[0]
+            .as_ref()
+            .unwrap_err()
+            .to_string()
+            .contains("EOF without an authoritative terminal"));
     }
 
     #[tokio::test]
