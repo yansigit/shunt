@@ -10,7 +10,7 @@ use serde::Serialize;
 use crate::{
     accounts::AccountPool,
     admin::{self, AdminAuth, AdminStores},
-    auth::inbound::InboundAuth,
+    auth::{inbound::InboundAuth, Credential, CredentialResolver, DefaultCredentialResolver},
     codex_analytics, codex_endpoint,
     concurrency::{limit_requests, ConcurrencyLimit},
     config::{Config, ConfigError},
@@ -56,10 +56,25 @@ pub struct AppState {
     /// bind loopback" must key off this boot-time value, never
     /// `state.config.server.bind_addr()`.
     pub boot_is_loopback: bool,
+    credential_resolver: Arc<dyn CredentialResolver>,
     /// The live, hot-swappable runtime state a reload updates. Private so the
     /// only way in is a snapshot method that keeps `config`/`inbound_auth`/
     /// `admin_auth` consistent with it.
     shared: SharedState,
+}
+
+struct RequestDependencies {
+    http_client: reqwest::Client,
+    credential_resolver: Arc<dyn CredentialResolver>,
+}
+
+impl RequestDependencies {
+    fn production(http_client: reqwest::Client) -> Self {
+        Self {
+            http_client,
+            credential_resolver: Arc::new(DefaultCredentialResolver),
+        }
+    }
 }
 
 impl AppState {
@@ -92,29 +107,62 @@ impl AppState {
         gateway_stores: Arc<GatewayStores>,
         boot_is_loopback: bool,
     ) -> Self {
+        Self::from_shared_with_dependencies(
+            shared,
+            RequestDependencies::production(http_client),
+            accounts,
+            status,
+            admin_stores,
+            gateway_stores,
+            boot_is_loopback,
+        )
+    }
+
+    fn from_shared_with_dependencies(
+        shared: SharedState,
+        dependencies: RequestDependencies,
+        accounts: Arc<AccountPool>,
+        status: Arc<StatusStore>,
+        admin_stores: Arc<AdminStores>,
+        gateway_stores: Arc<GatewayStores>,
+        boot_is_loopback: bool,
+    ) -> Self {
         let current = shared.load();
         Self {
             config: current.config.clone(),
             inbound_auth: current.inbound_auth.clone(),
             admin_auth: current.admin_auth.clone(),
             gateway_auth: current.gateway_auth.clone(),
-            http_client,
+            http_client: dependencies.http_client,
             accounts,
             status,
             admin_stores,
             gateway_stores,
             boot_is_loopback,
+            credential_resolver: dependencies.credential_resolver,
             shared,
         }
+    }
+
+    pub(crate) async fn resolve_route_credential(
+        &self,
+        route: &crate::routing::Route,
+    ) -> Result<Credential, crate::adapters::AdapterError> {
+        self.credential_resolver
+            .resolve(&self.config, route, &self.http_client)
+            .await
     }
 
     /// Re-snapshot the live shared state into a new `AppState`, so a request
     /// entry picks up the latest reloaded config while holding one stable
     /// snapshot for the whole request. Cheap: clones `Arc`s and the client.
     pub(crate) fn refreshed(&self) -> Self {
-        Self::from_shared(
+        Self::from_shared_with_dependencies(
             self.shared.clone(),
-            self.http_client.clone(),
+            RequestDependencies {
+                http_client: self.http_client.clone(),
+                credential_resolver: self.credential_resolver.clone(),
+            },
             self.accounts.clone(),
             self.status.clone(),
             self.admin_stores.clone(),
@@ -150,6 +198,18 @@ fn boot_is_loopback(config: &Config) -> bool {
 /// that hot-swap the same store and background tasks (the usage poller) that
 /// share the same [`AccountPool`] the request handlers use.
 pub fn build_router(config: Config) -> Result<(Router, SharedState, AppState), ConfigError> {
+    build_router_with_dependencies(
+        config,
+        reqwest::Client::new(),
+        Arc::new(DefaultCredentialResolver),
+    )
+}
+
+fn build_router_with_dependencies(
+    config: Config,
+    http_client: reqwest::Client,
+    credential_resolver: Arc<dyn CredentialResolver>,
+) -> Result<(Router, SharedState, AppState), ConfigError> {
     // Validate before deriving boot-fixed layers and stores. `Config::load` already
     // validates, but callers may construct `Config` programmatically.
     let runtime = RuntimeState::from_config(config)?;
@@ -195,9 +255,12 @@ pub fn build_router(config: Config) -> Result<(Router, SharedState, AppState), C
     let spend_state_path = spend_state_path(config);
     let rate_limits = config.server.rate_limits.clone();
     let shared: SharedState = Arc::new(arc_swap::ArcSwap::from_pointee(runtime));
-    let state = AppState::from_shared(
+    let state = AppState::from_shared_with_dependencies(
         shared.clone(),
-        reqwest::Client::new(),
+        RequestDependencies {
+            http_client,
+            credential_resolver,
+        },
         Arc::new(AccountPool::new()),
         Arc::new(StatusStore::new()),
         Arc::new(AdminStores::new()),
@@ -350,6 +413,7 @@ async fn health() -> Json<HealthResponse> {
 mod tests {
     use std::{
         convert::Infallible,
+        net::{Ipv4Addr, SocketAddr},
         sync::{
             atomic::{AtomicUsize, Ordering},
             Arc, Mutex,
@@ -364,12 +428,16 @@ mod tests {
         Router,
     };
     use futures_util::{stream, StreamExt};
+    use reqwest::dns::{Addrs, Name, Resolve, Resolving};
     use serde_json::{json, Value};
-    use tokio::{sync::mpsc, task::JoinHandle};
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        sync::mpsc,
+        task::JoinHandle,
+    };
     use tower::ServiceExt;
 
     use crate::{
-        adapters::AdapterError,
         auth::{Credential, CredentialFuture, CredentialResolver},
         config::{
             AccountConfig, AuthMode, Config, InboundAuthConfig, OauthUsageConfig, RetryConfig,
@@ -401,6 +469,24 @@ mod tests {
                     project_id: SYNTHETIC_PROJECT.to_string(),
                 })
             })
+        }
+    }
+
+    struct RetryLoopbackResolver {
+        calls: Arc<AtomicUsize>,
+        success: SocketAddr,
+    }
+
+    impl Resolve for RetryLoopbackResolver {
+        fn resolve(&self, name: Name) -> Resolving {
+            assert_eq!(name.as_str(), "localhost");
+            let address = if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                SocketAddr::from((Ipv4Addr::LOCALHOST, 1))
+            } else {
+                self.success
+            };
+            let addresses: Addrs = Box::new(std::iter::once(address));
+            Box::pin(async move { Ok(addresses) })
         }
     }
 
@@ -501,7 +587,9 @@ mod tests {
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
-        let app = Router::new().fallback(google_upstream).with_state(state.clone());
+        let app = Router::new()
+            .fallback(google_upstream)
+            .with_state(state.clone());
         let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         TestUpstream {
             base_url: format!("http://{address}"),
@@ -550,13 +638,18 @@ mod tests {
             .unwrap()
     }
 
-    fn oauth_router(
+    fn oauth_router(config: Config, calls: Arc<AtomicUsize>) -> Router {
+        oauth_router_with_client(config, calls, reqwest::Client::new())
+    }
+
+    fn oauth_router_with_client(
         config: Config,
         calls: Arc<AtomicUsize>,
+        http_client: reqwest::Client,
     ) -> Router {
         build_router_with_dependencies(
             config,
-            reqwest::Client::new(),
+            http_client,
             Arc::new(SyntheticGoogleOauthResolver { calls }),
         )
         .unwrap()
@@ -583,12 +676,62 @@ mod tests {
         );
     }
 
+    async fn read_raw_google_request(socket: &mut tokio::net::TcpStream) -> CapturedGoogleRequest {
+        let mut raw = Vec::new();
+        let header_end = loop {
+            let mut chunk = [0_u8; 4096];
+            let read = socket.read(&mut chunk).await.unwrap();
+            assert!(read > 0, "request closed before headers");
+            raw.extend_from_slice(&chunk[..read]);
+            if let Some(index) = raw.windows(4).position(|window| window == b"\r\n\r\n") {
+                break index + 4;
+            }
+        };
+        let headers = String::from_utf8(raw[..header_end].to_vec()).unwrap();
+        let content_length = headers
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.eq_ignore_ascii_case("content-length")
+                    .then(|| value.trim().parse::<usize>().unwrap())
+            })
+            .unwrap();
+        while raw.len() < header_end + content_length {
+            let mut chunk = [0_u8; 4096];
+            let read = socket.read(&mut chunk).await.unwrap();
+            assert!(read > 0, "request closed before body");
+            raw.extend_from_slice(&chunk[..read]);
+        }
+        let path_and_query = headers
+            .lines()
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .unwrap()
+            .to_string();
+        let header = |wanted: &str| {
+            headers.lines().find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.eq_ignore_ascii_case(wanted)
+                    .then(|| value.trim().to_string())
+            })
+        };
+        CapturedGoogleRequest {
+            path_and_query,
+            authorization: header("authorization"),
+            api_key: header("x-goog-api-key"),
+            body: serde_json::from_slice(&raw[header_end..header_end + content_length]).unwrap(),
+        }
+    }
+
     #[tokio::test]
     async fn gemini_google_oauth_code_assist_lifetime_unary_and_streaming() {
         for streaming in [false, true] {
             let upstream = start_google_upstream(false).await;
             let calls = Arc::new(AtomicUsize::new(0));
-            let router = oauth_router(google_oauth_config(upstream.base_url.clone(), 1, 0), calls.clone());
+            let router = oauth_router(
+                google_oauth_config(upstream.base_url.clone(), 1, 0),
+                calls.clone(),
+            );
             let response = router.oneshot(google_request(streaming)).await.unwrap();
             assert_eq!(response.status(), StatusCode::OK);
             let downstream = to_bytes(response.into_body(), usize::MAX).await.unwrap();
@@ -603,10 +746,93 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn gemini_google_oauth_code_assist_lifetime_connect_retry_reuses_identity_and_body() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let upstream = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = read_raw_google_request(&mut socket).await;
+            let body = r#"{"response":{"candidates":[{"content":{"parts":[{"text":"retry-ok"}]},"finishReason":"STOP"}]}}"#;
+            socket
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+            request
+        });
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let dns_calls = Arc::new(AtomicUsize::new(0));
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .dns_resolver(Arc::new(RetryLoopbackResolver {
+                calls: dns_calls.clone(),
+                success: address,
+            }))
+            .build()
+            .unwrap();
+        let router = oauth_router_with_client(
+            google_oauth_config("http://localhost".to_string(), 1, 0),
+            calls.clone(),
+            client,
+        );
+        let response = router.oneshot(google_request(false)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let downstream = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert!(String::from_utf8_lossy(&downstream).contains("retry-ok"));
+        let request = tokio::time::timeout(std::time::Duration::from_secs(1), upstream)
+            .await
+            .expect("retry reaches second connection")
+            .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(dns_calls.load(Ordering::SeqCst), 2);
+        assert_google_request(&request, false);
+    }
+
+    #[tokio::test]
+    async fn gemini_google_oauth_code_assist_lifetime_post_send_close_does_not_retry() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let upstream = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = read_raw_google_request(&mut socket).await;
+            drop(socket);
+            let retried =
+                tokio::time::timeout(std::time::Duration::from_millis(100), listener.accept())
+                    .await
+                    .is_ok();
+            (request, retried)
+        });
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let router = oauth_router(
+            google_oauth_config(format!("http://{address}"), 1, 0),
+            calls.clone(),
+        );
+        let response = router.oneshot(google_request(false)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        let (request, retried) = tokio::time::timeout(std::time::Duration::from_secs(1), upstream)
+            .await
+            .expect("upstream observes the no-retry window")
+            .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(!retried, "a post-send close must not redispatch the POST");
+        assert_google_request(&request, false);
+    }
+
+    #[tokio::test]
     async fn gemini_google_oauth_code_assist_lifetime_cancellation_releases_capacity() {
         let upstream = start_google_upstream(true).await;
         let calls = Arc::new(AtomicUsize::new(0));
-        let router = oauth_router(google_oauth_config(upstream.base_url.clone(), 2, 1), calls.clone());
+        let router = oauth_router(
+            google_oauth_config(upstream.base_url.clone(), 2, 1),
+            calls.clone(),
+        );
         let first = router.clone().oneshot(google_request(true)).await.unwrap();
         assert_eq!(first.status(), StatusCode::OK);
         let mut first_body = first.into_body().into_data_stream();

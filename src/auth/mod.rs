@@ -1,4 +1,4 @@
-use std::{env, fmt, path::PathBuf, time::Duration};
+use std::{env, fmt, future::Future, path::PathBuf, pin::Pin, time::Duration};
 
 use axum::{http::StatusCode, response::IntoResponse};
 
@@ -82,6 +82,35 @@ impl fmt::Debug for Credential {
             Self::ClaudeOauth { .. } => formatter.write_str("Credential::ClaudeOauth { .. }"),
             Self::KimiOauth { .. } => formatter.write_str("Credential::KimiOauth { .. }"),
         }
+    }
+}
+
+pub(crate) type CredentialFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Credential, AdapterError>> + Send + 'a>>;
+
+/// Request-local credential resolution dependency. Production always installs
+/// [`DefaultCredentialResolver`]; the trait exists so hermetic crate tests can
+/// prove OAuth request lifetime without reading or writing a credential file.
+pub(crate) trait CredentialResolver: Send + Sync {
+    fn resolve<'a>(
+        &'a self,
+        config: &'a Config,
+        route: &'a Route,
+        client: &'a reqwest::Client,
+    ) -> CredentialFuture<'a>;
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct DefaultCredentialResolver;
+
+impl CredentialResolver for DefaultCredentialResolver {
+    fn resolve<'a>(
+        &'a self,
+        config: &'a Config,
+        route: &'a Route,
+        client: &'a reqwest::Client,
+    ) -> CredentialFuture<'a> {
+        Box::pin(resolve_credential(config, route, client))
     }
 }
 

@@ -14,7 +14,7 @@ use crate::{
     adapters::{Adapter, AdapterError, AdapterFuture},
     auth::{
         antigravity::{auth::inference_base_url, catalog::catalog_ids},
-        resolve_credential, Credential,
+        Credential,
     },
     config::AuthMode,
     model::antigravity_request::{
@@ -204,7 +204,7 @@ async fn forward(
             failure: None,
         })?;
 
-    let credential = resolve_credential(&state.config, &route, &state.http_client).await?;
+    let credential = state.resolve_route_credential(&route).await?;
 
     let (access_token, project_id) = match credential {
         Credential::GoogleOauth {
