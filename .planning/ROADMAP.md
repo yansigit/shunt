@@ -71,15 +71,36 @@ Full phase goals, requirements, success criteria, and plan references are kept i
   3. Malformed, oversized, invalid-UTF-8, or prematurely terminated events fail as protocol errors without silent loss or synthesized success.
   4. Generation retries occur only for proven replay-safe pre-commit failures and never after output or replay-unsafe tool activity.
 
-**Plans**: 5/5 plans executed
+**Plans**: 5/7 plans executed; 2 gap-closure plans ready
 
 Plans:
+**Wave 1**
 
 - [x] 10-01-PLAN.md — Checked Gemini semantic state and authentic tool/signature round trip
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [x] 10-02-PLAN.md — Bounded byte SSE and unary transport integration
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [x] 10-03-PLAN.md — Immutable identity, non-idempotent retry, parity, and cancellation
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [x] 10-04-PLAN.md — English engineering, configuration, and troubleshooting contract
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [x] 10-05-PLAN.md — Maintained locale parity, deterministic scope checks, and final release gates
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 10-06-PLAN.md — ID-addressed parallel results, strict Part semantics, and post-DONE framing
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 10-07-PLAN.md — Hermetic Code Assist OAuth lifetime evidence and final release gates
 
 ### Phase 11: Antigravity Protocol and Credential Hardening
 
