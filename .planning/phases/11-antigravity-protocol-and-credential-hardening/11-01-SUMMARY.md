@@ -12,14 +12,14 @@ provides:
 affects: [phase-11-identity, antigravity, gemini]
 actuals:
   tokens: 520
-  tasks: 3
+  tasks: 2
   commits: 2
 tech-stack:
   added: []
   patterns: [shared checked SSE transport, bounded unary semantic accumulation]
 key-files:
   created: []
-  modified: [src/adapters/gemini/mod.rs]
+  modified: [src/adapters/gemini/mod.rs, tests/gemini_conformance.rs]
 key-decisions:
   - "Keep ordinary Gemini API-key and Google OAuth endpoint selection unchanged."
   - "Decode Antigravity unary SSE incrementally and accumulate only validated semantic content."
@@ -62,27 +62,27 @@ Native Antigravity now uses one always-SSE upstream method while preserving incr
 
 - Added a shared method selector proving Antigravity uses `streamGenerateContent?alt=sse` for both client modes.
 - Added an incremental Antigravity SSE collector for downstream non-streaming requests.
+- Added hermetic real-loopback native fixtures for both downstream modes, including semantic parity, valid split/coalesced framing, strict failure closure, and exact event-cap/cap+1 bounds.
 - Preserved ordinary Gemini API-key and Google OAuth behavior.
 - Reused Phase 10's strict decoder and semantic terminal handling, including post-`[DONE]` rejection.
 
 ## Task Commits
 
 1. Task 1: Route native Antigravity through one always-SSE checked path — `e12a15f`
-2. Task 2: Close wrapper, framing, and terminal failure cases — already proven by Phase 10 checked decoder/machine and conformance fixtures; no additional source change required.
-3. Task 3: Reject every completed SSE frame after `[DONE]` — already proven by Phase 10 checked decoder and real-gateway fixtures; no additional source change required.
+2. Task 2: Close wrapper, framing, and terminal failure cases — native real-loopback matrix added in `tests/gemini_conformance.rs`.
 
 **Plan metadata:** this summary commit.
 
 ## Verification
 
-- `cargo test --all-features --lib antigravity_native_sse`
+- `cargo test --all-features --test gemini_conformance antigravity_native_sse -- --nocapture`
 - `cargo test --all-features gemini_post_done_frames`
 - `cargo test --all-features --test gemini_translate gemini_known_part_strictness`
 - `cargo clippy --all-targets --all-features -- -D warnings`
 
 ## Deviations from Plan
 
-Task 2 and Task 3 requirements were already implemented and proven in Phase 10; they were not duplicated or weakened. No new dependencies, public configuration, credentials, or documentation surfaces were changed.
+The strict decoder and semantic machine remain the Phase 10 implementation; this plan adds native Antigravity loopback wiring evidence without duplicating those internals. No new dependencies, public configuration, or production credentials were changed.
 
 ## Next Phase Readiness
 
