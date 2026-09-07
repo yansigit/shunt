@@ -75,6 +75,7 @@ Last activity: 2026-09-07 — Phase 11 execution started
 
 ### Decisions
 
+- [2026-09-07 user approval]: Phases 13–14 may add public configuration choices for generic OpenAI Chat and separate read-only Command Code subscription authentication. Existing provider settings and credential-file writeback must remain unchanged. User requires settings/credential backups first; existing project settings and the available provider credential file were copied outside the repository with owner-only permissions and verified byte-for-byte without displaying contents.
 - Port observable OpenCodex behavior and fixtures, not its platform architecture.
 - Phase 1 changes only the opt-in inbound Responses transport; HTTP stays stable.
 - Phase 2 provider-semantics work requires explicit user approval.
