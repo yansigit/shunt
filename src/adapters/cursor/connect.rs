@@ -323,6 +323,21 @@ impl std::fmt::Display for ConnectError {
 
 impl std::error::Error for ConnectError {}
 
+/// Active-wire malformed payloads. Phase 12's strict parser consumes these;
+/// construction alone is not proof that the current decoder rejects them.
+#[cfg(test)]
+pub(crate) fn cursor_malformed_protobuf_corpus() -> Vec<(&'static str, Vec<u8>)> {
+    vec![
+        ("field_zero", vec![0, 0]),
+        (
+            "varint_overflow",
+            vec![8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 2],
+        ),
+        ("truncated_length", vec![10, 4, 8]),
+        ("invalid_wire_encoding", vec![15]),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::await_holding_lock)] // Intentional cross-runtime test serialization.
@@ -338,6 +353,26 @@ mod tests {
 
     fn gzip(payload: &[u8]) -> Bytes {
         gzip_with(payload, flate2::Compression::fast())
+    }
+
+    #[test]
+    fn cursor_w0_corpora_are_named_and_keep_valid_gzip_contrast() {
+        assert_eq!(cursor_malformed_protobuf_corpus().len(), 4);
+        for (name, payload) in cursor_malformed_protobuf_corpus() {
+            assert!(!name.is_empty());
+            assert!(!payload.is_empty());
+        }
+        let good = gzip(b"{}");
+        assert_eq!(decode_gzip_frame(&good).unwrap(), b"{}");
+        assert!(decode_gzip_frame(b"not gzip").is_err());
+        // Frame construction tolerates payload bytes: strict END semantics
+        // arrive in 12-06, so do not assert current semantic rejection here.
+        for payload in [&b""[..], &b"{}"[..], &b"{\"error\":"[..], &b"not gzip"[..]] {
+            let mut decoder = ConnectFrameDecoder::new();
+            let frame = encode_connect_frame(payload, FLAG_END);
+            assert_eq!(decoder.push(&frame).unwrap().len(), 1);
+            assert!(decoder.finish().is_ok());
+        }
     }
 
     fn gzip_with(payload: &[u8], compression: flate2::Compression) -> Bytes {
