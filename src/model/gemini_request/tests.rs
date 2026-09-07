@@ -708,7 +708,7 @@ fn rejects_overlapping_consecutive_model_tool_batches() {
     assert!(translate_request(&input)
         .unwrap_err()
         .message
-        .contains("cannot overlap"));
+        .contains("must immediately follow"));
 }
 
 #[test]
@@ -835,6 +835,32 @@ fn tool_result_batches_are_consumed_once_in_original_call_order() {
     for request in cases {
         assert!(translate_request(&request).is_err(), "accepted {request}");
     }
+}
+
+#[test]
+fn only_system_text_may_intervene_before_the_result_batch() {
+    let call = json!({"role": "assistant", "content": [{
+        "type": "tool_use", "id": "toolu_a", "name": "read", "input": {}
+    }]});
+    let result = json!({"role": "user", "content": [{
+        "type": "tool_result", "tool_use_id": "toolu_a", "content": "A"
+    }]});
+    let invalid_intervening = [
+        json!({"role": "user", "content": "later"}),
+        json!({"role": "user", "content": []}),
+        json!({"role": "assistant", "content": "later"}),
+    ];
+    for intervening in invalid_intervening {
+        let request = json!({"messages": [call.clone(), intervening, result.clone()]});
+        assert!(translate_request(&request).is_err(), "accepted {request}");
+    }
+
+    let compatible = json!({"messages": [
+        call,
+        {"role": "system", "content": "date rolled over"},
+        result
+    ]});
+    assert!(translate_request(&compatible).is_ok());
 }
 
 #[test]

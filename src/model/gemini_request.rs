@@ -128,6 +128,32 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
             "system" => "user",
             other => return Err(bad_request(format!("unsupported message role {other}"))),
         };
+        let has_tool_result = message
+            .get("content")
+            .and_then(Value::as_array)
+            .is_some_and(|blocks| {
+                blocks
+                    .iter()
+                    .any(|block| block.get("type").and_then(Value::as_str) == Some("tool_result"))
+            });
+        if !outstanding_batches.is_empty() {
+            match source_role {
+                "system"
+                    if match message.get("content") {
+                        Some(Value::String(_)) => true,
+                        Some(Value::Array(blocks)) => blocks
+                            .iter()
+                            .all(|block| block.get("type").and_then(Value::as_str) == Some("text")),
+                        _ => false,
+                    } => {}
+                "user" if has_tool_result => {}
+                _ => {
+                    return Err(bad_request(
+                        "Gemini tool results must immediately follow their assistant tool-use batch",
+                    ));
+                }
+            }
+        }
         let mut parts = Vec::new();
         let mut function_call_index = 0usize;
         let mut saw_tool_result = false;
