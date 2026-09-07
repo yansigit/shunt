@@ -58,13 +58,11 @@ behavior while Shunt stays bounded, predictable, and operationally lean.
 - ✓ Routed Codex collaboration semantics are preserved when explicitly enabled while native traffic remains opaque — Phase 7
 - ✓ Graceful shutdown has a bounded drain deadline and cancels remaining turns safely — Phase 8
 - ✓ Existing ChatGPT/Codex and generic-Anthropic Vercel paths preserve their verified streaming, authentication, error, retry, continuation, and cancellation behavior behind shared fail-closed bounds — Phase 9
+- ✓ Gemini preserves checked streaming/unary semantics, authentic tool pairing, immutable Code Assist identity, and conservative retries — Phase 10
+- ✓ Native Antigravity uses canonical destinations, account-bound catalog/session/signature state, strict always-SSE semantics, cancellation, and one pre-output same-account 401 replay without new credential writes — Phase 11
 
 ### Active
 
-- [ ] Gemini retains its verified streaming, tool-call, authentication, and
-  error behavior under the shared Phase 9 conformance foundation.
-- [ ] Antigravity implements the proven Cloud Code Assist request, stream,
-  signature, tool-history, model, and destination-security contracts.
 - [ ] Cursor's existing provider gains evidence-backed model, continuation,
   tool, error, and retry hardening without speculative no-progress heuristics.
 - [ ] OpenAI Chat Completions-compatible upstreams can serve Anthropic Messages
@@ -146,6 +144,9 @@ written tests are preferred.
 | Exclude Google AI Studio Web completely | It is known nonfunctional and unrelated to the supported Code Assist transport | ✓ Preserved in Phase 9 |
 | Treat provider terminals as authoritative only after complete bounded framing | Prevents malformed input, provider errors, and transport cuts from becoming clean completion | ✓ Validated in Phase 9 |
 | Keep replay commitment only at production-reachable semantic redispatch seams | Generic HTTP retry is structurally pre-response; WebSocket fallback and continuation recovery carry actual output/tool evidence | ✓ Validated in Phase 9 |
+| Keep Google identity immutable throughout generation | Prevents credential/project mismatch and ambiguous POST replay | ✓ Validated in Phases 10–11 |
+| Require fresh exact Antigravity catalog evidence | Prevents speculative model/effort admission; cold and stale views fail closed | ✓ Validated in Phase 11 |
+| Describe synthetic evidence as synthetic | Hermetic conformance does not establish current live provider availability | ✓ Applied in Phase 11 |
 
 ## Evolution
 
@@ -164,4 +165,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Revisit deferred work only with evidence from usage or failing transcripts.
 
 ---
-*Last updated: 2026-09-06 after Phase 9*
+*Last updated: 2026-09-07 after Phase 11*

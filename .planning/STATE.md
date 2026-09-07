@@ -4,19 +4,19 @@ milestone: v2
 milestone_name: Provider Compatibility
 current_phase: 12
 current_phase_name: Cursor Evidence-Backed Hardening
-status: planning
-stopped_at: Phase 11 complete, ready to plan Phase 12
-last_updated: "2026-09-07T19:42:44.921Z"
+status: ready
+stopped_at: Phase 12 plans independently reviewed; ready to execute
+last_updated: "2026-09-07T21:45:07.413Z"
 last_activity: 2026-09-07
-last_activity_desc: Phase 11 complete, transitioned to Phase 12
-state_head: 40cb4c4266e0450aabb730bc0c8cbd9551e3490b
+last_activity_desc: Phase 12 plans independently reviewed and ready to execute
+state_head: 39f527fff89ce498b41eb655c69ec8da327bc5fb
 progress:
   total_phases: 8
   completed_phases: 3
-  total_plans: 18
+  total_plans: 26
   completed_plans: 18
   percent: 38
-total_plans_in_phase: 0
+total_plans_in_phase: 8
 current_plan: 0
 ---
 
@@ -24,17 +24,17 @@ current_plan: 0
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-09-06 after Phase 9)
+See: `.planning/PROJECT.md` (updated 2026-09-07 after Phase 11)
 
 **Core value:** Protocol-faithful, streaming-safe client behavior in a bounded, lean gateway.
 **Current focus:** Phase 12 — Cursor Evidence-Backed Hardening
 
 ## Current Position
 
-Phase: 12 — Cursor Evidence-Backed Hardening
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-09-07 — Phase 11 complete, transitioned to Phase 12
+Phase: 12 (Cursor Evidence-Backed Hardening) — READY TO EXECUTE
+Plan: Eight reviewed plans; none executed
+Status: Ready to execute
+Last activity: 2026-09-07 — Independent re-review passed; 26-command planning probes and all 19 requirement/decision coverage items pass.
 
 ## Performance Metrics
 
@@ -112,11 +112,13 @@ Last activity: 2026-09-07 — Phase 11 complete, transitioned to Phase 12
 
 ### Pending Todos
 
+Phase 11 transition: native catalog admission is exact and account-bound; catalog redirects are refused; a pre-output 401 can refresh and replay once on the same account; cancellation releases upstream and capacity through ownership. Synthetic conformance is not a live availability claim.
+
 None yet.
 
 ### Blockers/Concerns
 
-None.
+The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent OpenCodex supplies schema-derived Run output-token deltas and context checkpoints; 83 hermetic tests passed in isolated state. After CLI installation, an isolated read-only Composer 2.5 probe succeeded with streamed events and result usage, including cache fields. CLI output is not raw Connect evidence: do not infer protobuf field mappings or claim Shunt live verification. Original CLI settings/credential files were backed up and remained unchanged. No Phase 12 implementation has begun.
 
 ## Deferred Items
 
@@ -127,10 +129,11 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-09-07T00:44:45.727Z
-Stopped at: Phase 11 complete, ready to plan Phase 12
+Last session: 2026-09-07T19:45:00Z
+Stopped at: Phase 12 plans independently reviewed; ready to execute
 Resume file: None
 
 ## Operator Next Steps
 
+- Execute Phase 12 plans sequentially in the shared worktree. Independent re-review passed after correcting terminal semantics, real-router fixture ownership, schema-derived fixture claims, and the wave graph. All 19 requirement/decision coverage items pass; 26 automated planning commands have explicit failure directions. Actual implementation verification remains outstanding.
 - Continue the approved milestone sequentially through Phase 16, verifying each phase. Preserve credential-file behavior and request approval for new public configuration choices.

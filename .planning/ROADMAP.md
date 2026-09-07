@@ -156,7 +156,36 @@ Plans:
   3. Valid Connect transcripts emit ordered reasoning, text, tools, usage, cancellation, and exactly one terminal outcome; malformed frames, decompression violations, provider errors, and premature EOF fail closed.
   4. Local construction failures do not advance provider failover, and transport retry/failover occurs only before commitment without adding speculative repetition or no-progress cancellation.
 
-**Plans**: TBD
+**Plans**: 8 plans, reviewed and ready to execute
+
+**Wave 1** (sequential execution in the shared worktree)
+
+- [ ] 12-01-PLAN.md — Premature EOF tracer and schema-derived wire fixtures
+- [ ] 12-02-PLAN.md — Destination pinning and request-local facts
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 12-03-PLAN.md — Stable structured tool history and continuation admission
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 12-04-PLAN.md — Explicit tool and image admission
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 12-05-PLAN.md — Single-terminal streaming and bounded usage relay
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 12-06-PLAN.md — Strict Connect and nested protobuf parsing
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 12-07-PLAN.md — Replay-safe failure classification
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 12-08-PLAN.md — Cancellation, no-heuristic coverage, and locale-complete documentation
 
 ### Phase 13: Generic OpenAI Chat Completions
 
@@ -225,7 +254,7 @@ Plans:
 | 9. Provider Conformance Foundation | v2 | 4/4 | Complete    | 2026-09-06 |
 | 10. Gemini Semantic Hardening | v2 | 7/7 | Complete | 2026-09-07 |
 | 11. Antigravity Protocol and Credential Hardening | v2 | 7/7 | Complete    | 2026-09-07 |
-| 12. Cursor Evidence-Backed Hardening | v2 | 0/TBD | Not started | - |
+| 12. Cursor Evidence-Backed Hardening | v2 | 0/8 | Ready to execute | - |
 | 13. Generic OpenAI Chat Completions | v2 | 0/TBD | Not started | - |
 | 14. Command Code Product Separation | v2 | 0/TBD | Not started | - |
 | 15. Exact OpenCode Go Evidence Gate | v2 | 0/TBD | Not started | - |
