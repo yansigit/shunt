@@ -34,7 +34,12 @@ impl Drop for EnvVarGuard {
 static ANTIGRAVITY_ENV_LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> =
     std::sync::OnceLock::new();
 
-use axum::{body::Body, extract::State, routing::post, Router};
+use axum::{
+    body::{Body, Bytes},
+    extract::State,
+    routing::post,
+    Router,
+};
 use futures_util::{stream, StreamExt};
 use reqwest::StatusCode;
 use serde_json::json;
@@ -203,6 +208,7 @@ async fn antigravity_native_sse_real_loopback_both_downstream_modes() {
     assert_eq!(unary.status(), StatusCode::OK);
     let unary_body: serde_json::Value = unary.json().await.unwrap();
     assert_eq!(unary_body["content"][0]["text"], "native");
+    assert_eq!(unary_body["stop_reason"], "end_turn");
 
     let streaming = client
         .post(format!("http://{addr}/v1/messages"))
@@ -216,6 +222,25 @@ async fn antigravity_native_sse_real_loopback_both_downstream_modes() {
     assert!(
         streaming_body.contains("event: message_stop"),
         "{streaming_body}"
+    );
+    let stream_events: Vec<serde_json::Value> = streaming_body
+        .lines()
+        .filter_map(|line| line.strip_prefix("data: "))
+        .filter_map(|data| serde_json::from_str(data).ok())
+        .collect();
+    assert_eq!(
+        stream_events.iter().find_map(|event| event
+            .pointer("/delta/text")
+            .and_then(|value| value.as_str())),
+        Some("native")
+    );
+    assert_eq!(
+        stream_events.iter().find_map(|event| {
+            event
+                .pointer("/delta/stop_reason")
+                .and_then(|value| value.as_str())
+        }),
+        Some("end_turn")
     );
 
     let requests = backend.received_requests().await.unwrap();
@@ -233,6 +258,87 @@ async fn antigravity_native_sse_real_loopback_both_downstream_modes() {
     }
 
     task.abort();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn antigravity_native_sse_streams_before_upstream_completion() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_guard = ANTIGRAVITY_ENV_LOCK
+        .get_or_init(|| tokio::sync::Mutex::const_new(()))
+        .lock()
+        .await;
+    let release = Arc::new(Notify::new());
+    let release_for_backend = release.clone();
+    let backend_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let backend_addr = backend_listener.local_addr().unwrap();
+    let backend = Router::new().route(
+        "/v1internal:streamGenerateContent",
+        post(move || {
+            let release = release_for_backend.clone();
+            async move {
+                let first = stream::once(async {
+                    Ok::<_, Infallible>(Bytes::from_static(
+                        b"data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"early\"}]}}]}}\n\n",
+                    ))
+                });
+                let second = stream::once(async move {
+                    release.notified().await;
+                    Ok::<_, Infallible>(Bytes::from_static(
+                        b"data: {\"response\":{\"candidates\":[{\"finishReason\":\"STOP\"}]}}\n\ndata: [DONE]\n\n",
+                    ))
+                });
+                axum::response::Response::new(Body::from_stream(first.chain(second)))
+            }
+        }),
+    );
+    let backend_task = tokio::spawn(async move {
+        axum::serve(backend_listener, backend).await.unwrap();
+    });
+    let dir = std::env::temp_dir().join(format!(
+        "shunt-antigravity-native-lazy-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let credential_path = dir.join("antigravity-auth.json");
+    std::fs::write(
+        &credential_path,
+        br#"{"access_token":"native-lazy-token","refresh_token":"native-lazy-refresh","expiry_date":4102444800000,"project_id":"native-lazy-project"}"#,
+    )
+    .unwrap();
+    let _auth_file = EnvVarGuard::set("SHUNT_ANTIGRAVITY_AUTH_FILE", &credential_path);
+    let mut config = antigravity_fixture_config(format!("http://{backend_addr}"));
+    config.server.bind = "127.0.0.1:0".to_string();
+    let listener = tokio::net::TcpListener::bind(config.server.bind_addr().unwrap())
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (app, _, _) = server::build_router(config).unwrap();
+    let gateway_task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/v1/messages"))
+        .body(request(true).replace("claude-via-gemini", "claude-via-antigravity"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut body = response.bytes_stream();
+    let first = tokio::time::timeout(std::time::Duration::from_secs(2), body.next())
+        .await
+        .expect("stream must emit before upstream completion")
+        .unwrap()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&first).contains("early"));
+    release.notify_one();
+    let mut rest = Vec::new();
+    while let Some(chunk) = body.next().await {
+        rest.extend_from_slice(&chunk.unwrap());
+    }
+    assert!(String::from_utf8_lossy(&rest).contains("message_stop"));
+    gateway_task.abort();
+    backend_task.abort();
     let _ = std::fs::remove_dir_all(dir);
 }
 
