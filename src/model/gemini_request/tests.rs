@@ -691,9 +691,7 @@ fn merges_consecutive_user_and_system_turns() {
 }
 
 #[test]
-fn never_merges_consecutive_model_turns() {
-    // Merging model turns would shift part indices and break the
-    // thought-signature placement on the first functionCall of a turn.
+fn rejects_overlapping_consecutive_model_tool_batches() {
     let input = json!({
         "model": "gemini-3-flash-preview",
         "messages": [
@@ -707,16 +705,10 @@ fn never_merges_consecutive_model_turns() {
         ]
     });
 
-    let contents = translate_request(&input).unwrap()["contents"].clone();
-    let roles: Vec<&str> = contents
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|c| c["role"].as_str().unwrap())
-        .collect();
-    assert_eq!(roles, ["user", "model", "model"]);
-    assert_eq!(contents[1]["parts"][0]["thoughtSignature"], "sig-1");
-    assert_eq!(contents[2]["parts"][0]["thoughtSignature"], "sig-2");
+    assert!(translate_request(&input)
+        .unwrap_err()
+        .message
+        .contains("cannot overlap"));
 }
 
 #[test]
@@ -787,6 +779,8 @@ fn gemini_tool_signature_roundtrip_keeps_legacy_calls_unsigned() {
             "id": "toolu_legacy",
             "name": "read_file",
             "input": {"path": "a.txt"}
+        }]}, {"role": "user", "content": [{
+            "type": "tool_result", "tool_use_id": "toolu_legacy", "content": "ok"
         }]}]
     });
 
@@ -805,6 +799,9 @@ fn rejects_tool_blocks_in_the_wrong_message_direction_and_unknown_roles() {
         json!({"messages": [{"role": "assistant", "content": [{
             "type": "tool_result", "tool_use_id": "toolu_wrong", "content": "x"
         }]}]}),
+        json!({"messages": [{"role": "system", "content": [{
+            "type": "tool_result", "tool_use_id": "toolu_wrong", "content": "x"
+        }]}]}),
         json!({"messages": [{"role": "operator", "content": "x"}]}),
         json!({"messages": [{"content": "x"}]}),
     ];
@@ -821,6 +818,7 @@ fn tool_result_batches_are_consumed_once_in_original_call_order() {
         {"type": "tool_use", "id": "toolu_b", "name": "same", "input": {}}
     ]});
     let cases = [
+        json!({"messages": [calls.clone()]}),
         json!({"messages": [calls.clone(), {"role": "user", "content": [
             {"type": "tool_result", "tool_use_id": "toolu_b", "content": "B"},
             {"type": "tool_result", "tool_use_id": "toolu_a", "content": "A"}

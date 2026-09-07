@@ -116,14 +116,17 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
     let mut outstanding_batches: VecDeque<VecDeque<(String, String)>> = VecDeque::new();
 
     for message in messages {
-        let role = match message.get("role").and_then(Value::as_str) {
-            Some("user") => "user",
-            Some("assistant") => "model",
+        let source_role = message
+            .get("role")
+            .and_then(Value::as_str)
+            .ok_or_else(|| bad_request("message role must be present"))?;
+        let role = match source_role {
+            "user" => "user",
+            "assistant" => "model",
             // Claude Code can insert mid-conversation system reminders. Keep
             // their established user-turn compatibility mapping explicit.
-            Some("system") => "user",
-            Some(other) => return Err(bad_request(format!("unsupported message role {other}"))),
-            None => return Err(bad_request("message role must be present")),
+            "system" => "user",
+            other => return Err(bad_request(format!("unsupported message role {other}"))),
         };
         let mut parts = Vec::new();
         let mut function_call_index = 0usize;
@@ -238,7 +241,7 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
                                 function_call_index += 1;
                             }
                             "tool_result" => {
-                                if role != "user" {
+                                if source_role != "user" {
                                     return Err(bad_request(
                                         "tool_result blocks are only valid in user messages",
                                     ));
@@ -289,6 +292,11 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
             push_content(&mut contents, role, parts);
         }
         if !message_tools.is_empty() {
+            if !outstanding_batches.is_empty() {
+                return Err(bad_request(
+                    "Gemini tool-use batches cannot overlap before results are returned",
+                ));
+            }
             outstanding_batches.push_back(message_tools);
         }
         if saw_tool_result {
@@ -302,6 +310,12 @@ fn translate_messages(request: &Value, model: &str) -> Result<Vec<Value>, Adapte
             }
             outstanding_batches.pop_front();
         }
+    }
+
+    if !outstanding_batches.is_empty() {
+        return Err(bad_request(
+            "Gemini request ends with an unanswered tool-use batch",
+        ));
     }
 
     Ok(contents)
