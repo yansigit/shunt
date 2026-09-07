@@ -583,6 +583,56 @@ fn gemini_semantic_strictness_rejects_ambiguous_and_incomplete() {
 }
 
 #[test]
+fn gemini_known_part_strictness() {
+    let unsupported = [
+        json!({"inlineData": {"mimeType": "image/png", "data": "AA=="}}),
+        json!({"executableCode": {"language": "PYTHON", "code": "print(1)"}}),
+        json!({"codeExecutionResult": {"outcome": "OUTCOME_OK", "output": "1"}}),
+        json!({"fileData": {"mimeType": "text/plain", "fileUri": "gs://fixture"}}),
+        json!({"functionResponse": {"name": "fixture", "response": {}}}),
+        json!({"text": "visible", "inlineData": {"mimeType": "image/png", "data": "AA=="}}),
+        json!({"thought": true, "text": "reasoning", "executableCode": {"language": "PYTHON", "code": "pass"}}),
+        json!({"functionCall": {"name": "fixture", "args": {}}, "fileData": {"mimeType": "text/plain", "fileUri": "gs://fixture"}}),
+        json!({"inlineData": {}, "codeExecutionResult": {}}),
+    ];
+
+    for part in unsupported {
+        let value = json!({
+            "candidates": [{
+                "content": {"role": "model", "parts": [part]},
+                "finishReason": "STOP"
+            }]
+        });
+        let mut streaming = GeminiSseMachine::new_streaming("gemini-2.5-pro");
+        let stream_error = streaming
+            .process_chunk_checked(&value)
+            .expect_err("streaming accepted a known unsupported Gemini Part")
+            .to_string();
+        assert!(streaming.transport_close_checked().is_err());
+
+        let mut unary = GeminiSseMachine::new("gemini-2.5-pro");
+        let unary_error = unary
+            .process_chunk_checked(&value)
+            .expect_err("unary accepted a known unsupported Gemini Part")
+            .to_string();
+        assert_eq!(stream_error, unary_error);
+        assert!(unary.final_json_checked().is_err());
+    }
+
+    for metadata in [
+        json!({"citationMetadata": {"citations": []}}),
+        json!({"futureProviderMetadata": {"opaque": true}}),
+    ] {
+        let mut machine = GeminiSseMachine::new_streaming("gemini-2.5-pro");
+        assert!(machine
+            .process_chunk_checked(&json!({
+                "candidates": [{"content": {"role": "model", "parts": [metadata]}}]
+            }))
+            .is_ok());
+    }
+}
+
+#[test]
 fn gemini_semantic_strictness_accepts_signature_cap_and_rejects_cap_plus_one() {
     for (size, accepted) in [(64 * 1024, true), (64 * 1024 + 1, false)] {
         let mut machine = GeminiSseMachine::new("gemini-3.1-pro-preview");
