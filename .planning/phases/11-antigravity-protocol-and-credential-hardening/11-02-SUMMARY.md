@@ -21,10 +21,13 @@ Implemented fail-closed native Antigravity destination and redirect handling.
   Unsafe hops fail before the receiving endpoint can observe a bearer.
 - Updated the existing catalog wiring fixture to exercise the always-SSE
   Antigravity endpoint introduced by Plan 11-01.
+- Added client-level loopback evidence for same-origin `307` bearer retention,
+  off-origin rejection before target delivery, ten-hop redirect-loop bounds,
+  unsafe initial configuration rejection, and redacted diagnostics.
 
 ## Verification
 
-- `cargo test --all-features antigravity_native_origin --lib` (2 passed)
+- `cargo test --all-features antigravity_native_origin --lib` (5 passed)
 - `cargo test --all-features --test antigravity_catalog` (1 passed)
 - `cargo fmt --all --check` (passed)
 - `cargo clippy --all-targets --all-features -- -D warnings` (passed)
@@ -32,7 +35,9 @@ Implemented fail-closed native Antigravity destination and redirect handling.
 ## Commits
 
 - `e0817f2 fix(11-02): harden Antigravity inference origins`
+- `50fd61d test(11-02): cover Antigravity redirect boundaries`
 
-The redirect fixture is module-local in `src/auth/antigravity/auth.rs`; the
-catalog integration fixture remains focused on catalog-to-inference wiring.
-No credential-file behavior or public configuration schema was changed.
+The client-level redirect fixtures are module-local in
+`src/auth/antigravity/auth.rs`; the catalog integration fixture remains focused
+on catalog-to-inference wiring. No credential-file behavior or public
+configuration schema was changed.
