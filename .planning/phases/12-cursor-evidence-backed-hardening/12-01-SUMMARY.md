@@ -62,6 +62,7 @@ Bare upstream EOF now produces an error rather than a fabricated successful comp
 - All-feature workspace suite: passed, exit 0; existing ignored tests remain ignored.
 - `cargo fmt --all --check`: passed.
 - `cargo clippy --all-targets --all-features -- -D warnings`: passed.
+- Existing binary smoke driver passed config validation, liveness, discovery, local upstream forwarding, and malformed-request rejection on isolated ports 31711/31712; owned processes and scratch config were cleaned up. This is a generic gateway smoke, not a live Cursor-provider proof. A mistaken temporary repository-path edit failed before build, was reverted, and the unchanged driver then passed.
 - Every stateful test runner used a fresh isolated OPENCODEX_HOME and non-production port. Production config mtime/SHA-256 and invalid/backup inventory were unchanged before/after.
 
 ## Deviations and Issues
