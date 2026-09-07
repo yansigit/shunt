@@ -105,6 +105,20 @@ pub(crate) trait CredentialResolver: Send + Sync {
 #[derive(Debug, Default)]
 pub(crate) struct DefaultCredentialResolver;
 
+#[cfg(test)]
+static DEFAULT_RESOLVER_CALLS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(test)]
+pub(crate) fn reset_default_resolver_calls() {
+    DEFAULT_RESOLVER_CALLS.store(0, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[cfg(test)]
+pub(crate) fn default_resolver_calls() -> usize {
+    DEFAULT_RESOLVER_CALLS.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 impl CredentialResolver for DefaultCredentialResolver {
     fn resolve<'a>(
         &'a self,
@@ -112,6 +126,8 @@ impl CredentialResolver for DefaultCredentialResolver {
         route: &'a Route,
         client: &'a reqwest::Client,
     ) -> CredentialFuture<'a> {
+        #[cfg(test)]
+        DEFAULT_RESOLVER_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Box::pin(resolve_credential(config, route, client))
     }
 }

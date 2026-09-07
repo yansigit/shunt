@@ -418,6 +418,7 @@ mod tests {
             atomic::{AtomicUsize, Ordering},
             Arc, Mutex,
         },
+        time::Duration,
     };
 
     use axum::{
@@ -438,7 +439,10 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::{
-        auth::{Credential, CredentialFuture, CredentialResolver},
+        auth::{
+            default_resolver_calls, reset_default_resolver_calls, Credential, CredentialFuture,
+            CredentialResolver,
+        },
         config::{
             AccountConfig, AuthMode, Config, InboundAuthConfig, OauthUsageConfig, RetryConfig,
             RouteConfig, UsageEndpointConfig,
@@ -502,6 +506,7 @@ mod tests {
         requests: Mutex<Vec<CapturedGoogleRequest>>,
         hold_stream: bool,
         dropped: Arc<tokio::sync::Notify>,
+        catalog_model: Option<String>,
     }
 
     async fn google_upstream(
@@ -526,6 +531,11 @@ mod tests {
                 .map(str::to_string),
             body: serde_json::from_slice(&bytes).unwrap(),
         });
+
+        if uri.path().contains("fetchAvailableModels") {
+            let model = state.catalog_model.as_deref().unwrap_or("gemini-2.5-pro");
+            return axum::Json(json!({"models": {model: {"model": "fixture"}}})).into_response();
+        }
 
         if uri.path().contains("streamGenerateContent") {
             if state.hold_stream {
@@ -584,6 +594,7 @@ mod tests {
             requests: Mutex::new(Vec::new()),
             hold_stream,
             dropped: Arc::new(tokio::sync::Notify::new()),
+            catalog_model: None,
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -596,6 +607,67 @@ mod tests {
             state,
             task,
         }
+    }
+
+    async fn start_native_upstream(hold_stream: bool, model: &str) -> TestUpstream {
+        let state = Arc::new(GoogleUpstreamState {
+            requests: Mutex::new(Vec::new()),
+            hold_stream,
+            dropped: Arc::new(tokio::sync::Notify::new()),
+            catalog_model: Some(model.to_string()),
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = Router::new()
+            .fallback(google_upstream)
+            .with_state(state.clone());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        TestUpstream {
+            base_url: format!("http://{address}"),
+            state,
+            task,
+        }
+    }
+
+    struct NativeResolver {
+        calls: Arc<AtomicUsize>,
+        access_token: &'static str,
+        project_id: &'static str,
+        account_fingerprint: &'static str,
+    }
+
+    impl CredentialResolver for NativeResolver {
+        fn resolve<'a>(
+            &'a self,
+            _config: &'a Config,
+            _route: &'a Route,
+            _client: &'a reqwest::Client,
+        ) -> CredentialFuture<'a> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async move {
+                Ok(Credential::AntigravityOauth {
+                    access_token: self.access_token.to_string(),
+                    project_id: self.project_id.to_string(),
+                    account_fingerprint: self.account_fingerprint.to_string(),
+                })
+            })
+        }
+    }
+
+    fn antigravity_config(base_url: String, _project: &str) -> Config {
+        let mut config = Config::default();
+        let provider = config.providers.get_mut("antigravity").unwrap();
+        provider.base_url = base_url;
+        provider.auth = AuthMode::AntigravityOauth;
+        config.server.default_provider = "antigravity".to_string();
+        config.routes = vec![RouteConfig {
+            model: "gemini-3.8-flash-medium".to_string(),
+            provider: "antigravity".to_string(),
+            upstream_model: Some("gemini-3.8-flash-medium".to_string()),
+            effort: None,
+            service_tier: None,
+        }];
+        config
     }
 
     fn google_oauth_config(base_url: String, max_retries: u32, capacity: usize) -> Config {
@@ -651,6 +723,28 @@ mod tests {
             config,
             http_client,
             Arc::new(SyntheticGoogleOauthResolver { calls }),
+        )
+        .unwrap()
+        .0
+    }
+
+    fn native_router(
+        config: Config,
+        calls: Arc<AtomicUsize>,
+        token: &'static str,
+        project: &'static str,
+        account: &'static str,
+        http_client: reqwest::Client,
+    ) -> Router {
+        build_router_with_dependencies(
+            config,
+            http_client,
+            Arc::new(NativeResolver {
+                calls,
+                access_token: token,
+                project_id: project,
+                account_fingerprint: account,
+            }),
         )
         .unwrap()
         .0
@@ -867,6 +961,125 @@ mod tests {
         assert_eq!(requests.len(), 2);
         assert_google_request(&requests[0], true);
         assert_google_request(&requests[1], true);
+    }
+
+    fn native_request(streaming: bool) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri("/v1/messages")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                json!({
+                    "model": "gemini-3.8-flash-medium", "max_tokens": 16,
+                    "stream": streaming,
+                    "messages": [{"role": "user", "content": "native fixture"}]
+                })
+                .to_string(),
+            ))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn antigravity_native_affinity_injected_resolver_once_and_tuple_distinct() {
+        let upstream = start_native_upstream(false, "gemini-3.8-flash-medium").await;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let router = native_router(
+            antigravity_config(upstream.base_url.clone(), "project-a"),
+            calls.clone(),
+            "token-a",
+            "project-a",
+            "account-a",
+            reqwest::Client::new(),
+        );
+        for _ in 0..2 {
+            let response = router.clone().oneshot(native_request(false)).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let _ = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        }
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "one resolution per request"
+        );
+        {
+            let requests = upstream.state.requests.lock().unwrap();
+            let inference: Vec<_> = requests
+                .iter()
+                .filter(|r| r.path_and_query.contains("streamGenerateContent"))
+                .collect();
+            assert_eq!(inference.len(), 2);
+            for request in inference {
+                assert_eq!(request.authorization.as_deref(), Some("Bearer token-a"));
+                assert_eq!(request.body["project"], "project-a");
+                assert_eq!(request.body["model"], "gemini-3.8-flash-medium");
+            }
+        }
+
+        // Same project with a different account is a separate request-local tuple.
+        let upstream_b = start_native_upstream(false, "gemini-3.8-flash-medium").await;
+        let calls_b = Arc::new(AtomicUsize::new(0));
+        let router_b = native_router(
+            antigravity_config(upstream_b.base_url.clone(), "project-a"),
+            calls_b.clone(),
+            "token-b",
+            "project-a",
+            "account-b",
+            reqwest::Client::new(),
+        );
+        let response = router_b.oneshot(native_request(false)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let _ = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(calls_b.load(Ordering::SeqCst), 1);
+        let requests_b = upstream_b.state.requests.lock().unwrap();
+        let request = requests_b
+            .iter()
+            .find(|r| r.path_and_query.contains("streamGenerateContent"))
+            .unwrap();
+        assert_eq!(request.authorization.as_deref(), Some("Bearer token-b"));
+        assert_eq!(request.body["project"], "project-a");
+    }
+
+    #[tokio::test]
+    async fn antigravity_native_affinity_cancellation_drops_request_body_promptly() {
+        let upstream = start_native_upstream(true, "gemini-3.8-flash-medium").await;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let router = native_router(
+            antigravity_config(upstream.base_url.clone(), "project-held"),
+            calls.clone(),
+            "token-held",
+            "project-held",
+            "account-held",
+            reqwest::Client::new(),
+        );
+        let response = router.oneshot(native_request(true)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let mut body = response.into_body().into_data_stream();
+        let _ = tokio::time::timeout(Duration::from_secs(1), body.next())
+            .await
+            .unwrap();
+        drop(body);
+        tokio::time::timeout(Duration::from_secs(1), upstream.state.dropped.notified())
+            .await
+            .expect("cancellation releases request-local upstream ownership");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn antigravity_native_affinity_production_default_resolver_once() {
+        let previous = std::env::var_os("SHUNT_ANTIGRAVITY_AUTH_FILE");
+        let missing =
+            std::env::temp_dir().join(format!("shunt-antigravity-missing-{}", std::process::id()));
+        std::env::set_var("SHUNT_ANTIGRAVITY_AUTH_FILE", &missing);
+        reset_default_resolver_calls();
+        let config = antigravity_config("http://127.0.0.1:1".to_string(), "default-project");
+        let router = build_router(config).unwrap().0;
+        let response = router.oneshot(native_request(false)).await.unwrap();
+        assert!(!response.status().is_success());
+        assert_eq!(default_resolver_calls(), 1);
+        match previous {
+            Some(value) => std::env::set_var("SHUNT_ANTIGRAVITY_AUTH_FILE", value),
+            None => std::env::remove_var("SHUNT_ANTIGRAVITY_AUTH_FILE"),
+        }
     }
 
     /// `Config::default()` with `[server.auth]` bound to a unique env var and
