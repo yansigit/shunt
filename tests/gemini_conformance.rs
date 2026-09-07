@@ -39,14 +39,16 @@ fn can_bind_loopback() -> bool {
     }
 }
 
-fn gemini_config(base_url: String) -> Config {
+fn gemini_config_with_retry(base_url: String, max_retries: u32) -> Config {
     let mut config = Config::default();
     let provider = config.providers.get_mut("gemini").unwrap();
     provider.base_url = base_url;
     provider.auth = AuthMode::ApiKey;
     provider.api_key_env = Some("SHUNT_GEMINI_CONFORMANCE_KEY".to_string());
     provider.retry = RetryConfig {
-        max_retries: 0,
+        max_retries,
+        initial_backoff_ms: 1,
+        max_backoff_ms: 1,
         ..RetryConfig::default()
     };
     config.server.default_provider = "gemini".to_string();
@@ -60,9 +62,16 @@ fn gemini_config(base_url: String) -> Config {
     config
 }
 
+fn gemini_config(base_url: String) -> Config {
+    gemini_config_with_retry(base_url, 0)
+}
+
 async fn start_gateway(base_url: String) -> Gateway {
+    start_gateway_with_config(gemini_config(base_url)).await
+}
+
+async fn start_gateway_with_config(mut config: Config) -> Gateway {
     std::env::set_var("SHUNT_GEMINI_CONFORMANCE_KEY", "fixture-key");
-    let mut config = gemini_config(base_url);
     config.server.bind = "127.0.0.1:0".to_string();
     let listener = tokio::net::TcpListener::bind(config.server.bind_addr().unwrap())
         .await
@@ -73,6 +82,53 @@ async fn start_gateway(base_url: String) -> Gateway {
     Gateway {
         base_url: format!("http://{addr}"),
         task,
+    }
+}
+
+#[tokio::test]
+async fn gemini_identity_retry_never_retries_returned_transient_statuses() {
+    if !can_bind_loopback() {
+        return;
+    }
+
+    for status in [429, 502, 503, 504, 529] {
+        let upstream = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(
+                "/v1beta/models/gemini-2.5-pro:generateContent",
+            ))
+            .respond_with(ResponseTemplate::new(status).set_body_json(json!({
+                "error": {"message": "synthetic transient"}
+            })))
+            .expect(1)
+            .mount(&upstream)
+            .await;
+
+        let gateway = start_gateway_with_config(gemini_config_with_retry(upstream.uri(), 2)).await;
+        let response = reqwest::Client::new()
+            .post(format!("{}/v1/messages", gateway.base_url))
+            .body(request(false))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status().as_u16(), status);
+        let requests = upstream.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1, "status {status} was redispatched");
+        assert_eq!(
+            requests[0]
+                .headers
+                .get("x-goog-api-key")
+                .and_then(|value| value.to_str().ok()),
+            Some("fixture-key")
+        );
+        assert_eq!(
+            requests[0].body_json::<serde_json::Value>().unwrap(),
+            json!({
+                "contents": [{"role": "user", "parts": [{"text": "fixture"}]}],
+                "generationConfig": {"maxOutputTokens": 64}
+            })
+        );
     }
 }
 
