@@ -57,6 +57,14 @@ fn antigravity_endpoint(base_url: &str, method: &str) -> String {
     format!("{base_url}/v1internal:{method}")
 }
 
+fn gemini_method(auth: AuthMode, streaming: bool) -> &'static str {
+    if streaming || auth == AuthMode::AntigravityOauth {
+        "streamGenerateContent?alt=sse"
+    } else {
+        "generateContent"
+    }
+}
+
 /// Carry the effort tier a `-tiered` catalog id does not name into the request
 /// body, where the backend reads it.
 ///
@@ -188,6 +196,57 @@ async fn collect_unary_response(
     Ok(body)
 }
 
+async fn collect_antigravity_sse(
+    response: reqwest::Response,
+    route_model: &str,
+    upstream_model: &str,
+) -> Result<GeminiSseMachine, AdapterError> {
+    let mut bytes = response.bytes_stream();
+    let mut decoder = GeminiSseDecoder::default();
+    let mut machine = GeminiSseMachine::new_for_upstream(route_model, upstream_model);
+    let mut pending = None::<Bytes>;
+
+    loop {
+        if let Some(chunk) = pending.take() {
+            let (consumed, item) = decoder.push_one(&chunk).map_err(local_gemini_error)?;
+            if consumed < chunk.len() {
+                pending = Some(chunk.slice(consumed..));
+            }
+            let Some(item) = item else { continue };
+            let events = match item {
+                GeminiSseItem::Json(value) => machine
+                    .process_chunk_checked(&value)
+                    .map_err(|error| local_gemini_error(error.to_string()))?,
+                GeminiSseItem::Done => machine
+                    .transport_close_checked()
+                    .map_err(|error| local_gemini_error(error.to_string()))?,
+            };
+            if let Some(error) = events.into_iter().find(|event| event.event == "error") {
+                return Err(embedded_gemini_error(error.data));
+            }
+            continue;
+        }
+
+        match bytes.next().await {
+            Some(Ok(chunk)) => pending = Some(chunk),
+            Some(Err(error)) => {
+                return Err(local_gemini_error(format!(
+                    "failed to read Gemini response body: {error}"
+                )))
+            }
+            None => {
+                decoder.finish().map_err(local_gemini_error)?;
+                if !machine.is_started() || machine.final_json_checked().is_err() {
+                    machine
+                        .transport_close_checked()
+                        .map_err(|error| local_gemini_error(error.to_string()))?;
+                }
+                return Ok(machine);
+            }
+        }
+    }
+}
+
 async fn forward(
     state: AppState,
     route: Route,
@@ -232,11 +291,7 @@ async fn forward(
 
     let base_url = provider.base_url.trim_end_matches('/');
 
-    let method = if is_streaming {
-        "streamGenerateContent?alt=sse"
-    } else {
-        "generateContent"
-    };
+    let method = gemini_method(provider.auth, is_streaming);
     // Both subscription paths speak the Code Assist protocol: the same
     // `v1internal` methods under the `{model,project,request}` envelope. Only
     // the credential and the client identity differ, so the envelope is gated
@@ -518,6 +573,16 @@ async fn forward(
             })?;
 
         Ok((StatusCode::OK, response_res))
+    } else if provider.auth == AuthMode::AntigravityOauth {
+        let machine =
+            collect_antigravity_sse(response, &route.model, &route.upstream_model).await?;
+        let final_json = machine
+            .final_json_checked()
+            .map_err(|error| local_gemini_error(error.to_string()))?;
+        let mut headers = HeaderMap::new();
+        headers.insert("content-type", HeaderValue::from_static("application/json"));
+        let response_res = (StatusCode::OK, headers, axum::Json(final_json)).into_response();
+        Ok((StatusCode::OK, response_res))
     } else {
         let full_body = collect_unary_response(response, MAX_GEMINI_UNARY_RESPONSE_BYTES).await?;
         let parsed = serde_json::from_slice::<Value>(&full_body).map_err(|error| {
@@ -588,6 +653,19 @@ mod tests {
             antigravity_endpoint("http://127.0.0.1:9999", "streamGenerateContent?alt=sse"),
             "http://127.0.0.1:9999/v1internal:streamGenerateContent?alt=sse"
         );
+    }
+
+    #[test]
+    fn antigravity_native_sse_uses_always_sse_for_both_downstream_modes() {
+        assert_eq!(
+            gemini_method(AuthMode::AntigravityOauth, true),
+            "streamGenerateContent?alt=sse"
+        );
+        assert_eq!(
+            gemini_method(AuthMode::AntigravityOauth, false),
+            "streamGenerateContent?alt=sse"
+        );
+        assert_eq!(gemini_method(AuthMode::ApiKey, false), "generateContent");
     }
 
     #[test]
