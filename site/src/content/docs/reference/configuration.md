@@ -481,6 +481,39 @@ Each provider is a table under a name of your choosing. Built-ins (`anthropic`, 
 | `workspace_roots` | array of paths (default `[]`) | `kind = "antigravity_cli"` only. Roots inside which a prompt-supplied `Working directory:` may land. The system prompt is client-controlled and routinely quotes fetched documents, so it is prompt-injectable; a prompt-derived path is canonicalized (resolving symlinks and `..`) and honored **only** if it falls inside one of these roots. A path outside them is refused — the *path* is ignored, not the request, and the run falls back to the gateway's own working directory, exactly as it would had the prompt named no directory at all. Refusing the request instead would let anyone able to inject a line of system-prompt text fail every turn. Empty (the default) means no prompt-derived path is ever honored — only `SHUNT_AGY_WORKSPACE` or the gateway's own directory. |
 | `sandbox` | `true` (default) \| `false` | `kind = "antigravity_cli"` only. Runs the CLI with `--sandbox`, which keeps the agent's reads and writes inside the workspace. Print mode passes `--dangerously-skip-permissions` (it cannot service an approval prompt), so without the sandbox the agent has shell access and no workspace boundary — `workspace_roots` only changes where it *starts*. Set `false` only where unrestricted terminal access is genuinely needed and the caller is trusted. **Refused at startup when combined with a non-loopback `bind`**, which would hand arbitrary local execution to anyone who can post a Messages request. The adapter also enforces this rule per request against the listener bound at boot, so a hot reload cannot disable the sandbox while a public listener remains active. Restart shunt on a loopback bind before disabling it. |
 
+### Gemini Code Assist response contract
+
+<!-- shunt-contract: gemini-code-assist strict-terminal malformed-fails non-idempotent-preheader tool-result-roundtrip no-writeback ai-studio-web-excluded -->
+
+The built-in Gemini path (`kind = "gemini"` with `auth = "google_oauth"`)
+continues to use the existing Google Code Assist
+`v1internal:generateContent` / `v1internal:streamGenerateContent` endpoints,
+`{model, project, request}` envelope, and `google_oauth` source. One selected
+token/project pair is kept for the full response lifetime. This behavior adds no
+configuration key or provider mode, and shunt does not write, migrate, or
+refresh-write the Gemini credential file.
+
+Streaming and unary replies use the same ordered semantic state for text,
+reasoning, function calls, usage, finish, and provider errors. Success requires
+an explicit supported provider finish followed by clean transport closure;
+`[DONE]` or EOF alone is not success. Invalid UTF-8, malformed JSON or supported
+fields, oversized data, multiple candidates, a truncated response, and an
+embedded provider error fail explicitly instead of being dropped or converted
+to a synthetic completion. Streaming stays incremental; only unary replies are
+collected, under a fixed bound.
+
+An authentic Gemini function call becomes a client `tool_use`; the matching
+client `tool_result` becomes the next request's `functionResponse`, preserving
+the exact pairing and authentic thought signature. Gemini generation is
+non-idempotent: the same upstream may retry only a transient connection or
+timeout failure proven to occur before response headers, with the same selected
+identity and payload. It never retries a returned status or a body-time failure,
+and it never repairs or redispatches after output or tool activity.
+
+This contract does not apply Antigravity policy to Gemini and does not add
+Google AI Studio Web support, cookie/SAPISIDHASH authentication, browser
+integration, durable history, or credential writeback.
+
 ### `[providers.<name>.retry]`
 
 Bounded retry for **transient** upstream failures on supported single-credential calls: the `passthrough`/`api_key` Anthropic path and the single-credential Responses path (`api_key`, `xai_oauth`/Grok, and a `chatgpt_oauth` provider with no pooled accounts). It re-issues the request (full body, before any bytes reach the client) on connection-level transport errors (connect reset/refused, timeout). Transient response statuses are not retried on these non-idempotent creation POSTs because the upstream may already have accepted a billable generation. The current Cursor adapter's streaming turn is not wrapped in this retry layer, so its normalized `retry` table is inert and a pre-response connection failure surfaces directly. No supported path retries a `4xx` response, and retry never begins after response-body streaming starts.
