@@ -61,13 +61,10 @@ impl Decoder {
                 }
                 let mut frame = std::mem::take(&mut self.buffer);
                 frame.truncate(frame_len);
+                if self.done {
+                    return Err(self.fail("Gemini SSE frame arrived after [DONE]"));
+                }
                 let item = match parse_frame(&frame) {
-                    Ok(Some(Item::Json(_))) if self.done => {
-                        return Err(self.fail("Gemini SSE data arrived after [DONE]"));
-                    }
-                    Ok(Some(Item::Done)) if self.done => {
-                        return Err(self.fail("Gemini SSE contained duplicate [DONE]"));
-                    }
                     Ok(Some(Item::Done)) => {
                         self.done = true;
                         Some(Item::Done)
