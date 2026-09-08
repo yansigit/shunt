@@ -32,6 +32,11 @@ source-derived compatibility facts, not current official API guarantees or live 
   companion transcript is finish-step(finishReason:stop, usage) followed by
   finish(rawFinishReason:stop, totalUsage). finish also accepts usage.
   A finish reason of error is failure, with consumed usage retained, not success.
+- `src/adapters/command-code.ts:430-444`: usage has inputTokens/outputTokens and
+  inputTokenDetails.cacheReadTokens/cacheWriteTokens (exact key spellings).
+  Shunt validates present fields as representable nonnegative integers with checked
+  arithmetic; source's loose numeric acceptance is not adopted. The first terminal
+  owns usage; a permitted companion must not overwrite or double-count totals.
 - `src/adapters/command-code.ts` parseStream/wireMessages: text-delta and
   reasoning-delta carry text; tool-call carries toolCallId/toolName/input or args;
   error carries error. Tool-call/result history is adjacent, missing results
