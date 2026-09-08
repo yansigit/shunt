@@ -87,6 +87,13 @@ pub(super) const PRESETS: &[ProviderPreset] = &[
         auth: AuthMode::ApiKey,
         api_key_env: Some("MINIMAX_API_KEY"),
     },
+    ProviderPreset {
+        name: "commandcode",
+        kind: ProviderKind::OpenAiChat,
+        base_url: "https://api.commandcode.ai/provider/v1",
+        auth: AuthMode::ApiKey,
+        api_key_env: Some("SHUNT_COMMANDCODE_API_KEY"),
+    },
 ];
 
 pub(super) fn find(name: &str) -> Option<&'static ProviderPreset> {
@@ -128,12 +135,13 @@ mod tests {
                 "cursor",
                 "kimi-code",
                 "zhipu",
-                "minimax-cn"
+                "minimax-cn",
+                "commandcode"
             ]
         );
         assert_eq!(
             available_names(),
-            "anthropic, codex, openai, xai, grok, kimi, cursor, kimi-code, zhipu, minimax-cn"
+            "anthropic, codex, openai, xai, grok, kimi, cursor, kimi-code, zhipu, minimax-cn, commandcode"
         );
     }
 
