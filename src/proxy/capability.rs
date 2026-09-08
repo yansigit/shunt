@@ -109,7 +109,13 @@ impl Requirements {
                     reasons.push("reasoning-effort");
                 }
             }
-            AdapterKind::OpenAiChat | AdapterKind::CommandCode => {
+            AdapterKind::CommandCode => {
+                if self.structured_output {
+                    reasons.push("structured-output");
+                }
+                // Exact model/effort validation needs the route and is below.
+            }
+            AdapterKind::OpenAiChat => {
                 if self.structured_output {
                     reasons.push("structured-output");
                 }
@@ -129,7 +135,18 @@ pub(super) fn filter_fallbacks(routes: &mut Vec<Route>, request: &Value, request
     let requirements = Requirements::extract(request, requested_model);
     let mut index = 1;
     while index < routes.len() {
-        let reasons = requirements.incompatibilities(&routes[index].adapter);
+        let route = &routes[index];
+        let mut reasons = requirements.incompatibilities(&route.adapter);
+        if route.adapter == AdapterKind::CommandCode
+            && crate::adapters::command_code::efforts::resolve(
+                request,
+                &route.upstream_model,
+                route.effort.as_deref(),
+            )
+            .is_err()
+        {
+            reasons.push("model-or-reasoning-effort");
+        }
         if reasons.is_empty() {
             index += 1;
             continue;
@@ -179,7 +196,8 @@ mod tests {
             let mut candidate = route("subscription", AdapterKind::CommandCode);
             candidate.upstream_model = model.into();
             let mut routes = vec![route("primary", AdapterKind::Anthropic), candidate];
-            let request = effort.map_or_else(|| json!({}), |e| json!({"output_config":{"effort":e}}));
+            let request =
+                effort.map_or_else(|| json!({}), |e| json!({"output_config":{"effort":e}}));
             filter_fallbacks(&mut routes, &request, "alias");
             assert_eq!(routes.len() == 2, accepted, "{model} {effort:?}");
         }

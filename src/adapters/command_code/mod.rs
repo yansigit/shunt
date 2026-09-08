@@ -1,5 +1,6 @@
 //! Command Code subscription vertical slice, distinct from the Chat API product.
 //! Wire provenance: .planning/phases/14-command-code-product-separation/14-PROTOCOL-EVIDENCE.md.
+pub mod efforts;
 mod ndjson;
 #[cfg(test)]
 mod router_tests;
@@ -70,7 +71,8 @@ fn client() -> &'static reqwest::Client {
     })
 }
 
-fn payload(body: &Value, model: &str) -> Result<Value, AdapterError> {
+fn payload(body: &Value, model: &str, route_effort: Option<&str>) -> Result<Value, AdapterError> {
+    let effort = efforts::resolve(body, model, route_effort).map_err(invalid)?;
     // Narrow text tracer only. The next request plan expands the explicit contract.
     if body.get("stream").is_some_and(|v| !v.is_boolean()) {
         return Err(invalid("stream must be a boolean"));
@@ -85,7 +87,16 @@ fn payload(body: &Value, model: &str) -> Result<Value, AdapterError> {
         .ok_or_else(|| invalid("request must be an object"))?
         .keys()
     {
-        if !["model", "messages", "max_tokens", "stream", "system"].contains(&key.as_str()) {
+        if ![
+            "model",
+            "messages",
+            "max_tokens",
+            "stream",
+            "system",
+            "output_config",
+        ]
+        .contains(&key.as_str())
+        {
             return Err(invalid("unsupported Command Code request field"));
         }
     }
@@ -128,10 +139,12 @@ fn payload(body: &Value, model: &str) -> Result<Value, AdapterError> {
             .ok_or_else(|| invalid("system must be a string"))?,
         None => "",
     };
-    Ok(
-        json!({"config":{},"memory":"","taste":null,"skills":null,"permissionMode":"standard","mode":"agent",
-        "params":{"model":model,"messages":wire,"tools":[],"system":system,"max_tokens":max_tokens,"stream":true}}),
-    )
+    let mut payload = json!({"config":{},"memory":"","taste":null,"skills":null,"permissionMode":"standard","mode":"agent",
+        "params":{"model":model,"messages":wire,"tools":[],"system":system,"max_tokens":max_tokens,"stream":true}});
+    if let Some(effort) = effort {
+        payload["params"]["reasoning_effort"] = json!(effort);
+    }
+    Ok(payload)
 }
 
 async fn forward(
@@ -144,7 +157,7 @@ async fn forward(
         .provider(&route.provider)
         .ok_or_else(|| invalid("unknown subscription provider"))?;
     validate_provider(provider).map_err(invalid)?;
-    let payload = payload(body.json(), &route.upstream_model)?;
+    let payload = payload(body.json(), &route.upstream_model, route.effort.as_deref())?;
     let credential = state.resolve_route_credential(&route).await?;
     let Credential::CommandCodeOauth { access_token } = credential else {
         return Err(crate::auth::auth_error(
