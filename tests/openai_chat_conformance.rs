@@ -2,7 +2,10 @@ use std::{io::ErrorKind, net::SocketAddr, sync::OnceLock};
 
 use reqwest::StatusCode;
 use serde_json::{json, Value};
-use shunt::{config::Config, server};
+use shunt::{
+    config::{Config, ConfigError},
+    server,
+};
 use tokio::sync::Mutex;
 use wiremock::{
     matchers::{method, path},
@@ -953,10 +956,18 @@ async fn openai_chat_translate_wire_tool_pairing() {
     );
     assert_eq!(upstream_body["tool_choice"], "auto", "{upstream_body}");
     let messages = upstream_body["messages"].as_array().unwrap();
-    assert_eq!(messages[1]["tool_calls"][0]["id"], "tu_1", "{upstream_body}");
-    assert_eq!(messages[1]["tool_calls"][1]["id"], "tu_2", "{upstream_body}");
+    assert_eq!(
+        messages[1]["tool_calls"][0]["id"], "tu_1",
+        "{upstream_body}"
+    );
+    assert_eq!(
+        messages[1]["tool_calls"][1]["id"], "tu_2",
+        "{upstream_body}"
+    );
     let args: Value = serde_json::from_str(
-        messages[1]["tool_calls"][1]["function"]["arguments"].as_str().unwrap(),
+        messages[1]["tool_calls"][1]["function"]["arguments"]
+            .as_str()
+            .unwrap(),
     )
     .unwrap();
     assert_eq!(args["city"], "Paris", "{upstream_body}");
@@ -969,5 +980,67 @@ async fn openai_chat_translate_wire_tool_pairing() {
         messages[3],
         json!({"role": "tool", "tool_call_id": "tu_2", "content": "rainy"}),
         "{upstream_body}"
+    );
+}
+
+// ---- CHAT-02/D-02: the endpoint grammar is enforced at config boot ----
+//
+// The shared chat_completions_endpoint grammar rejects query strings,
+// fragments, and userinfo in provider base URLs; these fixtures pin that
+// rejection at the Config::validate load boundary so a bad URL can never
+// reach a request path.
+
+fn boot_config_with_base_url(base_url: &str) -> Config {
+    config_with_openai_chat_providers(
+        json!({
+            "openai-chat-test":
+                openai_chat_provider(base_url, "SHUNT_OPENAI_CHAT_CONFORMANCE_KEY")
+        }),
+        json!([{"model": "claude-via-chat", "provider": "openai-chat-test"}]),
+    )
+}
+
+#[test]
+fn openai_chat_boot_rejects_query_string_in_base_url() {
+    let error = boot_config_with_base_url("https://api.example.com/v1?key=secret")
+        .validate()
+        .expect_err("query-string base_url must be rejected at boot");
+    assert!(
+        matches!(
+            &error,
+            ConfigError::ProviderBaseUrl { provider, message }
+                if provider == "openai-chat-test" && message.contains("query")
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn openai_chat_boot_rejects_fragment_in_base_url() {
+    let error = boot_config_with_base_url("https://api.example.com/v1#section")
+        .validate()
+        .expect_err("fragment base_url must be rejected at boot");
+    assert!(
+        matches!(
+            &error,
+            ConfigError::ProviderBaseUrl { provider, message }
+                if provider == "openai-chat-test" && message.contains("fragment")
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn openai_chat_boot_rejects_userinfo_in_base_url() {
+    let error = boot_config_with_base_url("https://user:pass@api.example.com/v1")
+        .validate()
+        .expect_err("userinfo base_url must be rejected at boot");
+    assert!(
+        matches!(
+            &error,
+            ConfigError::ProviderBaseUrl { provider, message }
+                if provider == "openai-chat-test" && message.contains("userinfo")
+        ),
+        "{error:?}"
     );
 }
