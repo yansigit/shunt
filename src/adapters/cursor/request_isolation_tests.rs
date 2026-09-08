@@ -318,6 +318,7 @@ async fn collect_observations(
 
 #[tokio::test]
 async fn cursor_destination_pin_regression_enforces_run_url_for_mixed_models() {
+    let _observer = offload::OFFLOAD_OBSERVER.lock().unwrap_or_else(|e| e.into_inner());
     // Byte-level constant regression (D-01): replacement of the proven Run
     // destination must fail here first.
     assert_eq!(super::agent::AGENT_BASE_URL, D01_PROVEN_URL);
@@ -366,6 +367,7 @@ async fn cursor_destination_pin_regression_enforces_run_url_for_mixed_models() {
 
 #[tokio::test]
 async fn cursor_request_isolation_runs_concurrent_mixed_facts_without_shared_state() {
+    let _observer = offload::OFFLOAD_OBSERVER.lock().unwrap_or_else(|e| e.into_inner());
     let (client, observation_rx, _loopback) = start_run_loopback().await;
     let specs = [
         RunSpec {

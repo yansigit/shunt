@@ -168,6 +168,7 @@ pub struct CursorError {
     /// [`internal`]: CursorError::internal
     /// [`new`]: CursorError::new
     transient: bool,
+    connect_phase: bool,
 }
 
 impl CursorError {
@@ -178,6 +179,7 @@ impl CursorError {
             detail,
             retry_after: None,
             transient: false,
+            connect_phase: false,
         }
     }
 
@@ -188,6 +190,7 @@ impl CursorError {
             detail: None,
             retry_after: None,
             transient: false,
+            connect_phase: false,
         }
     }
 
@@ -197,6 +200,7 @@ impl CursorError {
         // deterministic and left alone — mirroring the `reqwest::Error`
         // RetryableError impl so both adapters agree on what "transient" means.
         let transient = e.is_connect() || e.is_timeout();
+        let connect_phase = e.is_connect();
         let status = e.status().map(|s| s.as_u16()).unwrap_or(502);
         Self {
             status,
@@ -204,6 +208,7 @@ impl CursorError {
             detail: None,
             retry_after: None,
             transient,
+            connect_phase,
         }
     }
 }
@@ -230,6 +235,10 @@ impl crate::retry::RetryableError for CursorError {
     /// reaches this trait at all.
     fn is_transient(&self) -> bool {
         self.transient
+    }
+
+    fn connect_phase(&self) -> bool {
+        self.connect_phase
     }
 }
 
@@ -345,21 +354,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_agent_transient_status_is_retried_by_the_shared_driver() {
+    async fn legacy_run_agent_explicit_idempotent_driver_characterization() {
         use std::time::Duration;
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
-        // Cursor's adapter (`cursor/mod.rs::forward`) is the one remaining path
-        // still on the plain `send_with_retry` (idempotent safety): the
-        // Anthropic/Responses paths moved to `RetrySafety::NonIdempotentPost`
-        // (issue #126) and no longer retry a response status, while Cursor keeps
-        // its status retry pending a stable idempotency identity
-        // (`TODO(#126, cursor)`). Drive that exact combination here: a transient
-        // 503 must re-issue `run_agent` up to the retry budget (1 initial + 2
-        // retries = 3 upstream hits) and then surface the last response, so a
-        // regression that dropped Cursor's retry (e.g. a policy lookup silently
-        // falling back to DISABLED) would fail here.
+        // Preserve the legacy buffered helper + explicitly idempotent driver
+        // characterization. This is NOT the active Cursor adapter's policy:
+        // active Run uses ConnectOnly classification and no retry driver.
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/agent.v1.AgentService/Run"))

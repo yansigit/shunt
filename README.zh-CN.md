@@ -197,6 +197,8 @@ OpenAI 的 Thibault Sottiaux 已公开欢迎通过其他编码 harness 运行 Co
 
 **Cursor** 的工作方式相同 —— 登录一次,然后路由一个 `cursor:*` 模型 id:
 
+畸形的 Run 帧或工具参数会明确报错。Run 不会自动重试；仅在确认发送前连接失败时才可转向已配置的回退。请求受理后的错误、部分输出和工具调用均不会触发重放。这些是隔离的一致性测试保证，并非实际模型可用性声明。
+
 ```bash
 shunt login cursor                                  # OAuth -> ~/.shunt/cursor-auth.json
 ```

@@ -119,6 +119,10 @@ History blobs live only in the active request: at most 192 entries, 512 KiB per 
 
 ## Verify
 
+Cursor does not automatically retry a Run. A configured fallback can be used
+only after a proven connection failure before sending. Accepted HTTP errors,
+ambiguous post-send timeouts, partial output, and tool calls never trigger replay.
+
 Malformed END JSON, gzip, protobuf, or MCP argument values return errors rather
 than successful completion or substituted values. Valid empty/gzipped END
 trailers and well-formed unknown protobuf fields remain supported.

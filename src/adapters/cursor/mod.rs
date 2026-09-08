@@ -553,13 +553,20 @@ async fn map_upstream_error(upstream: reqwest::Response) -> AdapterError {
     AdapterError {
         message: format!("Cursor upstream request failed with {status}"),
         response: Box::new(error),
-        failure: Some(crate::adapters::AdapterFailure::UpstreamStatus(status)),
+        // D-08: Run is ConnectOnly. A response proves possible acceptance;
+        // advancing the gateway fallback chain could replay billable/tool work.
+        failure: None,
     }
 }
 
 fn map_client_error(error: client::CursorError) -> AdapterError {
+    use crate::retry::RetryableError;
+    let connect_phase = error.is_transient()
+        && crate::retry::CURSOR_RETRY_SAFETY.may_retry_transport(error.connect_phase());
     let mut error = bad_gateway(error.to_string());
-    error.failure = Some(crate::adapters::AdapterFailure::BeforeHeaders);
+    if connect_phase {
+        error.failure = Some(crate::adapters::AdapterFailure::BeforeHeaders);
+    }
     error
 }
 
@@ -1352,4 +1359,76 @@ mod tests {
     }
 
     include!("request_isolation_tests.rs");
+
+    #[tokio::test]
+    async fn cursor_failure_classification_never_replays_local_or_accepted_requests() {
+        assert!(
+            map_client_error(client::CursorError::internal("invalid header"))
+                .failure
+                .is_none()
+        );
+        for status in [400, 401, 403, 429, 500, 502, 503, 504, 529] {
+            let mapped = map_upstream_error(upstream_response(status, &[]).await).await;
+            assert!(
+                mapped.failure.is_none(),
+                "accepted status {status} must not advance failover"
+            );
+            assert!(map_cursor_stream_error(client::CursorError::new(
+                status,
+                "after output",
+                None
+            ))
+            .failure
+            .is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn cursor_retry_safety_distinguishes_connect_from_post_send_and_builder_errors() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        let refused = reqwest::Client::new()
+            .post(format!("http://{addr}/"))
+            .send()
+            .await
+            .unwrap_err();
+        assert!(refused.is_connect());
+        assert_eq!(
+            map_client_error(client::CursorError::from_reqwest(refused)).failure,
+            Some(crate::adapters::AdapterFailure::BeforeHeaders)
+        );
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200).set_delay(std::time::Duration::from_millis(100)),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let client = reqwest::Client::new();
+        let invalid = client
+            .post(server.uri())
+            .header("authorization", "invalid\nheader")
+            .send()
+            .await
+            .unwrap_err();
+        assert!(invalid.is_builder());
+        assert!(map_client_error(client::CursorError::from_reqwest(invalid))
+            .failure
+            .is_none());
+        let timeout = client
+            .post(server.uri())
+            .timeout(std::time::Duration::from_millis(30))
+            .send()
+            .await
+            .unwrap_err();
+        assert!(timeout.is_timeout());
+        assert!(!timeout.is_connect());
+        assert!(map_client_error(client::CursorError::from_reqwest(timeout))
+            .failure
+            .is_none());
+        server.verify().await;
+    }
 }

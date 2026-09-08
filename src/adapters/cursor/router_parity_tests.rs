@@ -56,6 +56,16 @@ async fn router_case(
     let idle = history
         .as_ref()
         .is_some_and(|input| input["_test_idle"] == true);
+    let failover = history
+        .as_ref()
+        .is_some_and(|input| input["_test_failover"] == true);
+    let tool = history
+        .as_ref()
+        .is_some_and(|input| input["_test_tool"] == true);
+    let upstream_status = history
+        .as_ref()
+        .and_then(|input| input["_test_status"].as_u64())
+        .unwrap_or(200) as u16;
     let host = "agentn.global.api5.cursor.sh";
     assert_eq!(super::agent_base_url(), super::AGENT_BASE_URL);
     let cert = rcgen::generate_simple_self_signed(vec![host.to_string()]).unwrap();
@@ -121,11 +131,22 @@ async fn router_case(
             // TextDeltaUpdate.f1, not the retired protobuf module.
             let text = [0x0a, 6, 0x0a, 4, 0x0a, 2, b'O', b'K'];
             let mut body = encode_connect_frame(text, 0).to_vec();
+            if tool {
+                let args = [
+                    super::field_str(1, "Read"),
+                    super::field_str(3, "authentic"),
+                ]
+                .concat();
+                body.extend(encode_connect_frame(
+                    super::field_ld(2, &super::field_ld(11, &args)),
+                    0,
+                ));
+            }
             if terminal {
                 body.extend_from_slice(&encode_connect_frame(b"{}", 2));
             }
             let response = Response::builder()
-                .status(200)
+                .status(upstream_status)
                 .header("content-type", "application/connect+proto")
                 .body(())
                 .unwrap();
@@ -148,7 +169,38 @@ async fn router_case(
     }));
     let mut config = Config::default();
     config.server.default_provider = "cursor".into();
-    let (router, _, _) = crate::server::build_router_with_test_client(config, client).unwrap();
+    let fallback = wiremock::MockServer::start().await;
+    if failover {
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_string("UNSAFE REPLAY"))
+            .expect(0)
+            .mount(&fallback)
+            .await;
+        config.upstreams = vec![
+            serde_json::from_value(json!({"name":"primary", "provider":"cursor"})).unwrap(),
+            serde_json::from_value(json!({"name":"fallback", "kind":"anthropic", "base_url":fallback.uri(), "auth":"passthrough"})).unwrap(),
+        ];
+        config.server.default_provider = "primary".into();
+        config.models = vec![crate::config::ModelConfig {
+            id: "composer-2.5".into(),
+            display_name: None,
+            upstream_model: Some(std::collections::BTreeMap::from([
+                ("primary".into(), "composer-2.5".into()),
+                ("fallback".into(), "fallback-model".into()),
+            ])),
+        }];
+    }
+    let (router, _, state) = crate::server::build_router_with_test_client(config, client).unwrap();
+    if failover {
+        let (chain, _) = crate::routing::resolve_request_chain_value(
+            &state.config,
+            &json!({"model":"composer-2.5"}),
+        )
+        .unwrap();
+        assert_eq!(chain.len(), 2, "test must contain a real fallback chain");
+        assert_eq!(chain[0].provider, "primary");
+        assert_eq!(chain[1].provider, "fallback");
+    }
     let gateway = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let gateway_addr = gateway.local_addr().unwrap();
     let serving = TaskGuard(tokio::spawn(async move {
@@ -168,6 +220,10 @@ async fn router_case(
         .unwrap();
     let status = response.status();
     let body = response.text().await.unwrap();
+    if failover {
+        assert_eq!(requests.load(std::sync::atomic::Ordering::SeqCst), 1);
+        fallback.verify().await;
+    }
     if status == StatusCode::BAD_REQUEST {
         assert_eq!(requests.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
@@ -177,6 +233,36 @@ async fn router_case(
     std::fs::remove_file(&auth_path).unwrap();
     std::fs::remove_dir(&dir).unwrap();
     (status, body)
+}
+
+#[tokio::test]
+async fn cursor_failure_classification_full_router_never_fails_over_after_acceptance() {
+    let _observer = super::super::offload::OFFLOAD_OBSERVER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let _lock = crate::config::CONFIG_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    for stream in [false, true] {
+        for status in [429, 503] {
+            let input = json!({"_test_failover":true,"_test_status":status,"messages":[{"role":"user","content":"fixture"}]});
+            let (actual, _) = router_case(false, stream, Some(input)).await;
+            assert_eq!(actual.as_u16(), status as u16);
+        }
+        for tool in [false, true] {
+            let input = json!({"_test_failover":true,"_test_tool":tool,"messages":[{"role":"user","content":"fixture"}]});
+            let (status, body) = router_case(false, stream, Some(input)).await;
+            if tool {
+                assert!(body.contains("authentic"), "{body}");
+            } else {
+                assert!(
+                    body.contains("EOF without an authoritative terminal"),
+                    "{status}: {body}"
+                );
+            }
+            assert!(!body.contains("UNSAFE REPLAY"));
+        }
+    }
 }
 
 #[tokio::test]

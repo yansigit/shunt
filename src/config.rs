@@ -1480,8 +1480,10 @@ pub struct ProviderConfig {
     /// Bounded upstream retry/backoff for transient failures (issue #48).
     /// Applies to this provider's single-credential upstream calls (the
     /// `passthrough`/`api_key` Anthropic path, the single-credential Responses
-    /// path — `api_key`, `xai_oauth`, or an unpooled `chatgpt_oauth` provider —
-    /// and the Cursor path); the `claude_oauth`/`chatgpt_oauth`/`kimi_oauth`
+    /// path — `api_key`, `xai_oauth`, or an unpooled `chatgpt_oauth` provider).
+    /// Cursor's paced Run has no same-provider retry loop; only proven
+    /// connect-phase failures can advance a configured fallback chain.
+    /// The `claude_oauth`/`chatgpt_oauth`/`kimi_oauth`
     /// account pools have their own account-rotation failover and are
     /// unaffected. On by default with conservative settings — set
     /// `max_retries = 0` to disable.

@@ -28,10 +28,10 @@
 //! Those paths therefore retry a pre-response *transport* error only and surface
 //! a transient status immediately. A transport error carries no such ambiguity
 //! (nothing was accepted before it resolved), so it is retried for both
-//! safeties. Cursor's `Run` is also a non-idempotent POST but still retries on
-//! transient status for now: it has no account-pool failover, so a surfaced
-//! blip would hit the client directly, and it has no stable idempotency identity
-//! yet — tightening it is tracked inline as `TODO(#126, cursor)`. The shared
+//! safeties. Cursor's active `Run` instead uses ConnectOnly classification:
+//! only proven connect-phase failures may advance a configured fallback chain.
+//! It has no same-provider retry loop; accepted statuses and ambiguous failures
+//! surface immediately (see docs/cursor-request-history.md). The shared
 //! client configures no response/read timeout, so `is_timeout()` only fires
 //! connect-phase (before acceptance); retries are capped by `max_retries`.
 //!
@@ -155,6 +155,10 @@ pub enum RetrySafety {
     ConnectOnly,
 }
 
+/// Cursor Run is non-idempotent even with a stable conversation identity.
+/// D-08: no replay after possible acceptance, output, or a tool call.
+pub(crate) const CURSOR_RETRY_SAFETY: RetrySafety = RetrySafety::ConnectOnly;
+
 impl RetrySafety {
     fn may_retry_response_status(self) -> bool {
         matches!(self, Self::Idempotent)
@@ -164,7 +168,7 @@ impl RetrySafety {
     /// `connect_phase` is `error.is_connect()`: only `ConnectOnly` consults
     /// it, because for the other safeties the existing `is_transient` gate
     /// already bounds what may retry.
-    fn may_retry_transport(self, connect_phase: bool) -> bool {
+    pub(crate) fn may_retry_transport(self, connect_phase: bool) -> bool {
         match self {
             Self::ConnectOnly => connect_phase,
             Self::Idempotent | Self::NonIdempotentPost => true,
@@ -201,9 +205,8 @@ enum Backoff {
 /// the last outcome once retries are exhausted.
 ///
 /// Prefer [`send_with_retry_with_safety`] with the call's real [`RetrySafety`]
-/// stated explicitly. This idempotent-default wrapper is retained for Cursor's
-/// `Run`, itself a non-idempotent POST that still retries on a response status
-/// pending a stable idempotency identity (`TODO(#126, cursor)`).
+/// stated explicitly. This idempotent-default wrapper is retained for API
+/// compatibility, not used by Cursor's active non-idempotent Run transport.
 ///
 /// The success type is always [`reqwest::Response`]: every adapter obtains a
 /// `reqwest::Response` on success and only its status/headers are inspected here
@@ -566,6 +569,19 @@ mod tests {
         }
         assert!(Stub(503).is_transient());
         assert!(!Stub(400).is_transient());
+    }
+
+    #[test]
+    fn cursor_retry_safety_is_connect_only_regardless_of_status() {
+        assert_eq!(CURSOR_RETRY_SAFETY, RetrySafety::ConnectOnly);
+        assert!(CURSOR_RETRY_SAFETY.may_retry_transport(true));
+        assert!(!CURSOR_RETRY_SAFETY.may_retry_transport(false));
+        assert!(!CURSOR_RETRY_SAFETY.may_retry_response_status());
+        for status in [400, 401, 403, 429, 500, 502, 503, 504, 529] {
+            let error = crate::adapters::cursor::client::CursorError::new(status, "accepted", None);
+            assert!(!error.connect_phase());
+            assert!(!error.is_transient());
+        }
     }
 
     // --- Driver behavior --------------------------------------------------

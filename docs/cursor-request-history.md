@@ -78,3 +78,13 @@ remain forward-compatible. The existing 64 MiB frame/decompression bound is
 unchanged; decoded arguments also use that aggregate allocation budget and a
 64-level depth boundary. Large argument decoding uses the existing bounded
 response-work pool. No retry, configuration, or credential behavior changes.
+
+## Replay safety (plan 07)
+
+Cursor Run uses the existing ConnectOnly classification. A proven connection
+failure before sending may advance a configured fallback chain. Local build or
+header errors, ambiguous post-send timeouts, and every upstream HTTP status
+return immediately: a status may mean billable work was already accepted.
+Streaming errors and tool pauses cannot re-enter the proxy dispatch loop.
+There is still no same-provider retry loop for paced Run (TODO #170); a stable
+conversation ID is not an idempotency key. No retry machinery was added.
