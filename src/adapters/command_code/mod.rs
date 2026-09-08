@@ -93,7 +93,6 @@ async fn forward(
             "subscription credential type mismatch",
         ));
     };
-    validate_provider(provider).map_err(invalid)?;
     #[cfg(test)]
     let client = state.http_client.clone();
     #[cfg(not(test))]
@@ -109,7 +108,7 @@ async fn forward(
     if ids.next().is_some() {
         return Err(invalid("ambiguous Command Code conversation identity"));
     }
-    let outbound_headers = request::headers(&access_token, conversation)?;
+    let outbound_headers = request::dispatch_headers(provider, &access_token, conversation)?;
     let send_once = || {
         let request = client
             .post(ENDPOINT)

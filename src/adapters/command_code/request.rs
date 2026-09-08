@@ -8,6 +8,17 @@ pub const MAX_CONVERSATION_ID_BYTES: usize = 1024;
 // Pinned source 055c3ecf, inspected 2026-09-08. Not a live version claim.
 pub const CLIENT_VERSION: &str = "0.52.1";
 
+/// Recheck the immutable route snapshot immediately before constructing any
+/// credential-bearing headers, independently of pre-resolution validation.
+pub(crate) fn dispatch_headers(
+    provider: &crate::config::ProviderConfig,
+    token: &str,
+    conversation: Option<&str>,
+) -> Result<HeaderMap, AdapterError> {
+    crate::auth::command_code::validate_provider(provider).map_err(invalid)?;
+    headers(token, conversation)
+}
+
 pub fn session_id(token: &str, conversation: Option<&str>) -> Result<String, AdapterError> {
     let Some(conversation) = conversation else {
         // Request-local only: stable across retries, NOT across independent turns.

@@ -1,6 +1,9 @@
 //! Source-derived synthetic fixtures: 14-PROTOCOL-EVIDENCE.md, not live captures.
 #![allow(clippy::await_holding_lock)]
 
+mod lifetime;
+mod replay;
+
 use crate::config::Config;
 use serde_json::{json, Value};
 use std::{ffi::OsString, sync::Arc, time::Duration};
@@ -342,6 +345,34 @@ async fn command_code_tracer_destination_negatives() {
     let (status, body) = turn("", 302).await;
     assert_eq!(status, reqwest::StatusCode::BAD_GATEWAY);
     assert_eq!(body["type"], "error");
+}
+
+#[test]
+fn command_code_lifetime_destination_dispatch_rechecks_snapshot() {
+    let _lock = crate::config::CONFIG_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let before = crate::auth::command_code::LOOKUPS.load(std::sync::atomic::Ordering::SeqCst);
+    let mut cfg = config("https://api.commandcode.ai");
+    let provider = cfg.providers.get_mut("cc").unwrap();
+    crate::auth::command_code::validate_provider(provider).unwrap();
+    // Simulate a changed snapshot after the initial validation. Header
+    // construction must independently reject it before attaching the bearer.
+    for base in [
+        "http://api.commandcode.ai",
+        "https://api.commandcode.ai.evil.invalid",
+        "https://api.commandcode.ai/wrong",
+        "https://user@api.commandcode.ai",
+        "https://api.commandcode.ai?x=1",
+        "https://api.commandcode.ai#x",
+    ] {
+        provider.base_url = base.into();
+        assert!(super::request::dispatch_headers(provider, "synthetic-token", None).is_err());
+    }
+    assert_eq!(
+        crate::auth::command_code::LOOKUPS.load(std::sync::atomic::Ordering::SeqCst),
+        before
+    );
 }
 
 #[tokio::test]
