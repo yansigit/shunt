@@ -10,6 +10,7 @@
 
 use serde_json::{json, Value};
 
+mod assembly;
 mod checked;
 mod unary_tools;
 mod validation;
@@ -85,6 +86,7 @@ pub struct OpenAiChatSseMachine {
     content: Vec<Value>,
     retained_bytes: usize,
     trailing_usage_accepted: bool,
+    tool_assembly: assembly::ToolAssembly,
 }
 
 impl OpenAiChatSseMachine {
@@ -105,6 +107,7 @@ impl OpenAiChatSseMachine {
             content: Vec::new(),
             retained_bytes: 0,
             trailing_usage_accepted: false,
+            tool_assembly: assembly::ToolAssembly::default(),
         }
     }
 
@@ -163,9 +166,27 @@ impl OpenAiChatSseMachine {
             }]);
         }
 
+        let tool_bytes = if let Some(deltas) = chunk.pointer("/choices/0/delta/tool_calls") {
+            self.tool_assembly.apply(deltas).map_err(|error| {
+                self.terminal = TerminalState::ProtocolFailed;
+                error
+            })?
+        } else {
+            0
+        };
+        let streamed_tools = if checked.finish_reason.is_some() {
+            self.tool_assembly.finish().map_err(|error| {
+                self.terminal = TerminalState::ProtocolFailed;
+                error
+            })?
+        } else {
+            Vec::new()
+        };
+
         self.retained_bytes = self
             .retained_bytes
-            .checked_add(checked.retained_bytes)
+            .checked_add(tool_bytes)
+            .and_then(|bytes| bytes.checked_add(checked.retained_bytes))
             .filter(|total| *total <= MAX_RETAINED_SEMANTIC_BYTES)
             .ok_or_else(|| {
                 self.terminal = TerminalState::ProtocolFailed;
@@ -196,11 +217,18 @@ impl OpenAiChatSseMachine {
         for text in checked.parts {
             self.apply_part(text, &mut events);
         }
-        for tool in checked.tools {
+        for tool in checked.tools.into_iter().chain(streamed_tools) {
             self.close_active_block(&mut events);
+            let arguments = tool["input"].to_string();
+            let mut start = tool.clone();
+            start["input"] = json!({});
             events.push(SseEvent {
                 event: "content_block_start".into(),
-                data: json!({"type":"content_block_start","index":self.block_index,"content_block":tool}),
+                data: json!({"type":"content_block_start","index":self.block_index,"content_block":start}),
+            });
+            events.push(SseEvent {
+                event: "content_block_delta".into(),
+                data: json!({"type":"content_block_delta","index":self.block_index,"delta":{"type":"input_json_delta","partial_json":arguments}}),
             });
             events.push(SseEvent {
                 event: "content_block_stop".into(),
