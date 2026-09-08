@@ -93,6 +93,20 @@ fn root_review_reasoning_bytes_preserved() {
 }
 
 #[test]
+fn root_review_thinking_only_history_is_preserved() {
+    let out = translate(json!({"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"reason"}]}]})).unwrap();
+    assert_eq!(out["messages"][0]["reasoning_content"], "reason");
+    assert!(out["messages"][0]["content"].is_null());
+}
+
+#[test]
+fn root_review_endpoint_requires_explicit_authority() {
+    for root in ["https:///host.example/v1", "https://@host.example/v1"] {
+        assert!(chat_completions_endpoint(root).is_err(), "accepted {root}");
+    }
+}
+
+#[test]
 fn root_review_empty_tool_identity_rejected() {
     for (id, name) in [("", "f"), ("a", "")] {
         assert!(translate(json!({"messages":[{"role":"assistant","content":[{"type":"tool_use","id":id,"name":name,"input":{}}]}]})).is_err());
