@@ -1,6 +1,7 @@
 //! Command Code subscription vertical slice, distinct from the Chat API product.
 //! Wire provenance: .planning/phases/14-command-code-product-separation/14-PROTOCOL-EVIDENCE.md.
 pub mod efforts;
+mod history;
 mod ndjson;
 pub mod request;
 #[cfg(test)]

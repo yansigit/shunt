@@ -84,38 +84,18 @@ pub fn translate_request(
             "system",
             "output_config",
             "temperature",
+            "tools",
+            "tool_choice",
         ]
         .contains(&key.as_str())
         {
             return Err(invalid("unsupported Command Code request field"));
         }
     }
-    let messages = body
-        .get("messages")
-        .and_then(Value::as_array)
-        .ok_or_else(|| invalid("messages must be an array"))?;
-    if messages.is_empty() {
-        return Err(invalid("messages must not be empty"));
-    }
-    let mut wire = Vec::new();
-    for message in messages {
-        if message
-            .as_object()
-            .is_none_or(|m| m.keys().any(|k| !["role", "content"].contains(&k.as_str())))
-        {
-            return Err(invalid("unsupported message field"));
-        }
-        let role = message
-            .get("role")
-            .and_then(Value::as_str)
-            .filter(|r| matches!(*r, "user" | "assistant"))
-            .ok_or_else(|| invalid("unsupported message role"))?;
-        let content = message
-            .get("content")
-            .and_then(Value::as_str)
-            .ok_or_else(|| invalid("text-only Command Code tracer requires string content"))?;
-        wire.push(json!({"role":role,"content":[{"type":"text","text":content}]}));
-    }
+    let wire = super::history::compile(
+        body.get("messages")
+            .ok_or_else(|| invalid("missing messages"))?,
+    )?;
     let max_tokens = match body.get("max_tokens") {
         Some(v) => v
             .as_u64()
@@ -123,7 +103,7 @@ pub fn translate_request(
             .ok_or_else(|| invalid("max_tokens must be a positive integer"))?,
         None => 64000,
     };
-    let system = match body.get("system") {
+    let mut system = match body.get("system") {
         Some(Value::String(text)) => text.clone(),
         Some(Value::Array(blocks)) => blocks
             .iter()
@@ -148,8 +128,15 @@ pub fn translate_request(
         Some(_) => return Err(invalid("system must be a string or text block array")),
         None => String::new(),
     };
+    let (tools, instruction) = tools(body)?;
+    if let Some(instruction) = instruction {
+        if !system.is_empty() {
+            system.push_str("\n\n");
+        }
+        system.push_str(&instruction);
+    }
     let mut payload = json!({"config":{},"memory":"","taste":null,"skills":null,"permissionMode":"standard","mode":"agent",
-        "params":{"model":model,"messages":wire,"tools":[],"system":system,"max_tokens":max_tokens,"stream":true}});
+        "params":{"model":model,"messages":wire,"tools":tools,"system":system,"max_tokens":max_tokens,"stream":true}});
     if let Some(effort) = effort {
         payload["params"]["reasoning_effort"] = json!(effort);
     }
@@ -160,4 +147,57 @@ pub fn translate_request(
         payload["params"]["temperature"] = temperature.clone();
     }
     Ok(payload)
+}
+
+fn tools(body: &Value) -> Result<(Vec<Value>, Option<String>), AdapterError> {
+    use super::history::{fields, identity};
+    let mut tools = Vec::new();
+    let mut names = std::collections::HashSet::new();
+    if let Some(value) = body.get("tools") {
+        for tool in value
+            .as_array()
+            .ok_or_else(|| invalid("tools must be an array"))?
+        {
+            fields(tool, &["name", "description", "input_schema"])?;
+            let name = identity(tool, "name")?;
+            if !names.insert(name) {
+                return Err(invalid("duplicate tool name"));
+            }
+            let schema = tool
+                .get("input_schema")
+                .filter(|v| v.is_object())
+                .ok_or_else(|| invalid("tool input_schema must be an object"))?;
+            let description = match tool.get("description") {
+                None => "",
+                Some(v) => v
+                    .as_str()
+                    .ok_or_else(|| invalid("tool description must be a string"))?,
+            };
+            tools.push(json!({"name":name, "description":description, "input_schema":schema}));
+        }
+    }
+    tools.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+    let Some(choice) = body.get("tool_choice") else {
+        return Ok((tools, None));
+    };
+    fields(choice, &["type", "name"])?;
+    let kind = choice
+        .get("type")
+        .and_then(Value::as_str)
+        .ok_or_else(|| invalid("invalid tool choice"))?;
+    if kind != "tool" && choice.get("name").is_some() {
+        return Err(invalid("unexpected tool choice name"));
+    }
+    match kind {
+        "auto" => Ok((tools, None)),
+        "none" => Ok((Vec::new(), None)),
+        "any" if !tools.is_empty() => Ok((tools, Some("Tool choice is required for this turn. Make at least one call from the advertised tool catalog before answering.".into()))),
+        "tool" => {
+            let name = identity(choice, "name")?;
+            if !names.contains(name) { return Err(invalid("selected tool is not advertised")); }
+            tools.retain(|tool| tool["name"] == name);
+            Ok((tools, Some(format!("Tool choice is required for this turn. Call the advertised tool named {name} before answering."))))
+        }
+        _ => Err(invalid("unsupported tool choice")),
+    }
 }

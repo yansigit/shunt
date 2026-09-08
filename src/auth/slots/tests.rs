@@ -797,12 +797,17 @@ async fn stripping_the_cookie_header_leaves_the_callers_own_credential_alone() {
 /// would slip through. Files named `tests.rs` are skipped so fixtures need no
 /// entry; an in-file `#[cfg(test)] mod tests` helper is *not* skipped and is
 /// listed below as noise.
-const HEADER_PRODUCER_ALLOWLIST: [&str; 10] = [
+const HEADER_PRODUCER_ALLOWLIST: [&str; 11] = [
     // noise — `#[cfg(test)] mod tests` fixture builder.
     "src/accounts.rs",
     // registered forward site — consumes the map `headers_for_route` produced
     // (site 1) and adds only the resolved provider credential.
     "src/adapters/anthropic/mod.rs",
+    // Allowlist-built by command_code::request::headers: fixed protocol values,
+    // resolved credential, and credential-scoped hashed session identity only.
+    // No caller map or raw conversation id is forwarded; exact/sensitive header
+    // assertions live in tests/command_code_translate.rs.
+    "src/adapters/command_code/mod.rs",
     // allowlist-built downstream diagnostics: only bounded request-id and
     // x-request-id response headers; never a caller-to-provider forward site.
     "src/adapters/openai_chat/mod.rs",

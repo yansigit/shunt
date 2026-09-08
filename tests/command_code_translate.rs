@@ -3,25 +3,126 @@ use shunt::adapters::command_code::efforts::{resolve, validate, MODEL_EFFORTS};
 use shunt::adapters::command_code::request::translate_request;
 use shunt::config::{AuthMode, Config, ProviderKind};
 
+fn tool_history(
+    messages: serde_json::Value,
+) -> Result<serde_json::Value, shunt::adapters::AdapterError> {
+    translate_request(&json!({"messages":messages}), "zai-org/GLM-5.3", None)
+}
+
+#[test]
+fn command_code_translate_tools_images_orphans_and_ordering() {
+    let img = json!({"type":"image", "source":{"type":"base64", "media_type":"image/png", "data":"AA=="}});
+    let result = tool_history(json!([
+        {"role":"assistant","content":[
+            {"type":"thinking","thinking":"reasoning"},
+            {"type":"tool_use","id":"a","name":"first","input":{}},
+            {"type":"tool_use","id":"b","name":"second","input":{}}
+        ]},
+        {"role":"user","content":[
+            {"type":"tool_result","tool_use_id":"b","is_error":true,"content":[{"type":"text","text":"before"},img.clone(),{"type":"text","text":"after"}]},
+            {"type":"tool_result","tool_use_id":"a","content":"done"}
+        ]},
+        {"role":"user","content":[{"type":"tool_result","tool_use_id":"orphan","content":[img]}]},
+        {"role":"user","content":"continue"}
+    ])).unwrap();
+    let m = result["params"]["messages"].as_array().unwrap();
+    assert_eq!(
+        m[0]["content"][0],
+        json!({"type":"reasoning","text":"reasoning"})
+    );
+    assert_eq!(m[1]["content"][0]["toolCallId"], "b");
+    assert_eq!(m[1]["content"][0]["toolName"], "second");
+    assert_eq!(
+        m[1]["content"][0]["output"],
+        json!({"type":"error-text","value":"before[image]after"})
+    );
+    assert_eq!(m[2]["content"][0]["toolCallId"], "a");
+    let image = json!({"role":"user","content":[{"type":"image","image":"data:image/png;base64,AA==","mediaType":"image/png"}]});
+    assert_eq!(m[3], image);
+    assert!(m[4]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("without adjacent tool call: orphan"));
+    assert_eq!(m[5], image);
+    assert_eq!(m[6]["content"][0]["text"], "continue");
+}
+
+#[test]
+fn command_code_translate_tools_duplicate_and_opaque_rejection() {
+    let call = json!({"type":"tool_use","id":"a","name":"first","input":{}});
+    let result = json!({"type":"tool_result","tool_use_id":"a","content":"done"});
+    for messages in [
+        json!([{"role":"assistant","content":[call.clone(),call.clone()]}]),
+        json!([{"role":"assistant","content":[call.clone()]},{"role":"user","content":[result.clone(),result.clone()]}]),
+        json!([{"role":"user","content":[result]},{"role":"assistant","content":[call]}]),
+        json!([{"role":"assistant","content":[{"type":"redacted_thinking","data":"opaque"}]}]),
+        json!([{"role":"assistant","content":[{"type":"tool_use","id":"a","name":"first","input":"{}"}]}]),
+        json!([{"role":"user","content":[{"type":"tool_result","tool_use_id":"a","is_error":"false"}]}]),
+        json!([{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"not base64"}}]}]),
+        json!([{"role":"user","content":[{"type":"image","source":{"type":"url","url":"http://example.com/a.png"}}]}]),
+    ] {
+        assert!(tool_history(messages).is_err());
+    }
+}
+
+#[test]
+fn command_code_translate_tools_catalog_choice_and_images() {
+    let mut body = json!({"messages":[{"role":"user","content":[{"type":"text","text":"look"},
+        {"type":"image","source":{"type":"url","url":"https://example.com/a.png"}}]}],
+        "tools":[{"name":"z","input_schema":{"type":"object"}},{"name":"a","description":"first","input_schema":{"type":"object"}}]});
+    let compile = |b: &serde_json::Value| translate_request(b, "zai-org/GLM-5.3", None);
+    let output = compile(&body).unwrap();
+    assert_eq!(output["params"]["tools"][0]["name"], "a");
+    assert_eq!(
+        output["params"]["messages"][0]["content"][1]["mediaType"],
+        "image/png"
+    );
+    body["tool_choice"] = json!({"type":"tool","name":"z"});
+    let output = compile(&body).unwrap();
+    assert_eq!(output["params"]["tools"].as_array().unwrap().len(), 1);
+    assert!(output["params"]["system"]
+        .as_str()
+        .unwrap()
+        .contains("named z"));
+    body["tool_choice"] = json!({"type":"any"});
+    assert!(compile(&body).unwrap()["params"]["system"]
+        .as_str()
+        .unwrap()
+        .contains("at least one call"));
+    body["tool_choice"] = json!({"type":"none"});
+    assert_eq!(compile(&body).unwrap()["params"]["tools"], json!([]));
+    body["tool_choice"] = json!({"type":"tool","name":"missing"});
+    assert!(compile(&body).is_err());
+    body["tool_choice"] = json!({"type":"auto"});
+    body["tools"][1]["name"] = json!("z");
+    assert!(compile(&body).is_err());
+}
+
 #[test]
 fn command_code_translate_tools_adjacent_and_missing_result() {
     let body = json!({"model":"zai-org/GLM-5.3",
-        "tools":[{"name":"delegate","description":"Plaintext subagent","input_schema":{"type":"object"}}],
-        "messages":[
-            {"role":"assistant","content":[{"type":"tool_use","id":"call-a","name":"delegate","input":{"task":"summarize"}}]},
-            {"role":"user","content":[{"type":"tool_result","tool_use_id":"call-a","content":"subagent result"}]},
-            {"role":"assistant","content":[{"type":"tool_use","id":"call-b","name":"delegate","input":{}}]},
-            {"role":"user","content":"continue"}
-        ]});
+    "tools":[{"name":"delegate","description":"Plaintext subagent","input_schema":{"type":"object"}}],
+    "messages":[
+        {"role":"assistant","content":[{"type":"tool_use","id":"call-a","name":"delegate","input":{"task":"summarize"}}]},
+        {"role":"user","content":[{"type":"tool_result","tool_use_id":"call-a","content":"subagent result"}]},
+        {"role":"assistant","content":[{"type":"tool_use","id":"call-b","name":"delegate","input":{}}]},
+        {"role":"user","content":"continue"}
+    ]});
     let result = translate_request(&body, "zai-org/GLM-5.3", None);
     assert!(result.is_ok(), "supported tool history must compile");
     let wire = result.unwrap();
     let messages = wire["params"]["messages"].as_array().unwrap();
     assert_eq!(messages[0]["content"][0]["toolCallId"], "call-a");
-    assert_eq!(messages[1], json!({"role":"tool","content":[{"type":"tool-result","toolCallId":"call-a","toolName":"delegate","output":{"type":"text","value":"subagent result"}}]}));
+    assert_eq!(
+        messages[1],
+        json!({"role":"tool","content":[{"type":"tool-result","toolCallId":"call-a","toolName":"delegate","output":{"type":"text","value":"subagent result"}}]})
+    );
     assert_eq!(messages[3]["content"][0]["toolCallId"], "call-b");
     assert_eq!(messages[3]["content"][0]["output"]["type"], "error-text");
-    assert!(messages[3]["content"][0]["output"]["value"].as_str().unwrap().contains("execution status unknown"));
+    assert!(messages[3]["content"][0]["output"]["value"]
+        .as_str()
+        .unwrap()
+        .contains("execution status unknown"));
     assert_eq!(messages[4]["content"][0]["text"], "continue");
 }
 
@@ -212,12 +313,14 @@ fn command_code_translate_effort_request_and_route_validation() {
 
 #[test]
 fn command_code_translate_preset_subscription() {
-    let mut config = Config::default();
-    config.upstreams = serde_json::from_value(json!([
-        {"name":"subscription", "provider":"command-code"},
-        {"name":"api", "provider":"commandcode"}
-    ]))
-    .unwrap();
+    let mut config = Config {
+        upstreams: serde_json::from_value(json!([
+            {"name":"subscription", "provider":"command-code"},
+            {"name":"api", "provider":"commandcode"}
+        ]))
+        .unwrap(),
+        ..Config::default()
+    };
     config.server.default_provider = "subscription".into();
     let result = config.validate();
     assert!(
