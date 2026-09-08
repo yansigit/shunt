@@ -418,11 +418,16 @@ fn translate_block_content(
     for part in text_parts {
         text.push_str(part);
     }
-    if text.is_empty() && tool_calls.is_empty() && !has_image && tool_messages.is_empty() {
+    if text.is_empty()
+        && reasoning.is_empty()
+        && tool_calls.is_empty()
+        && !has_image
+        && tool_messages.is_empty()
+    {
         return Err(bad_request("message text content must not be empty"));
     }
     let mut translated: Vec<Value> = tool_messages;
-    if !text.is_empty() || has_image || !tool_calls.is_empty() {
+    if !text.is_empty() || !reasoning.is_empty() || has_image || !tool_calls.is_empty() {
         let mut message = Map::new();
         message.insert("role".to_string(), json!(role));
         if has_image {

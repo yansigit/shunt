@@ -16,6 +16,10 @@ pub fn chat_completions_endpoint(base_url: &str) -> Result<String, String> {
         .strip_prefix("https://")
         .or_else(|| base_url.strip_prefix("http://"))
         .ok_or_else(|| "base URL must use an explicit http:// or https:// authority".to_string())?;
+    let authority = rest.split('/').next().unwrap_or_default();
+    if authority.is_empty() || authority.contains('@') {
+        return Err("base URL requires a nonempty authority without userinfo".into());
+    }
     if rest.split('/').skip(1).any(|segment| {
         matches!(
             segment.to_ascii_lowercase().as_str(),
