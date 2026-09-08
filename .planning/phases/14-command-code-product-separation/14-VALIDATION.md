@@ -1,9 +1,9 @@
 ---
 phase: "14"
 slug: command-code-product-separation
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: validated
+nyquist_compliant: true
+wave_0_complete: true
 created: "2026-09-08"
 ---
 
@@ -63,11 +63,33 @@ Live provider acceptance (including minimal envelope and version) is not establi
 
 ## Validation Sign-Off
 
-- [ ] All tasks have automated verification or owned Wave 0 dependency.
-- [ ] No three consecutive tasks lack automated coverage.
-- [ ] All missing target paths created; no watch mode; zero-selection guard enforced.
-- [ ] All CCK/CCS matrix items actually executed with evidence.
-- [ ] Feedback latency measured; full gates and owned smoke pass.
-- [ ] nyquist_compliant set true only after actual validation.
+- [x] All tasks have automated verification or owned Wave 0 dependency.
+- [x] No three consecutive tasks lack automated coverage.
+- [x] All missing target paths created; no watch mode; zero-selection guard enforced.
+- [x] All CCK/CCS matrix items actually executed with evidence.
+- [x] Feedback latency measured; full gates and owned smoke pass.
+- [x] nyquist_compliant set true only after actual validation.
 
-**Approval:** Pending execution.
+**Approval:** Validated 2026-09-08, root audit of executed coverage.
+
+## Validation Audit 2026-09-08
+
+| Metric | Count |
+| --- | --- |
+| Requirements covered | 11/11 |
+| Remaining coverage gaps | 0 |
+| Audit-added runtime gap resolved | 1 (CCK-02, concurrent products) |
+| Escalated behavioral gaps | 0 |
+
+All 18 task groups have green automated evidence. The final product isolation
+fixture directly observes both backends concurrently, not two unrelated runs.
+Recorded focused matrix feedback was 46.52s compile + 0.32s test, then 20.38s +
+0.34s; concurrent-product check was 51.76s + 0.06s. Full suite, docs build and
+owned smokes are observed in 14-06-SUMMARY. Existing CLI-file and real-socket
+tests cover all CCS-01..08; API conformance plus concurrent products cover
+CCK-01..03. No runtime gap is moved to manual-only to manufacture compliance.
+
+Nyquist coverage does not retroactively certify TDD process: plan 14-05 lacks
+behavioral RED evidence, as recorded. Fresh init.execute-phase resolves
+tdd_mode:false without a settings change. Live acceptance remains the explicitly
+planned Phase 16 gate; GUI evaluation is not claimed passed.
