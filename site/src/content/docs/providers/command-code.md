@@ -66,7 +66,12 @@ Success requires a supported authoritative finish and clean framed EOF. Malforme
 
 The subscription has a fixed 120-second read-idle limit and a 120-second complete-record progress deadline; partial-byte drips do not reset the latter. No whole-turn deadline is implied. Gateway errors use the inbound protocol's error shape. The API-key product retains the [generic Chat contract](/providers/openai-chat/).
 
+## Subscription compatibility details
+
+Accepted top-level fields are `model`, `messages`, `max_tokens`, `stream`, `system`, `output_config`, `temperature`, `tools`, and `tool_choice`. Other fields, including `top_p`, `top_k`, `stop_sequences`, top-level `thinking`, and `metadata`, return 400; they are not silently ignored or forwarded. Use the exact supported effort values in `output_config.effort`.
+
+The advertised tool catalog is sorted by name. `tool_choice: any` adds a system instruction requesting at least one tool call; `tool_choice: tool` narrows the catalog and adds an instruction naming that tool. These are model-visible instructions, not a native protocol guarantee that a tool will be called. `auto` adds no instruction and `none` removes the catalog.
+
 ## Evidence boundary
 
 This compatibility matrix and client version `0.52.1` are source-derived from pinned OpenCodex `055c3ecf`, inspected 2026-09-08. Hermetic TLS and CLI/mock tests are not live-provider availability proof. Minimal-envelope acceptance and version currency remain the Phase 16 opt-in live verification gate. There is no public origin bypass. See the [configuration reference](/reference/configuration/).
-

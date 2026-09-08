@@ -15,7 +15,7 @@ Rust libtest, Tokio, Axum and existing mock/TLS socket helpers; Cargo.toml. No n
 
 Quick baseline: `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test openai_chat_conformance -- --test-threads=1`.
 Full suite: `node /tmp/shunt-phase12-isolated-run.cjs env 'RUSTFLAGS=-D warnings' cargo test --all-features --workspace`.
-Phase-specific targets/filters must reject zero selected tests. Plans 14-01 through 14-05 are executed; 14-06 remains pending. Their summaries contain evidence and exact commands. The latest build, formatter, warnings-denied Clippy and workspace suite passed (2,937 passed, 0 failed, 2 existing ignored; 31 result groups). Plan 14-05 explicitly records its missing behavioral RED evidence; compiler errors are not counted as an assertion RED or gate pass. API-key CLI/curl smoke passed earlier; subscription invalid-explicit-token CLI smoke returned 401 with zero upstream/proxy connections. These are isolated checks, not live-provider or GUI acceptance.
+Phase-specific targets/filters must reject zero selected tests. All six implementation plans are executed; their summaries contain evidence and commands. The latest build, formatter, warnings-denied Clippy and workspace suite passed (2,942 passed, 0 failed, 2 existing ignored; 31 result groups). Plan 14-05 explicitly records its missing behavioral RED evidence; compiler errors are not counted as an assertion RED or gate pass. Both CLI/curl smokes were repeated successfully; subscription invalid-explicit-token smoke returned 401 with zero upstream/proxy connections. These are isolated checks, not live-provider or GUI acceptance. Site build was repeated after review clarifications and passed (169 pages, four languages).
 
 ## Sampling Rate
 
@@ -45,9 +45,9 @@ Planner-provided concrete map. Waves: W1 = 14-01 ∥ 14-02; W2 = 14-03; W3 = 14-
 | CLI fallback + dispatch gate | 14-05 Task 1 | CCS-01/02, D-03/04 | read-only auth.json matrix, env precedence, at-dispatch destination re-check | cargo test --lib command_code_lifetime_file; ... command_code_lifetime_destination_dispatch | fixture files + gateway | pass; RED process gap recorded |
 | Replay discipline | 14-05 Task 2 | CCS-07, D-10 | ConnectOnly, pre-connect retry retains credential+session, post-send single attempt, no redirect | cargo test --lib command_code_lifetime_replay | real sockets | pass — characterization |
 | Cancellation ownership | 14-05 Task 3 | CCS-07, D-11 | pre-header + mid-body cancel both modes close upstream, capacity reused, no detached task | cargo test --lib command_code_lifetime_cancel | real sockets | pass — characterization |
-| Full matrix | 14-06 Task 1 | CCK-03, CCS-08, D-12 | positive subagent/continuation, tool-heavy, long-context bounds, auth-error matrix, error finish | cargo test --lib command_code_matrix | real gateway | pending |
-| Docs parity | 14-06 Task 2 | D-14 | README en+ko+ja+zh-cn, milestone note, site provider page + locales, configuration reference + locales; wiki untouched | npm --prefix site run build + rg env-name/locale checks | docs/site | pending |
-| Final gates + smoke | 14-06 Task 3 | D-13/14 | fmt; clippy -D warnings; full workspace suite; site build; owned CLI/curl smoke; live-home mtime/SHA invariant | chained node /tmp/shunt-phase12-isolated-run.cjs gates | CI-equivalent | pending |
+| Full matrix | 14-06 Task 1 | CCK-02/03, CCS-08, D-12 | positive subagent/continuation, tool-heavy, long-context bounds, auth-error matrix, error finish, same-gateway concurrent product isolation | cargo test --lib command_code_matrix | real gateway | pass — 14-06-SUMMARY |
+| Docs parity | 14-06 Task 2 | D-14 | README en+ko+ja+zh-cn, milestone note, site provider page + locales, configuration reference + locales; wiki untouched | npm --prefix site run build + env-name/locale checks | docs/site | pass — including review clarifications |
+| Final gates + smoke | 14-06 Task 3 | D-13/14 | fmt; clippy -D warnings; full workspace suite; site build; owned CLI/curl smoke; live-home mtime/SHA invariant | chained node /tmp/shunt-phase12-isolated-run.cjs gates | CI-equivalent | pass — 2,942/0/2 |
 
 ## Wave 0 Requirements
 

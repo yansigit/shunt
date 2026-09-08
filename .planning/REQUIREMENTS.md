@@ -63,8 +63,8 @@ requirement maps to exactly one roadmap phase after roadmap creation.
 ### Command Code API-Key Product
 
 - [x] **CCK-01**: The `commandcode` API-key product uses the generic Chat contract at the canonical `/provider/v1/chat/completions` endpoint rather than the proprietary subscription endpoint.
-- [ ] **CCK-02**: Command Code API-key authentication, endpoint, and model facts are tested independently from subscription authentication and cannot be selected through the subscription credential mode.
-- [ ] **CCK-03**: The API-key product passes the applicable Chat normal, streaming, tool-heavy, long-context, cancellation, and error-path conformance scenarios.
+- [x] **CCK-02**: Command Code API-key authentication, endpoint, and model facts are tested independently from subscription authentication and cannot be selected through the subscription credential mode.
+- [x] **CCK-03**: The API-key product passes the applicable Chat normal, streaming, tool-heavy, long-context, cancellation, and error-path conformance scenarios.
 
 ### Command Code Subscription Product
 
@@ -75,7 +75,7 @@ requirement maps to exactly one roadmap phase after roadmap creation.
 - [x] **CCS-05**: Subscription NDJSON relays text, reasoning, tool calls, usage, provider errors, and finish events in order for streaming clients and through bounded accumulation for non-streaming clients.
 - [x] **CCS-06**: Subscription NDJSON rejects malformed or oversized records, junk-only responses, incomplete tools, provider error finishes, duplicate terminals, and EOF without a trustworthy terminal.
 - [x] **CCS-07**: Subscription retry or failover is bounded to failures before output or replay-unsafe tool activity and preserves the selected credential and session across a safe replay.
-- [ ] **CCS-08**: The subscription product passes hermetic normal, streaming, tool-heavy, subagent/continuation, long-context boundary, cancellation, authentication, and error-path scenarios.
+- [x] **CCS-08**: The subscription product passes hermetic normal, streaming, tool-heavy, subagent/continuation, long-context boundary, cancellation, authentication, and error-path scenarios.
 
 ### Exact-Model OpenCode Go Evaluation
 
@@ -162,8 +162,8 @@ Each committed requirement has exactly one owning phase.
 | CHAT-08 | Phase 13 | Complete |
 | CHAT-09 | Phase 13 | Complete |
 | CCK-01 | Phase 14 | Complete |
-| CCK-02 | Phase 14 | Pending |
-| CCK-03 | Phase 14 | Pending |
+| CCK-02 | Phase 14 | Complete |
+| CCK-03 | Phase 14 | Complete |
 | CCS-01 | Phase 14 | Complete |
 | CCS-02 | Phase 14 | Complete |
 | CCS-03 | Phase 14 | Complete |
@@ -171,7 +171,7 @@ Each committed requirement has exactly one owning phase.
 | CCS-05 | Phase 14 | Complete |
 | CCS-06 | Phase 14 | Complete |
 | CCS-07 | Phase 14 | Complete |
-| CCS-08 | Phase 14 | Pending |
+| CCS-08 | Phase 14 | Complete |
 | OGO-01 | Phase 15 | Pending |
 | OGO-02 | Phase 15 | Pending |
 | OGO-03 | Phase 15 | Pending |

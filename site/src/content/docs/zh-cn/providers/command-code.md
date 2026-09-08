@@ -66,7 +66,12 @@ Shunt 不会对此订阅文件执行登录、whoami、刷新、复制、修复�
 
 订阅读取空闲上限与完整记录进度期限分别固定为 120 秒；零散字节不会重置进度期限。这并非整个回合的时限。网关错误使用入站协议的格式。API 密钥产品保留[通用 Chat 契约](/zh-cn/providers/openai-chat/)。
 
+## 订阅兼容性细节
+
+接受的顶层字段为 `model`、`messages`、`max_tokens`、`stream`、`system`、`output_config`、`temperature`、`tools` 和 `tool_choice`。其他字段（包括 `top_p`、`top_k`、`stop_sequences`、顶层 `thinking` 和 `metadata`）返回 400，不会被静默忽略或转发。请在 `output_config.effort` 中使用明确支持的值。
+
+工具目录按名称排序。`tool_choice: any` 会添加要求至少调用一个工具的系统指令；`tool_choice: tool` 会将目录缩小为指定工具，并添加点名该工具的指令。这些是模型可见的指令，不是保证工具调用的原生协议功能。`auto` 不添加指令，`none` 则移除工具目录。
+
 ## 验证边界
 
 此矩阵与客户端版本 `0.52.1` 来自 2026-09-08 检查的固定 OpenCodex `055c3ecf` 源码。隔离 TLS 和 CLI/模拟测试不证明实际提供方可用性。最小请求格式是否被接受、版本是否仍适用，仍属于 Phase 16 的可选实时验证。不存在公开的目标绕过配置。参见[配置参考](/zh-cn/reference/configuration/)。
-
