@@ -225,16 +225,16 @@ impl OpenAiChatSseMachine {
                 OpenAiChatSemanticError::protocol("OpenAI Chat choices must be an array")
             })?;
             let carries_payload = choices.iter().any(|choice| {
-                choice
-                    .get("delta")
-                    .and_then(|delta| delta.get("content"))
-                    .is_some_and(|content| !content.is_null())
-                    || choice.get("finish_reason").is_some()
+                choice.get("finish_reason").is_some()
+                    || choice
+                        .get("delta")
+                        .and_then(Value::as_object)
+                        .is_some_and(|delta| !delta.is_empty())
             });
             if carries_payload {
                 self.terminal = TerminalState::ProtocolFailed;
                 return Err(OpenAiChatSemanticError::protocol(
-                    "content or a second finish_reason arrived after the finish_reason chunk",
+                    "a payload delta or a second finish_reason arrived after the finish_reason chunk",
                 ));
             }
         }

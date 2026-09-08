@@ -275,13 +275,22 @@ async fn forward(
             .process_chunk_checked(&parsed)
             .map_err(|error| local_openai_chat_error(error.to_string()))?;
         if let Some(error) = events.into_iter().find(|event| event.event == "error") {
+            // The machine's error event already carries the allowlisted
+            // request_id when the provider supplied one; relay its exact body
+            // instead of rebuilding a message-only error.
             let message = error
                 .data
                 .pointer("/error/message")
                 .and_then(Value::as_str)
                 .unwrap_or("OpenAI Chat backend error")
                 .to_string();
-            return Err(local_openai_chat_error(message));
+            return Err(AdapterError {
+                message,
+                response: Box::new(
+                    (StatusCode::BAD_GATEWAY, axum::Json(error.data.clone())).into_response(),
+                ),
+                failure: None,
+            });
         }
         machine
             .transport_close_checked()
