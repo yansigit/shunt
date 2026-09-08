@@ -88,6 +88,9 @@ impl Decoder {
             return Err("OpenAI Chat SSE parser is disposed".to_string());
         }
         self.disposed = true;
+        if !self.done {
+            return Err(self.fail("OpenAI Chat SSE ended without [DONE]"));
+        }
         if self.buffer.iter().all(u8::is_ascii_whitespace) {
             self.buffer.clear();
             return Ok(());

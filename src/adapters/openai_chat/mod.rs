@@ -2,6 +2,9 @@
 
 mod sse;
 
+#[cfg(test)]
+mod timeout_tests;
+
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -53,12 +56,14 @@ impl Adapter for OpenAiChatAdapter {
 /// the operator configured.
 fn chat_client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .expect("OpenAI Chat HTTP client must build")
-    })
+    CLIENT.get_or_init(|| build_chat_client(Duration::from_secs(120)))
+}
+
+fn build_chat_client(_read_idle: Duration) -> reqwest::Client {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("OpenAI Chat HTTP client must build")
 }
 
 fn local_openai_chat_error(message: impl Into<String>) -> AdapterError {
@@ -364,7 +369,8 @@ async fn stream_sse_response(
                         }
                         // The framing [DONE] only closes a provider-declared
                         // success; the authoritative terminal is deferred to
-                        // EOF so residual frames cannot emit success-then-error.
+                        // the end of this received batch, so residual frames
+                        // cannot emit success-then-error. Do not wait for EOF.
                         if is_done && terminal && result_succeeded {
                             deferred_terminal = Some(Bytes::from(output));
                             continue;
@@ -383,6 +389,18 @@ async fn stream_sse_response(
                             ));
                         }
                         continue;
+                    }
+
+                    if let Some(terminal) = deferred_terminal.take() {
+                        let output = match decoder.finish() {
+                            Ok(()) => terminal,
+                            Err(error) => {
+                                let mut output = Vec::new();
+                                append_protocol_error(error, &mut output);
+                                Bytes::from(output)
+                            }
+                        };
+                        return Some((Ok(output), (bytes, decoder, machine, true, None, None)));
                     }
 
                     match bytes.next().await {
