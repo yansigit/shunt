@@ -6,7 +6,7 @@ current_phase: 15
 current_phase_name: Exact OpenCode Go Evidence Gate
 current_plan: Not started
 status: planning
-stopped_at: Phase 15 research complete; independent planner/checker dispatch unavailable
+stopped_at: Phase 15 research and pattern mapping complete; independent planning next
 last_updated: "2026-09-08T20:18:14.128Z"
 last_activity: 2026-09-08
 last_activity_desc: Phase 14 complete, transitioned to Phase 15
@@ -34,7 +34,7 @@ See: `.planning/PROJECT.md` (updated 2026-09-08 after Phase 14)
 Phase: 15 — Exact OpenCode Go Evidence Gate
 Current Plan: Not started
 Total Plans in Phase: 0
-Status: Research complete; planning gates pending
+Status: Research and pattern mapping complete; planning gates pending
 Last activity: 2026-09-08 — Phase 15 approval, backups, context and GLM/high research recorded
 
 ## Performance Metrics
@@ -123,12 +123,11 @@ None yet.
 
 ### Blockers/Concerns
 
-Phase 15 host dispatch blocker: GLM/high researcher completed and wrote
-15-RESEARCH.md, but spawn/follow-up controls then disappeared from the available
-tool surface. Discovery found no equivalent subagent tool. No rate-limit failure
-was reported, and no Luna fallback was launched. Pattern mapping, independent
-planning/checking and implementation remain pending. Do not substitute a new
-user-owned app task or claim an independent check. Resume when dispatch is exposed.
+Phase 15 dispatch recovered on the user's model retry request. Earlier GLM/high
+research completed successfully. Omen without a reasoning override failed with
+provider 400/1210: thinking cannot be disabled; use low, high or max. Luna/high
+then completed pattern mapping and wrote 15-PATTERNS.md. Independent planning,
+checking and implementation remain pending; no model dispatch is Shunt wire proof.
 Source-only evidence admits zero tuples; strict EOF policy is already locked.
 
 The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent OpenCodex supplies schema-derived Run output-token deltas and context checkpoints; 83 hermetic tests passed in isolated state. After CLI installation, an isolated read-only Composer 2.5 probe succeeded with streamed events and result usage, including cache fields. CLI output is not raw Connect evidence: do not infer protobuf field mappings or claim Shunt live verification. Original CLI settings/credential files were backed up and remained unchanged. All eight Cursor plans and phase verification are complete. The approved bounded request-local KV architecture is implemented and tested; live gateway availability remains the Phase 16 opt-in gate.
@@ -143,7 +142,7 @@ The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent O
 ## Session Continuity
 
 Last session: 2026-09-08T20:18:14Z
-Stopped at: Phase 15 research complete; independent planner/checker dispatch unavailable
+Stopped at: Phase 15 research and pattern mapping complete; independent planning next
 Resume file: .planning/phases/15-exact-opencode-go-evidence-gate/15-CONTEXT.md
 
 ## Operator Next Steps
