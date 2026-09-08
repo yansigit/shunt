@@ -1,0 +1,10 @@
+{
+  "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test command_code_translate command_code_translate_envelope -- --test-threads=1",
+  "exitCode": 101,
+  "targetTest": "command_code_translate_envelope_system_and_temperature",
+  "targetFile": "tests/command_code_translate.rs",
+  "expected": "supported system array and temperature compile into exact proprietary envelope",
+  "actual": "Compilation succeeded; supported envelope assertion failed at line 13. 0 passed, 1 failed, 3 filtered. Existing payload was extracted unchanged to request.rs; production state unchanged.",
+  "output": "TAP version 13\nnot ok 1 - command_code_translate_envelope_system_and_temperature\n1..1\n# tests 1\n# pass 0\n# fail 1\n",
+  "provenance": "Manual TAP transcription of actual Rust libtest assertion output. Envelope is the Task 2 RED driver; new header/session helper coverage will be characterization, not fabricated RED."
+}

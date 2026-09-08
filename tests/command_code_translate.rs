@@ -1,6 +1,23 @@
 use serde_json::json;
 use shunt::adapters::command_code::efforts::{resolve, validate, MODEL_EFFORTS};
 use shunt::config::{AuthMode, Config, ProviderKind};
+use shunt::adapters::command_code::request::translate_request;
+
+#[test]
+fn command_code_translate_envelope_system_and_temperature() {
+    let body = json!({"model":"zai-org/GLM-5.3", "stream":false,
+        "system":[{"type":"text","text":"first"},{"type":"text","text":"second"}],
+        "temperature":0.25, "output_config":{"effort":"high"},
+        "messages":[{"role":"user","content":"hello"}]});
+    let result = translate_request(&body, "zai-org/GLM-5.3", None);
+    assert!(result.is_ok(), "supported envelope must compile");
+    assert_eq!(result.unwrap(), json!({"config":{}, "memory":"", "taste":null, "skills":null,
+        "permissionMode":"standard", "mode":"agent", "params":{
+            "model":"zai-org/GLM-5.3", "stream":true, "system":"first\n\nsecond",
+            "temperature":0.25, "reasoning_effort":"high", "max_tokens":64000,
+            "tools":[], "messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+        }}));
+}
 
 #[test]
 fn command_code_translate_effort_exact_table() {
