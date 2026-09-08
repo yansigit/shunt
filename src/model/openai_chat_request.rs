@@ -24,30 +24,42 @@ pub const MAX_TEXT_BLOCK_BYTES: usize = 8 * 1024 * 1024;
 /// construction (CHAT-02/D-02): exactly one /chat/completions path, a
 /// trailing-slash normalization, no doubling for roots that already end in
 /// /chat/completions, and hard rejection of query strings, fragments, and
-/// deterministic: repeated or concurrent builds yield identical bytes.
 /// userinfo. Deterministic: repeated builds yield identical bytes.
 pub fn chat_completions_endpoint(base_url: &str) -> Result<String, String> {
-    let url = reqwest::Url::parse(base_url)
-        .map_err(|error| format!("invalid base URL {base_url:?}: {error}"))?;
+    if base_url
+        .chars()
+        .any(|c| c.is_whitespace() || c.is_control() || c == '\\')
+    {
+        return Err("base URL must not contain whitespace, controls, or backslashes".into());
+    }
+    let rest = base_url
+        .strip_prefix("https://")
+        .or_else(|| base_url.strip_prefix("http://"))
+        .ok_or_else(|| "base URL must use an explicit http:// or https:// authority".to_string())?;
+    if rest.split('/').skip(1).any(|segment| {
+        matches!(
+            segment.to_ascii_lowercase().as_str(),
+            "." | ".." | "%2e" | ".%2e" | "%2e." | "%2e%2e"
+        )
+    }) {
+        return Err("base URL must not contain dot path segments".into());
+    }
+    let url = reqwest::Url::parse(base_url).map_err(|_| "invalid base URL".to_string())?;
     if !matches!(url.scheme(), "http" | "https") {
-        return Err(format!("base URL {base_url:?} must use http or https"));
+        return Err("base URL must use http or https".into());
     }
     if url.query().is_some() {
-        return Err(format!(
-            "base URL {base_url:?} must not contain a query string"
-        ));
+        return Err(format!("base URL must not contain a query string"));
     }
     if url.fragment().is_some() {
-        return Err(format!("base URL {base_url:?} must not contain a fragment"));
+        return Err("base URL must not contain a fragment".into());
     }
     if !url.username().is_empty() || url.password().is_some() {
-        return Err(format!(
-            "base URL {base_url:?} must not contain userinfo (user:pass@)"
-        ));
+        return Err(format!("base URL must not contain userinfo (user:pass@)"));
     }
     let host = url
         .host_str()
-        .ok_or_else(|| format!("base URL {base_url:?} must include a host"))?;
+        .ok_or_else(|| "base URL must include a host".to_string())?;
     let authority = match url.port() {
         Some(port) => format!("{host}:{port}"),
         None => host.to_string(),
@@ -158,8 +170,9 @@ pub fn translate_request(
         return Err(bad_request("messages must not be empty"));
     }
     let mut tool_ids: HashSet<String> = HashSet::new();
+    let mut result_ids = HashSet::new();
     for message in inbound_messages {
-        messages.extend(translate_message(message, &mut tool_ids)?);
+        messages.extend(translate_message(message, &mut tool_ids, &mut result_ids)?);
     }
     out.insert("messages".to_string(), Value::Array(messages));
     Ok(Value::Object(out))
@@ -216,6 +229,11 @@ fn translate_tool_choice(tool_choice: &Value) -> Result<Value, AdapterError> {
         Value::String(choice) if choice == "auto" => Ok(json!("auto")),
         Value::String(choice) if choice == "any" => Ok(json!("required")),
         Value::Object(choice) => {
+            match choice.get("type").and_then(Value::as_str) {
+                Some("auto") if choice.len() == 1 => return Ok(json!("auto")),
+                Some("any") if choice.len() == 1 => return Ok(json!("required")),
+                _ => {}
+            }
             if choice.get("type").and_then(Value::as_str) != Some("tool") {
                 return Err(bad_request(
                     "tool_choice must be \"auto\", \"any\", or a tool selection object",
@@ -263,6 +281,7 @@ fn translate_system(system: &Value) -> Result<Value, AdapterError> {
 fn translate_message(
     message: &Value,
     tool_ids: &mut HashSet<String>,
+    result_ids: &mut HashSet<String>,
 ) -> Result<Vec<Value>, AdapterError> {
     let message = message
         .as_object()
@@ -281,7 +300,7 @@ fn translate_message(
         .ok_or_else(|| bad_request("each message must have content"))?;
     match content {
         Value::String(text) => Ok(vec![translate_text_content(role, text)?]),
-        Value::Array(blocks) => translate_block_content(role, blocks, tool_ids),
+        Value::Array(blocks) => translate_block_content(role, blocks, tool_ids, result_ids),
         _ => Err(bad_request(
             "message content must be a string or content blocks",
         )),
@@ -300,6 +319,7 @@ fn translate_block_content(
     role: &str,
     blocks: &[Value],
     tool_ids: &mut HashSet<String>,
+    result_ids: &mut HashSet<String>,
 ) -> Result<Vec<Value>, AdapterError> {
     if blocks.is_empty() {
         return Err(bad_request("message content blocks must not be empty"));
@@ -412,6 +432,9 @@ fn translate_block_content(
                         "tool_result for {tool_use_id} has no preceding matching tool_use"
                     )));
                 }
+                if !result_ids.insert(tool_use_id.to_string()) {
+                    return Err(bad_request("duplicate tool_result for a tool_use id"));
+                }
                 let result_text = match block.get("content") {
                     None | Some(Value::Null) => String::new(),
                     Some(Value::String(text)) => text.clone(),
@@ -455,11 +478,19 @@ fn translate_block_content(
             }
         }
     }
-    let text = text_parts.concat();
+    let combined_len = text_parts
+        .iter()
+        .try_fold(0usize, |length, part| length.checked_add(part.len()))
+        .filter(|length| *length <= MAX_TEXT_BLOCK_BYTES)
+        .ok_or_else(|| bad_request("combined text content exceeds the byte budget"))?;
+    let mut text = String::with_capacity(combined_len);
+    for part in text_parts {
+        text.push_str(part);
+    }
     if text.is_empty() && tool_calls.is_empty() && !has_image && tool_messages.is_empty() {
         return Err(bad_request("message text content must not be empty"));
     }
-    let mut translated: Vec<Value> = Vec::new();
+    let mut translated: Vec<Value> = tool_messages;
     if !text.is_empty() || has_image || !tool_calls.is_empty() {
         let mut message = Map::new();
         message.insert("role".to_string(), json!(role));
@@ -481,7 +512,6 @@ fn translate_block_content(
         }
         translated.push(Value::Object(message));
     }
-    translated.extend(tool_messages);
     debug_assert!(
         !translated.is_empty(),
         "a nonempty block list must translate to at least one message"
