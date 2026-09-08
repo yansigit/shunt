@@ -163,10 +163,18 @@ async fn forward(
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|_| protocol("subscription body transport failed"))?;
         for record in decoder.feed(&chunk).map_err(protocol)? {
-            machine.process_record_checked(&record).map_err(protocol)?;
+            machine.process_record_checked(&record).map_err(semantic)?;
         }
     }
     decoder.finish().map_err(protocol)?;
-    let result = machine.final_ndjson_checked().map_err(protocol)?;
+    let result = machine.final_ndjson_checked().map_err(semantic)?;
     Ok((StatusCode::OK, axum::Json(result).into_response()))
+}
+
+fn semantic(error: crate::model::command_code_response::SemanticError) -> AdapterError {
+    AdapterError {
+        message: error.message.into(),
+        failure: None,
+        response: Box::new((StatusCode::BAD_GATEWAY, axum::Json(error.body())).into_response()),
+    }
 }
