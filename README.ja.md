@@ -215,7 +215,7 @@ provider = "cursor"
 
 `cursor:` / `cursor-agent:` / `cursor-plan:` / `cursor-ask:` プレフィックスが Cursor のエージェントモード（Agent / Plan / Ask）を選択し、サフィックスが Cursor の**ワイヤー**モデル id です（Auto は `auto` ではなく `default`）。ただし、Cursor のモデル選択画面にある `composer-2.5-fast` エイリアスは例外で、shunt は `composer-2.5` ワイヤー id と `fast=true` モデルメタデータを送信します。アダプターはアシスタントのテキストと reasoning をストリーミングし、クライアントのツールをネイティブな Cursor MCP ツール呼び出しとしてブリッジし、インライン画像を転送します（issue #170）。詳細は [プロバイダー → Cursor](https://shunt.dev/ja/providers/cursor/) を参照してください。
 
-構造化ツール履歴の継続には現在、`composer-2.5` ワイヤーモデル、安定した `metadata.session_id`（または JSON 文字列 `metadata.user_id` 内の `session_id`）、保持されたユーザー文脈、元の対応するツール ID が必要です。未対応または不透明な履歴は送信前にエラーになります。履歴保存は容量制限付きでリクエスト内のみです。[履歴の契約](docs/cursor-request-history.md)を参照してください。
+構造化ツール履歴の継続には現在、`composer-2.5` ワイヤーモデル、安定した `metadata.session_id`（または JSON 文字列 `metadata.user_id` 内の `session_id`）、保持されたユーザー文脈、元の対応するツール ID が必要です。未対応または不透明な履歴は送信前にエラーになります。履歴保存は容量制限付きでリクエスト内のみです。[履歴の契約](docs/cursor-request-history.md)を参照してください。 不正なツール・画像や未対応のツール選択指定は認証前に 400 を返し、暗黙に破棄されません。
 
 **あらゆる Anthropic 互換バックエンド**が、テーブルを 1 つ書くだけで使えます。コード変更は不要です。
 

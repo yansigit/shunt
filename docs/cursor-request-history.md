@@ -36,3 +36,15 @@ protocol evidence, not live Cursor model or account availability evidence.
 
 README and all four provider-page locales describe the client contract. The
 generated wiki is intentionally unchanged.
+
+## Input admission (plan 04)
+
+The active Run adapter requires named, unique custom MCP tools with explicit
+object input schemas and object arguments. Argument/schema nesting is limited
+to fewer than 64 levels. Only automatic tool choice is represented; forced
+selection and parallel-use guidance fail explicitly rather than being ignored.
+Inline images require valid nonempty base64 and an explicit PNG/JPEG/GIF/WebP
+media type. URL or malformed sources are rejected, not silently omitted. Image
+decode and all validation occur before credential resolution. The old extractor
+helpers remain available for benchmarks, but no legacy bridge is reachable from
+the active dispatch path.

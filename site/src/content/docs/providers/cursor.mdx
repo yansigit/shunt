@@ -96,7 +96,7 @@ The adapter streams assistant **text and reasoning**, bridges your client's **to
 Cursor MCP tool calls (a tool the model invokes surfaces as an Anthropic `tool_use` block with
 `stop_reason: "tool_use"`; you run it and send the `tool_result` back, and shunt re-runs the turn
 with that result in history), and forwards **inline images** (base64 sources; URL images are
-skipped). Cursor's own agentic file/shell tools are not exposed — only the tools your request
+rejected). Cursor's own agentic file/shell tools are not exposed — only the tools your request
 advertises.
 
 Composer nevertheless chooses per turn whether to answer through a bridged tool or through one of
@@ -118,6 +118,13 @@ Structured tool history is currently supported for the exact `composer-2.5` wire
 History blobs live only in the active request: at most 192 entries, 512 KiB per entry, and 8 MiB total. Exceeding these bounds is an explicit error, not silent truncation. No disk persistence, cross-request cache, or credential writeback is added. Bidirectional hydration is covered by hermetic HTTP/2 tests, not a claim of live model availability.
 
 ## Verify
+
+Tools require unique, nonempty names and explicit object `input_schema` values.
+Only custom MCP definitions and automatic tool choice are supported; forced
+tool choice and parallel-use guidance are rejected. Images require nonempty
+valid base64 plus a PNG, JPEG, GIF, or WebP media type. Invalid inputs return
+`400 invalid_request_error` before credential lookup or dispatch, never silent
+tool/schema defaults or image drops.
 
 An upstream EOF without an authoritative terminal is an error, not a successful
 completion. Native MCP calls preserve Cursor's `tool_call_id` in the returned

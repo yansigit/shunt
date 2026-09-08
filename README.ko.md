@@ -212,7 +212,7 @@ provider = "cursor"
 
 `cursor:` / `cursor-agent:` / `cursor-plan:` / `cursor-ask:` 프리픽스는 Cursor의 에이전트 모드(Agent / Plan / Ask)를 선택하며, 접미사는 Cursor의 **wire** 모델 id입니다(Auto는 `auto`가 아니라 `default`입니다). 단, Cursor의 `composer-2.5-fast` 선택기 별칭은 예외로, shunt는 `composer-2.5` wire id와 `fast=true` 모델 메타데이터를 전송합니다. 어댑터는 어시스턴트 텍스트와 추론을 스트리밍하고, 클라이언트의 도구를 네이티브 Cursor MCP 도구 호출로 브리지하며, 인라인 이미지를 전달합니다(issue #170). 자세한 내용은 [프로바이더 → Cursor](https://shunt.dev/ko/providers/cursor/)를 참고하세요.
 
-구조화된 도구 기록 이어가기는 현재 `composer-2.5` wire 모델, 안정적인 `metadata.session_id`(또는 JSON 문자열 `metadata.user_id` 안의 `session_id`), 유지된 사용자 문맥 및 원래의 짝지어진 도구 ID가 필요합니다. 미지원 또는 불투명한 기록은 전송 전에 오류를 반환합니다. 기록 저장소는 크기가 제한되며 요청 내에서만 유지됩니다. [기록 계약](docs/cursor-request-history.md)을 참고하세요.
+구조화된 도구 기록 이어가기는 현재 `composer-2.5` wire 모델, 안정적인 `metadata.session_id`(또는 JSON 문자열 `metadata.user_id` 안의 `session_id`), 유지된 사용자 문맥 및 원래의 짝지어진 도구 ID가 필요합니다. 미지원 또는 불투명한 기록은 전송 전에 오류를 반환합니다. 기록 저장소는 크기가 제한되며 요청 내에서만 유지됩니다. [기록 계약](docs/cursor-request-history.md)을 참고하세요. 잘못된 도구·이미지와 미지원 도구 선택 지시는 인증 전에 400을 반환하며 조용히 누락되지 않습니다.
 
 **Anthropic 호환 백엔드**라면 무엇이든 테이블 하나만 추가하면 됩니다. 코드 변경은 없습니다.
 

@@ -1,3 +1,4 @@
+mod admission;
 pub mod agent;
 pub mod connect;
 pub(crate) mod history;
@@ -92,8 +93,11 @@ async fn forward(
     // work. `None` keeps the proven text-render path byte-for-byte.
     let history_request = body.json_arc();
     let history_model = resolved.model_id.clone();
-    let prepared_history = match offload::spawn_bounded_request_prep(move || {
-        history::prepare(&history_request, &history_model)
+    let (prepared_history, tools) = match offload::spawn_bounded_request_prep(move || {
+        admission::validate(&history_request)?;
+        let tools = extract_cursor_tools(&history_request)?;
+        let history = history::prepare(&history_request, &history_model)?;
+        Ok::<_, String>((history, tools))
     })
     .await
     .map_err(|error| request_prep_error("cursor history preparation", error))?
@@ -107,6 +111,8 @@ async fn forward(
             ))
         }
     };
+
+    let images = decode_cursor_images_async(request).await?;
 
     let credential = resolve_credential(&state.config, &route, &state.http_client).await?;
     let access_token = match credential {
@@ -123,8 +129,6 @@ async fn forward(
         Some(prepared) => prepared.prompt.clone(),
         None => request::render_cursor_prompt(request),
     };
-    let images = decode_cursor_images_async(request).await?;
-    let tools = extract_cursor_tools(request);
     let want_stream = request
         .get("stream")
         .and_then(Value::as_bool)
@@ -226,20 +230,25 @@ enum RequestPrepPath {
 static LAST_REQUEST_PREP_PATH: std::sync::Mutex<Option<RequestPrepPath>> =
     std::sync::Mutex::new(None);
 
-/// Base64-decode selected request images into agent image inputs. Images that
-/// fail to decode are dropped, preserving the existing request semantics.
+/// Base64-decode selected request images into agent image inputs. Invalid
+/// payloads fail explicitly; a requested image is never silently discarded.
 ///
 /// Exposed for the benchmark target only, not a stability commitment.
 #[doc(hidden)]
-pub fn decode_selected_images(images: Vec<request::CursorSelectedImage>) -> Vec<agent::AgentImage> {
+pub fn decode_selected_images(
+    images: Vec<request::CursorSelectedImage>,
+) -> Result<Vec<agent::AgentImage>, String> {
     use base64::Engine;
     images
         .into_iter()
-        .filter_map(|image| {
+        .map(|image| {
             let data = base64::engine::general_purpose::STANDARD
                 .decode(image.data.as_bytes())
-                .ok()?;
-            Some(agent::AgentImage {
+                .map_err(|_| "Cursor image data is not valid base64".to_string())?;
+            if data.is_empty() {
+                return Err("Cursor image data is empty".into());
+            }
+            Ok(agent::AgentImage {
                 data,
                 uuid: image.uuid,
                 path: image.path,
@@ -249,9 +258,9 @@ pub fn decode_selected_images(images: Vec<request::CursorSelectedImage>) -> Vec<
         .collect()
 }
 
-/// Extract inline images and offload base64 decode only when their estimated
-/// decoded size exceeds the measured inline budget. URL images remain excluded
-/// by `cursor_selected_images`; the rendered prompt still contains placeholders.
+/// Extract admitted inline images and offload base64 decode when their estimated
+/// decoded size exceeds the measured inline budget. Unsupported sources are
+/// rejected by admission before this helper runs on the active dispatch path.
 async fn decode_selected_images_async(
     images: Vec<request::CursorSelectedImage>,
 ) -> Result<Vec<agent::AgentImage>, AdapterError> {
@@ -267,7 +276,7 @@ async fn decode_selected_images_async(
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .replace(RequestPrepPath::ImageInline);
-        return Ok(decode_selected_images(images));
+        return decode_selected_images(images).map_err(admission_error);
     }
 
     offload::spawn_bounded_request_prep(move || {
@@ -279,7 +288,8 @@ async fn decode_selected_images_async(
         decode_selected_images(images)
     })
     .await
-    .map_err(|error| request_prep_error("cursor image decode", error))
+    .map_err(|error| request_prep_error("cursor image decode", error))?
+    .map_err(admission_error)
 }
 
 async fn build_run_frames_async(params: agent::AgentRunParams) -> Result<Vec<Bytes>, AdapterError> {
@@ -306,35 +316,17 @@ fn request_prep_error(context: &'static str, error: std::io::Error) -> AdapterEr
 async fn decode_cursor_images_async(
     request: &Value,
 ) -> Result<Vec<agent::AgentImage>, AdapterError> {
+    admission::validate(request).map_err(admission_error)?;
     decode_selected_images_async(request::cursor_selected_images(request)).await
 }
 
-/// Extract advertised client tools into native MCP tool declarations. Tools
-/// without a name are skipped; a missing schema defaults to an empty object.
-fn extract_cursor_tools(request: &Value) -> Vec<agent::AgentTool> {
-    let Some(tools) = request.get("tools").and_then(Value::as_array) else {
-        return Vec::new();
-    };
-    tools
-        .iter()
-        .filter_map(|tool| {
-            let name = tool.get("name").and_then(Value::as_str)?.to_string();
-            let description = tool
-                .get("description")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
-            let input_schema = tool
-                .get("input_schema")
-                .cloned()
-                .unwrap_or_else(|| serde_json::json!({"type": "object"}));
-            Some(agent::AgentTool {
-                name,
-                description,
-                input_schema,
-            })
-        })
-        .collect()
+/// Explicit native MCP admission; retired bridge modules are not a fallback.
+fn extract_cursor_tools(request: &Value) -> Result<Vec<agent::AgentTool>, String> {
+    admission::tools(request)
+}
+
+fn admission_error(message: String) -> AdapterError {
+    own_error(StatusCode::BAD_REQUEST, "invalid_request_error", message)
 }
 
 /// Collect a full turn into a non-streaming Anthropic message JSON.
@@ -811,7 +803,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_cursor_tools_maps_definitions_and_defaults() {
+    fn cursor_admission_extract_tools_preserves_valid_and_rejects_former_defaults() {
         let request = serde_json::json!({
             "tools": [
                 {
@@ -827,15 +819,19 @@ mod tests {
             ]
         });
 
-        let tools = extract_cursor_tools(&request);
-
-        assert_eq!(tools.len(), 2);
+        assert!(extract_cursor_tools(&request).is_err());
+        let valid = serde_json::json!({"tools":[request["tools"][0].clone()]});
+        let tools = extract_cursor_tools(&valid).unwrap();
+        assert_eq!(tools.len(), 1);
         assert_eq!(tools[0].name, "Read");
         assert_eq!(tools[0].description, "Read a file");
         assert_eq!(tools[0].input_schema["type"], "object");
-        assert_eq!(tools[1].name, "NoSchema");
-        assert_eq!(tools[1].input_schema, serde_json::json!({"type": "object"}));
-        assert!(extract_cursor_tools(&serde_json::json!({})).is_empty());
+        for tool in &request["tools"].as_array().unwrap()[1..] {
+            assert!(extract_cursor_tools(&serde_json::json!({"tools":[tool]})).is_err());
+        }
+        assert!(extract_cursor_tools(&serde_json::json!({}))
+            .unwrap()
+            .is_empty());
     }
 
     fn selected_image(decoded_bytes: usize) -> request::CursorSelectedImage {
@@ -844,6 +840,19 @@ mod tests {
             uuid: "image-uuid".to_string(),
             path: "claude-image-1.png".to_string(),
             mime_type: "image/png".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn cursor_admission_invalid_base64_errors_inline_and_offloaded() {
+        let _observer = offload::OFFLOAD_OBSERVER
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for bytes in [10, INLINE_IMAGE_DECODE_BYTES * 2] {
+            let mut image = selected_image(bytes);
+            image.data.push('%');
+            let error = decode_selected_images_async(vec![image]).await.unwrap_err();
+            assert_eq!(error.response.status(), StatusCode::BAD_REQUEST);
         }
     }
 
@@ -877,7 +886,7 @@ mod tests {
             (INLINE_IMAGE_DECODE_BYTES, RequestPrepPath::ImageOffloaded),
         ] {
             let selected = selected_image(decoded_bytes);
-            let expected = decode_selected_images(vec![selected.clone()]);
+            let expected = decode_selected_images(vec![selected.clone()]).unwrap();
             reset_request_prep_path();
             let actual = decode_selected_images_async(vec![selected]).await.unwrap();
 
@@ -1034,7 +1043,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn decode_cursor_images_decodes_base64_and_skips_unsupported_images() {
+    async fn cursor_admission_decode_images_preserves_valid_and_rejects_former_drops() {
         // Records `LAST_REQUEST_PREP_PATH`, which request-preparation path tests
         // assert on.
         let _observer = offload::OFFLOAD_OBSERVER
@@ -1071,7 +1080,14 @@ mod tests {
             }]
         });
 
-        let images = decode_cursor_images_async(&request).await.unwrap();
+        assert!(decode_cursor_images_async(&request).await.is_err());
+        for block in &request["messages"][0]["content"].as_array().unwrap()[1..] {
+            let invalid = serde_json::json!({"messages":[{"role":"user","content":[block]}]});
+            let error = decode_cursor_images_async(&invalid).await.unwrap_err();
+            assert_eq!(error.response.status(), StatusCode::BAD_REQUEST);
+        }
+        let valid = serde_json::json!({"messages":[{"role":"user","content":[request["messages"][0]["content"][0].clone()]}]});
+        let images = decode_cursor_images_async(&valid).await.unwrap();
 
         assert_eq!(images.len(), 1);
         assert_eq!(images[0].data, b"hello");

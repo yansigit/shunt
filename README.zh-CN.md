@@ -210,7 +210,7 @@ provider = "cursor"
 
 `cursor:` / `cursor-agent:` / `cursor-plan:` / `cursor-ask:` 前缀用于选择 Cursor 的 agent 模式(Agent / Plan / Ask);后缀是 Cursor 的 **wire** 模型 id(Auto 是 `default`,不是 `auto`)。Cursor 模型选择器中的 `composer-2.5-fast` 别名是个例外:shunt 会发送 `composer-2.5` wire id 和 `fast=true` 模型元数据。该适配器会流式传输助手文本和推理内容,把你客户端的工具桥接为原生 Cursor MCP 工具调用,并转发内联图片(issue #170)。详情见 [提供方 → Cursor](https://shunt.dev/zh-cn/providers/cursor/)。
 
-结构化工具历史续接目前需要 `composer-2.5` wire 模型、稳定的 `metadata.session_id`（或 JSON 字符串 `metadata.user_id` 中的 `session_id`）、保留的用户上下文和原始配对工具 ID。不支持或不透明的历史会在发送前报错。历史存储有容量限制且仅存在于当前请求内。参见[历史契约](docs/cursor-request-history.md)。
+结构化工具历史续接目前需要 `composer-2.5` wire 模型、稳定的 `metadata.session_id`（或 JSON 字符串 `metadata.user_id` 中的 `session_id`）、保留的用户上下文和原始配对工具 ID。不支持或不透明的历史会在发送前报错。历史存储有容量限制且仅存在于当前请求内。参见[历史契约](docs/cursor-request-history.md)。 无效工具、图片或不支持的工具选择指令会在认证前返回 400，不会被静默丢弃。
 
 **任何兼容 Anthropic 的后端**只需一个表即可接入 —— 无需改动代码:
 

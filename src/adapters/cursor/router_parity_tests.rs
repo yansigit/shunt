@@ -47,7 +47,12 @@ async fn router_case(
     stream: bool,
     history: Option<serde_json::Value>,
 ) -> (StatusCode, String) {
-    let hydrate = history.is_some();
+    let hydrate = history
+        .as_ref()
+        .is_some_and(|input| input.pointer("/metadata/session_id").is_some());
+    let missing_auth = history
+        .as_ref()
+        .is_some_and(|input| input["_test_no_auth"] == true);
     let host = "agentn.global.api5.cursor.sh";
     assert_eq!(super::agent_base_url(), super::AGENT_BASE_URL);
     let cert = rcgen::generate_simple_self_signed(vec![host.to_string()]).unwrap();
@@ -79,7 +84,15 @@ async fn router_case(
     let auth_path = dir.join("cursor-auth.json");
     let auth_bytes = serde_json::to_vec(&json!({"accessToken":token})).unwrap();
     std::fs::write(&auth_path, &auth_bytes).unwrap();
-    let _auth = EnvRestore::set("SHUNT_CURSOR_AUTH_FILE", &auth_path);
+    let missing_auth_path = dir.join("absent-auth.json");
+    let _auth = EnvRestore::set(
+        "SHUNT_CURSOR_AUTH_FILE",
+        if missing_auth {
+            &missing_auth_path
+        } else {
+            &auth_path
+        },
+    );
     let expected_auth = format!("Bearer {token}");
     let requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let observed = requests.clone();
@@ -346,5 +359,60 @@ async fn cursor_continuation_guard_full_router_zero_dispatch() {
             assert_eq!(envelope["type"], "error");
             assert_eq!(envelope["error"]["type"], "invalid_request_error");
         }
+    }
+}
+
+#[tokio::test]
+async fn cursor_admission_legacy_offpath_rejects_without_dispatch_and_recovers() {
+    let _lock = crate::config::CONFIG_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    for stream in [false, true] {
+        let (status, _) = router_turn(true, stream).await;
+        assert_eq!(status, StatusCode::OK);
+        for (name, patch) in [
+            ("missing name", json!({"tools":[{"input_schema":{}}]})),
+            (
+                "empty name",
+                json!({"tools":[{"name":"","input_schema":{}}]}),
+            ),
+            ("missing schema", json!({"tools":[{"name":"Read"}]})),
+            (
+                "non-object schema",
+                json!({"tools":[{"name":"Read","input_schema":true}]}),
+            ),
+            ("non-array tools", json!({"tools":{}})),
+            ("forced guidance", json!({"tool_choice":{"type":"any"}})),
+            (
+                "builtin tool",
+                json!({"tools":[{"type":"web_search_20250305","name":"web_search","input_schema":{}}]}),
+            ),
+            (
+                "invalid base64",
+                json!({"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"%%%"}}]}]}),
+            ),
+            (
+                "URL image",
+                json!({"messages":[{"role":"user","content":[{"type":"image","source":{"type":"url","url":"https://example.invalid/image"}}]}]}),
+            ),
+            (
+                "missing image data",
+                json!({"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png"}}]}]}),
+            ),
+        ] {
+            let mut input = json!({"messages":[{"role":"user","content":"fixture"}]});
+            input
+                .as_object_mut()
+                .unwrap()
+                .extend(patch.as_object().unwrap().clone());
+            input["_test_no_auth"] = json!(true);
+            let (status, body) = router_case(true, stream, Some(input)).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{name}: {body}");
+            let envelope: serde_json::Value = serde_json::from_str(&body).unwrap();
+            assert_eq!(envelope["error"]["type"], "invalid_request_error", "{name}");
+        }
+        let input = json!({"tool_choice":{"type":"auto"},"tools":[{"name":"Read","input_schema":{"type":"object"}}],"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}}]}]});
+        let (status, body) = router_case(true, stream, Some(input)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
     }
 }

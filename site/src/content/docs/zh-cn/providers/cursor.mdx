@@ -95,7 +95,7 @@ cursor = "cursor:default"
 适配器流式传输助手的**文本与推理**,把你客户端的**工具**桥接为原生的
 Cursor MCP 工具调用(模型调用的某个工具会以带 `stop_reason: "tool_use"` 的 Anthropic `tool_use`
 块浮现;你运行它并把 `tool_result` 送回,shunt 会带着该结果在历史中重跑这一轮),
-并转发**内联图像**(base64 源;URL 图像会被跳过)。Cursor 自己的 agentic 文件 / shell 工具
+并转发**内联图像**(base64 源;URL 图像会被拒绝)。Cursor 自己的 agentic 文件 / shell 工具
 不会被暴露 —— 只有你的请求所声明的工具。
 
 结构化工具历史目前仅支持精确的 `composer-2.5` wire 模型（包括解析到该模型的别名）。请提供稳定的 `metadata.session_id`，或包含 `session_id` 的 JSON 字符串 `metadata.user_id`，并保留用户上下文以及使用原始 ID 配对的 `tool_use` / `tool_result`。普通、压缩、恢复和多轮历史使用同一重建路径，不会根据摘要措辞猜测身份。不透明检查点、缺失/重复/未配对 ID、不支持的模型，以及图片或文本与结果混合的历史，都会在访问凭据或网络之前返回 `400`。
@@ -103,6 +103,12 @@ Cursor MCP 工具调用(模型调用的某个工具会以带 `stop_reason: "tool
 历史 blob 仅保存在当前请求内：最多 192 项，每项 512 KiB，总计 8 MiB。超限会明确报错，不会静默截断。不会新增磁盘持久化、跨请求缓存或凭据回写。双向 hydration 已通过隔离 HTTP/2 测试，但这并不保证实际模型可用性。
 
 ## 校验
+
+工具必须具有唯一的非空名称和显式的对象 `input_schema`。
+仅支持自定义 MCP 定义和自动工具选择；强制选择及并行使用指令会被拒绝。
+图片需要非空的有效 base64，以及 PNG、JPEG、GIF 或 WebP 媒体类型。
+无效输入会在读取凭据或发送请求之前返回 `400 invalid_request_error`，
+不会静默补全工具/模式默认值或丢弃图片。
 
 上游在没有明确终止信号的情况下到达 EOF 时，将返回错误，而不是成功结束。
 原生 MCP 调用会把 Cursor 的 `tool_call_id` 原样保留在响应的 `tool_use.id` 中；
