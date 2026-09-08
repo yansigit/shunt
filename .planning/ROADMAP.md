@@ -221,6 +221,13 @@ Plans:
 
 **Plans**: TBD
 
+- [x] 14-01-PLAN.md
+- [ ] 14-02-PLAN.md
+- [ ] 14-03-PLAN.md
+- [ ] 14-04-PLAN.md
+- [ ] 14-05-PLAN.md
+- [ ] 14-06-PLAN.md
+
 ### Phase 15: Exact OpenCode Go Evidence Gate
 
 **Goal**: Operators see only OpenCode Go model/wire combinations whose exact behavior is proven, with unsupported combinations rejected before credentials or network activity.
@@ -262,7 +269,7 @@ Plans:
 | 11. Antigravity Protocol and Credential Hardening | v2 | 7/7 | Complete    | 2026-09-07 |
 | 12. Cursor Evidence-Backed Hardening | v2 | 8/8 | Complete    | 2026-09-07 |
 | 13. Generic OpenAI Chat Completions | v2 | 5/5 | Complete    | 2026-09-08 |
-| 14. Command Code Product Separation | v2 | 0/TBD | Not started | - |
+| 14. Command Code Product Separation | v2 | 1/6 | In Progress|  |
 | 15. Exact OpenCode Go Evidence Gate | v2 | 0/TBD | Not started | - |
 | 16. Cross-Provider Release Gate | v2 | 0/TBD | Not started | - |
 

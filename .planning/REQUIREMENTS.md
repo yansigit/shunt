@@ -62,7 +62,7 @@ requirement maps to exactly one roadmap phase after roadmap creation.
 
 ### Command Code API-Key Product
 
-- [ ] **CCK-01**: The `commandcode` API-key product uses the generic Chat contract at the canonical `/provider/v1/chat/completions` endpoint rather than the proprietary subscription endpoint.
+- [x] **CCK-01**: The `commandcode` API-key product uses the generic Chat contract at the canonical `/provider/v1/chat/completions` endpoint rather than the proprietary subscription endpoint.
 - [ ] **CCK-02**: Command Code API-key authentication, endpoint, and model facts are tested independently from subscription authentication and cannot be selected through the subscription credential mode.
 - [ ] **CCK-03**: The API-key product passes the applicable Chat normal, streaming, tool-heavy, long-context, cancellation, and error-path conformance scenarios.
 
@@ -161,7 +161,7 @@ Each committed requirement has exactly one owning phase.
 | CHAT-07 | Phase 13 | Complete |
 | CHAT-08 | Phase 13 | Complete |
 | CHAT-09 | Phase 13 | Complete |
-| CCK-01 | Phase 14 | Pending |
+| CCK-01 | Phase 14 | Complete |
 | CCK-02 | Phase 14 | Pending |
 | CCK-03 | Phase 14 | Pending |
 | CCS-01 | Phase 14 | Pending |
