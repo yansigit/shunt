@@ -1789,6 +1789,8 @@ pub enum ProviderKind {
     /// `api_key_env`.
     #[serde(rename = "openai_chat")]
     OpenAiChat,
+    /// Command Code subscription NDJSON, separate from its API-key Chat product.
+    CommandCode,
     /// Local Antigravity CLI binary (`agy`) execution.
     ///
     /// **Deprecated.** Superseded by `kind = "antigravity"`, which reaches the
@@ -1808,6 +1810,8 @@ pub enum AuthMode {
     Passthrough,
     /// Inject an API key read from `api_key_env`.
     ApiKey,
+    /// Read-only Command Code subscription credential, never an API-key fallback.
+    CommandCodeOauth,
     /// Reuse the ChatGPT/Codex OAuth login in ~/.codex/auth.json.
     ChatgptOauth,
     /// Inject a Claude subscription OAuth bearer selected from `accounts`.
@@ -2126,6 +2130,8 @@ pub enum ConfigError {
          adapter injects the configured key per request and has no other credential path."
     )]
     OpenAiChatRequiresApiKey { provider: String, auth: String },
+    #[error("providers.{provider}: invalid Command Code subscription configuration: {reason}")]
+    CommandCodeConfiguration { provider: String, reason: String },
     #[error(
         "providers.antigravity has no `auth` key, so it deep-merges the built-in \
          antigravity_oauth default instead of being caught by the kind = \"antigravity\" \
@@ -3471,6 +3477,16 @@ impl Config {
             // request and has no OAuth/passthrough path, so any other auth
             // mode would silently forward the client's own credential (or
             // nothing at all) to an OpenAI-shaped upstream. Reject it by name.
+            if provider.kind == ProviderKind::CommandCode
+                || provider.auth == AuthMode::CommandCodeOauth
+            {
+                crate::auth::command_code::validate_provider(provider).map_err(|reason| {
+                    ConfigError::CommandCodeConfiguration {
+                        provider: name.clone(),
+                        reason: reason.into(),
+                    }
+                })?;
+            }
             if provider.kind == ProviderKind::OpenAiChat && provider.auth != AuthMode::ApiKey {
                 return Err(ConfigError::OpenAiChatRequiresApiKey {
                     provider: name.clone(),

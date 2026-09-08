@@ -185,6 +185,10 @@ fn credential_source(preset: ProviderPresetView) -> String {
         AuthMode::ChatgptOauth => "`shunt login codex`.".to_string(),
         AuthMode::XaiOauth => "`shunt login xai`.".to_string(),
         AuthMode::CursorOauth => "`shunt login cursor`.".to_string(),
+        AuthMode::CommandCodeOauth => {
+            "a read-only Command Code subscription credential ($SHUNT_COMMAND_CODE_TOKEN)."
+                .to_string()
+        }
         AuthMode::KimiOauth => "`shunt login kimi --name <account-name>`.".to_string(),
         AuthMode::Passthrough => {
             "passes the client's own Anthropic credential through.".to_string()

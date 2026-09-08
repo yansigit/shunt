@@ -109,7 +109,7 @@ impl Requirements {
                     reasons.push("reasoning-effort");
                 }
             }
-            AdapterKind::OpenAiChat => {
+            AdapterKind::OpenAiChat | AdapterKind::CommandCode => {
                 if self.structured_output {
                     reasons.push("structured-output");
                 }

@@ -15,6 +15,7 @@ pub enum AdapterKind {
     /// OpenAI Chat Completions (POST /chat/completions), translated from
     /// Anthropic Messages.
     OpenAiChat,
+    CommandCode,
     /// Local `agy` subprocess execution. Deprecated alongside
     /// [`ProviderKind::AntigravityCli`].
     AntigravityCli,
@@ -28,6 +29,7 @@ impl From<ProviderKind> for AdapterKind {
             ProviderKind::Cursor => AdapterKind::Cursor,
             ProviderKind::Gemini => AdapterKind::Gemini,
             ProviderKind::OpenAiChat => AdapterKind::OpenAiChat,
+            ProviderKind::CommandCode => AdapterKind::CommandCode,
             // Stage 1 of the native Antigravity upstream is wire-identical to
             // the Code Assist path, so it rides the Gemini adapter; only the
             // credential and the discovery metadata differ. The

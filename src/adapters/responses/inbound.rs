@@ -541,6 +541,7 @@ fn passthrough_request(
         // and `kind = "anthropic"` respectively), so the defensive arm fails
         // closed.
         Credential::CursorOauth { .. }
+        | Credential::CommandCodeOauth { .. }
         | Credential::KimiOauth { .. }
         | Credential::AntigravityOauth { .. }
         | Credential::Passthrough => {}

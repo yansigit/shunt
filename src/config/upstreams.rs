@@ -91,6 +91,7 @@ pub enum AuthMap {
         accounts: Option<Vec<AccountSelection>>,
     },
     XaiOauth {},
+    CommandCodeOauth {},
     CursorOauth {},
     AntigravityOauth {},
 }
@@ -130,6 +131,7 @@ impl UpstreamAuth {
                 absorb_oauth_scope(upstream, AuthMode::KimiOauth, account, accounts, provider)?;
             }
             Self::Map(AuthMap::XaiOauth {}) => provider.auth = AuthMode::XaiOauth,
+            Self::Map(AuthMap::CommandCodeOauth {}) => provider.auth = AuthMode::CommandCodeOauth,
             Self::Map(AuthMap::CursorOauth {}) => provider.auth = AuthMode::CursorOauth,
             Self::Map(AuthMap::AntigravityOauth {}) => provider.auth = AuthMode::AntigravityOauth,
         }

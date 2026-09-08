@@ -14,6 +14,7 @@ pub mod antigravity;
 pub(crate) mod callback;
 pub mod claude;
 pub mod codex;
+pub(crate) mod command_code;
 pub mod cursor;
 pub mod gateway;
 pub mod google;
@@ -32,15 +33,25 @@ pub enum Credential {
     /// Forward the client's own credential unchanged (Anthropic passthrough).
     Passthrough,
     /// Inject an API key, sent in the given header.
-    ApiKey { value: String, header: ApiKeyHeader },
+    ApiKey {
+        value: String,
+        header: ApiKeyHeader,
+    },
     ChatGptOAuth {
         access_token: String,
         account_id: String,
     },
     /// xAI subscription OAuth: bearer only, no account-id header.
-    XaiOauth { access_token: String },
+    XaiOauth {
+        access_token: String,
+    },
     /// Cursor OAuth bearer.
-    CursorOauth { access_token: String },
+    CursorOauth {
+        access_token: String,
+    },
+    CommandCodeOauth {
+        access_token: String,
+    },
     /// Google OAuth bearer & project ID (Gemini Code Assist / Google One AI Pro).
     GoogleOauth {
         access_token: String,
@@ -77,6 +88,9 @@ impl fmt::Debug for Credential {
             Self::ChatGptOAuth { .. } => formatter.write_str("Credential::ChatGptOAuth { .. }"),
             Self::XaiOauth { .. } => formatter.write_str("Credential::XaiOauth { .. }"),
             Self::CursorOauth { .. } => formatter.write_str("Credential::CursorOauth { .. }"),
+            Self::CommandCodeOauth { .. } => {
+                formatter.write_str("Credential::CommandCodeOauth { .. }")
+            }
             Self::GoogleOauth { .. } => formatter.write_str("Credential::GoogleOauth { .. }"),
             Self::AntigravityOauth { .. } => {
                 formatter.write_str("Credential::AntigravityOauth { .. }")
@@ -158,6 +172,7 @@ pub async fn resolve_credential(
         .ok_or_else(|| auth_error(format!("unknown provider {}", route.provider)))?;
     match provider.auth {
         AuthMode::Passthrough => Ok(Credential::Passthrough),
+        AuthMode::CommandCodeOauth => command_code::resolve(provider).await,
         AuthMode::ApiKey => Ok(Credential::ApiKey {
             value: resolve_api_key(&route.provider, provider)?,
             header: provider.api_key_header,
@@ -683,6 +698,12 @@ mod tests {
                     access_token: secret.clone(),
                 },
                 "CursorOauth",
+            ),
+            (
+                Credential::CommandCodeOauth {
+                    access_token: secret.clone(),
+                },
+                "CommandCodeOauth",
             ),
             (
                 Credential::GoogleOauth {

@@ -9,14 +9,11 @@ use crate::{request::RequestBody, routing::Route, server::AppState};
 
 pub mod anthropic;
 pub mod antigravity;
+pub mod command_code;
 pub mod cursor;
 pub mod gemini;
 pub mod openai_chat;
 pub mod responses;
-
-#[cfg(test)]
-#[path = "command_code/router_tests.rs"]
-mod command_code_router_tests;
 
 /// Tie a storm-control [`AdmissionGuard`](crate::accounts::AdmissionGuard) to a
 /// relayed response (issue #195). The response body is lazy — for a streaming

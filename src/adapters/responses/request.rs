@@ -206,6 +206,7 @@ pub(super) fn request_builder(
         // not the origin those subscription tokens were issued for, so a
         // reachable bug here would be a credential leak rather than a 401.
         Credential::CursorOauth { .. }
+        | Credential::CommandCodeOauth { .. }
         | Credential::KimiOauth { .. }
         | Credential::AntigravityOauth { .. }
         | Credential::Passthrough => {}

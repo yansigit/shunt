@@ -286,9 +286,13 @@ async fn count_tokens_response(
             | AdapterKind::Cursor
             | AdapterKind::Gemini
             | AdapterKind::OpenAiChat
+            | AdapterKind::CommandCode
             | AdapterKind::AntigravityCli
     ) {
-        let mode = if matches!(route.adapter, AdapterKind::OpenAiChat) {
+        let mode = if matches!(
+            route.adapter,
+            AdapterKind::OpenAiChat | AdapterKind::CommandCode
+        ) {
             // tiktoken counting is calibrated for the Anthropic/Responses
             // tokenizers, and no Chat-specific counter exists yet; the honest
             // answer for this slice is the estimator, not a wrong exact count.
@@ -379,6 +383,11 @@ async fn dispatch(
         }
         AdapterKind::OpenAiChat => {
             crate::adapters::openai_chat::OpenAiChatAdapter
+                .forward(state, route, uri, headers, body)
+                .await
+        }
+        AdapterKind::CommandCode => {
+            crate::adapters::command_code::CommandCodeAdapter
                 .forward(state, route, uri, headers, body)
                 .await
         }

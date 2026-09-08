@@ -402,6 +402,7 @@ fn websocket_headers(
         // Codex WebSocket is not the origin an Antigravity subscription token
         // was issued for, so an unreachable-by-validation arm must not carry it.
         Credential::AntigravityOauth { .. } => {}
+        Credential::CommandCodeOauth { .. } => {}
         Credential::Passthrough => {}
         // Kimi's coding API speaks the Anthropic Messages shape, so a
         // `kimi_oauth` provider is always `kind = "anthropic"` and never
