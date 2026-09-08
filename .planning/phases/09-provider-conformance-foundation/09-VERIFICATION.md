@@ -50,7 +50,7 @@ covered_files:
   - tests/passthrough.rs
   - tests/responses_translate.rs
   - tests/retry.rs
-covered_digest: "v1:sha256:c6ed97182718d93b51a62121c70c2696cfb32aee12e7840366b3a395f1f6dd0c"
+covered_digest: "v1:sha256:74c5eda098ebd2e9a1c4c29eb2c6e972cb36d8d722534f8acaa45ed75372dd0f"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
@@ -67,6 +67,12 @@ human_verification: []
 ---
 
 # Phase 9: Provider Conformance Foundation Verification Report
+
+Transition-only fingerprint refresh, 2026-09-08: PROJECT.md now moves the
+verified Command Code scope from Active to Validated and updates its footer.
+No Phase 9 requirement, source, test, or safety boundary changed after the
+focused re-verification above. The subsequent isolated bounded full regression
+also completed successfully: 2,942 passed, zero failed, two pre-existing ignored.
 
 **Phase Goal:** Operators can trust that existing providers and every later compatibility slice share explicit, testable safety and preservation guarantees.
 **Verified:** 2026-09-07T19:45:00Z

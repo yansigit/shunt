@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v2
 milestone_name: Provider Compatibility
-current_phase: 14
-current_phase_name: Command Code Product Separation
-current_plan: 6
-status: executing
-stopped_at: Phase 14 implementation verified (6/6 plans); phase-level audits pending
-last_updated: "2026-09-08T19:10:07.924Z"
+current_phase: 15
+current_phase_name: Exact OpenCode Go Evidence Gate
+current_plan: Not started
+status: planning
+stopped_at: Phase 14 complete, ready to plan Phase 15
+last_updated: "2026-09-08T20:18:14.128Z"
 last_activity: 2026-09-08
-last_activity_desc: Phase 14 execution started
-state_head: ae3b524d868d82388df14c65dbcffa0b0eafd2c7
+last_activity_desc: Phase 14 complete, transitioned to Phase 15
+state_head: 91c382d3d90bdf883c5e9146f91814137ce578f8
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 37
-  completed_plans: 36
+  completed_plans: 37
   percent: 75
 total_plans_in_phase: 0
 ---
@@ -24,24 +24,24 @@ total_plans_in_phase: 0
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-09-08 after Phase 13)
+See: `.planning/PROJECT.md` (updated 2026-09-08 after Phase 14)
 
 **Core value:** Protocol-faithful, streaming-safe client behavior in a bounded, lean gateway.
-**Current focus:** Phase 14 — Command Code Product Separation
+**Current focus:** Phase 15 — Exact OpenCode Go Evidence Gate
 
 ## Current Position
 
-Phase: 14 (Command Code Product Separation) — EXECUTING
-Current Plan: 6
-Total Plans in Phase: 6
-Status: Phase-level verification pending
-Last activity: 2026-09-08 — Phase 14 implementation and independent review complete; 2,942 tests passed
+Phase: 15 — Exact OpenCode Go Evidence Gate
+Current Plan: Not started
+Total Plans in Phase: 0
+Status: Ready to plan
+Last activity: 2026-09-08 — Phase 14 complete, transitioned to Phase 15
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 56
+- Total plans completed: 62
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -62,6 +62,8 @@ Last activity: 2026-09-08 — Phase 14 implementation and independent review com
 | 11 | 7 | - | - |
 | 12 | 8 | - | - |
 | 13 | 5 | - | - |
+| 14 | 6 | - | - |
+| 14 | 6 | - | - |
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
@@ -133,12 +135,14 @@ The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent O
 
 ## Session Continuity
 
-Last session: 2026-09-08T10:01:20.586Z
-Stopped at: Phase 14 implementation verified (6/6 plans); phase-level audits pending
-Resume file: .planning/phases/14-command-code-product-separation/14-06-PLAN.md
+Last session: 2026-09-08T20:18:14Z
+Stopped at: Phase 14 complete, ready to plan Phase 15
+Resume file: None — Phase 15 context and plan are next
 
 ## Operator Next Steps
 
 - The user-approved installed GSD gate validator repair is complete and backed up at `/Users/user/gsd-gate-backup-mEVeg3`. Dotted query names validate; gate checks were rerun without disabling them. See 13-01-SUMMARY.md.
 - Phase 13 is complete: 5/5 plans, 2,875 passed, 0 failed, 2 existing ignored; CLI/curl Chat smoke and all documentation locales pass. Validation has no gaps; all 19 authored security threats have mitigations. Computer visual checks remain skipped/blocked, never passed.
-- Continue the approved milestone sequentially through Phase 16, verifying each phase. Preserve credential-file behavior and request approval for new public configuration choices.
+- Phase 14 is complete: 6/6 plans, 2,942 passed, zero failed, two pre-existing ignored; bounded regression, formatter, Clippy, docs build and owned CLI/curl smoke passed. All 21 authored security threats are mitigated; live/Computer acceptance is not claimed. No production mutation.
+- Continue with Phase 15 context/planning. New OpenCode Go public config/provider semantics require approval beyond the existing Phase 13–14 approval; no credential writeback is authorized.
+- Transition warning about `node /tmp/shunt-phase12-isolated-run.cjs` in 14-03-SUMMARY is a prose command misclassified as a repository file, not a missing implementation artifact. Graduation scan found no LEARNINGS files and skipped under its minimum-data guard.

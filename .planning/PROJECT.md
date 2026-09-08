@@ -63,12 +63,10 @@ behavior while Shunt stays bounded, predictable, and operationally lean.
 
 - ✓ Cursor has evidence-backed model, continuation, tool, error and retry hardening with bounded request-local state — Phase 12
 - ✓ Generic OpenAI Chat serves Anthropic Messages with strict request translation, bounded unary/SSE semantics, tool assembly, cancellation and credential-safe conservative retries — Phase 13
+- ✓ Command Code API-key and subscription paths preserve separate credentials, request/terminal contracts, tools and cancellation without new credential persistence; hermetic and owned smoke checks pass, with live acceptance reserved for Phase 16 — Phase 14
 
 ### Active
 
-- [ ] Command Code subscription and API-key users can run normal, streaming,
-  tool-heavy, subagent, long-context, and error-path turns without new
-  credential persistence behavior.
 - [ ] OpenCode Go support is limited to exact model/wire combinations whose
   behavior can be cleanly implemented and verified.
 
@@ -164,4 +162,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Revisit deferred work only with evidence from usage or failing transcripts.
 
 ---
-*Last updated: 2026-09-08 after Phase 13*
+*Last updated: 2026-09-08 after Phase 14*
