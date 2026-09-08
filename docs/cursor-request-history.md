@@ -109,3 +109,8 @@ uses the existing 64 MiB budget with conservative escaping/block accounting,
 rejecting overflow rather than buffering unlimited output. Empty reasoning
 signatures remain empty, as on SSE; no signature is synthesized. The original
 reasoning-discard characterization was deliberately changed to preservation.
+
+HTTP error diagnostics are collected incrementally up to 64 KiB with a five-second
+total read deadline. Oversized or stalled error bodies retain only the collected
+prefix; status, retry-after, and no-replay classification remain unchanged. The
+limit applies before allocation, not after buffering the complete response.

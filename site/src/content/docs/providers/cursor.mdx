@@ -120,7 +120,8 @@ History blobs live only in the active request: at most 192 entries, 512 KiB per 
 ## Verify
 
 JSON and SSE preserve reasoning/text block order and final usage. JSON
-accumulation is bounded by a conservative 64 MiB allocation budget. Cancelling
+accumulation is bounded by a conservative 64 MiB allocation budget. HTTP error
+diagnostics retain at most 64 KiB of body bytes, with a five-second read deadline. Cancelling
 before headers or during either response mode closes the upstream turn and
 releases gateway capacity; repeated text never substitutes for a terminal.
 

@@ -492,6 +492,27 @@ fn streaming_response(
         .into_response()
 }
 
+// Bound collection itself, not just the message after reading the whole body.
+async fn bounded_error_text<S, E>(stream: S, deadline: std::time::Duration) -> String
+where
+    S: futures_util::Stream<Item = Result<Bytes, E>>,
+{
+    const LIMIT: usize = 64 * 1024;
+    futures_util::pin_mut!(stream);
+    let mut bytes = Vec::new();
+    let read = async {
+        while let Some(Ok(chunk)) = stream.next().await {
+            let remaining = LIMIT - bytes.len();
+            bytes.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+            if bytes.len() == LIMIT {
+                break;
+            }
+        }
+    };
+    let _ = tokio::time::timeout(deadline, read).await;
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 async fn map_upstream_error(upstream: reqwest::Response) -> AdapterError {
     let status = upstream.status();
     let retry_after = upstream.headers().get("retry-after").cloned();
@@ -503,7 +524,8 @@ async fn map_upstream_error(upstream: reqwest::Response) -> AdapterError {
     let mapped_status = crate::model::responses::client_facing_status(status);
     let kind = crate::model::responses::anthropic_error_type(status);
     let stream = futures_stream::once(async move {
-        let text = upstream.text().await.unwrap_or_default();
+        let text =
+            bounded_error_text(upstream.bytes_stream(), std::time::Duration::from_secs(5)).await;
         let body: Option<Value> = serde_json::from_str(&text).ok();
         let parsed_message = body.as_ref().and_then(|value| {
             value
@@ -722,6 +744,47 @@ mod tests {
             .await
             .expect("response body should be readable");
         serde_json::from_slice(&bytes).expect("response body should be JSON")
+    }
+
+    #[tokio::test]
+    async fn cursor_error_body_collection_is_bounded_and_times_out() {
+        let oversized = futures_stream::iter([Ok::<_, ()>(Bytes::from(vec![b'x'; 65537]))]);
+        let text = bounded_error_text(oversized, std::time::Duration::from_secs(1)).await;
+        assert_eq!(text.len(), 65536);
+        let stalled = futures_stream::once(async { Ok::<_, ()>(Bytes::from_static(b"partial")) })
+            .chain(futures_stream::pending());
+        let text = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            bounded_error_text(stalled, std::time::Duration::from_millis(10)),
+        )
+        .await
+        .expect("error body deadline must release a stalled reader");
+        assert_eq!(text, "partial");
+    }
+
+    #[tokio::test]
+    async fn cursor_error_body_large_http_response_preserves_status_without_replay() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(429)
+                    .insert_header("retry-after", "3")
+                    .set_body_string("x".repeat(65537)),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let upstream = reqwest::Client::new()
+            .get(server.uri())
+            .send()
+            .await
+            .unwrap();
+        let error = map_upstream_error(upstream).await;
+        assert!(error.failure.is_none());
+        assert_eq!(error.response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(error.response.headers()["retry-after"], "3");
+        let body = body_json(error).await;
+        assert_eq!(body["error"]["message"].as_str().unwrap().len(), 65536);
     }
 
     #[tokio::test]
