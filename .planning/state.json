@@ -51,8 +51,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Execute Phase 12 plan 08 cancellation and phase verification",
-    "reason": "3 of 8 milestone phases complete; Phase 12 has 7 of 8 plans verified"
+    "label": "Verify Phase 12 goal and transition to Phase 13",
+    "reason": "3 of 8 milestone phases complete; Phase 12 has all 8 plans verified"
   },
   "updated_at": "2026-09-07T22:45:12.698Z"
 }
