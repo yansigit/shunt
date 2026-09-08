@@ -15,6 +15,51 @@ fn translate(request: Value) -> Result<Value, String> {
 }
 
 #[test]
+fn root_review_tool_choice_objects() {
+    for (kind, expected) in [("auto", "auto"), ("any", "required")] {
+        let out = translate(json!({"tool_choice":{"type":kind},"messages":[{"role":"user","content":"hello"}]})).unwrap();
+        assert_eq!(out["tool_choice"], expected);
+    }
+}
+
+#[test]
+fn root_review_duplicate_tool_result_rejected() {
+    assert!(translate(json!({"messages":[
+        {"role":"assistant","content":[{"type":"tool_use","id":"a","name":"f","input":{}}]},
+        {"role":"user","content":[{"type":"tool_result","tool_use_id":"a","content":"first"},{"type":"tool_result","tool_use_id":"a","content":"second"}]}
+    ]})).is_err());
+}
+
+#[test]
+fn root_review_tool_results_precede_followup_text() {
+    let out = translate(json!({"messages":[
+        {"role":"assistant","content":[{"type":"tool_use","id":"a","name":"f","input":{}}]},
+        {"role":"user","content":[{"type":"tool_result","tool_use_id":"a","content":"result"},{"type":"text","text":"continue"}]}
+    ]})).unwrap();
+    assert_eq!(out["messages"][1]["role"], "tool");
+    assert_eq!(out["messages"][2]["role"], "user");
+}
+
+#[test]
+fn root_review_combined_text_budget() {
+    let half = "x".repeat(MAX_TEXT_BLOCK_BYTES / 2 + 1);
+    assert!(translate(json!({"messages":[{"role":"user","content":[{"type":"text","text":half},{"type":"text","text":half}]}]})).is_err());
+}
+
+#[test]
+fn root_review_endpoint_diagnostics_do_not_echo_userinfo() {
+    let error = chat_completions_endpoint("https://user:secret-marker@host.example/v1").unwrap_err();
+    assert!(!error.contains("secret-marker"));
+}
+
+#[test]
+fn root_review_endpoint_rejects_silent_repairs() {
+    for root in [" https://host.example/v1", "https://host.example/\nv1", "https://host.example/a/../v1", "https://host.example\\v1"] {
+        assert!(chat_completions_endpoint(root).is_err(), "accepted ambiguous root {root:?}");
+    }
+}
+
+#[test]
 fn translate_rejects_null_request_body() {
     let error = translate(json!(null)).expect_err("null body must be a typed request error");
     assert!(!error.is_empty(), "{error}");
