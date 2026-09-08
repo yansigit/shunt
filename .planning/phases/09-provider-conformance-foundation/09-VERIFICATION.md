@@ -1,6 +1,6 @@
 ---
 phase: 09-provider-conformance-foundation
-verified: 2026-09-07T19:45:00Z
+verified: 2026-09-08T02:48:00Z
 status: passed
 score: 8/8 must-haves verified
 covered_files:
@@ -50,7 +50,7 @@ covered_files:
   - tests/passthrough.rs
   - tests/responses_translate.rs
   - tests/retry.rs
-covered_digest: "v1:sha256:38f0fd32bd484269463ab0c5f25fd734e41e9e567321489450458ddb1d8283d9"
+covered_digest: "v1:sha256:56076da2969d1313afb408963188a7b1cc37399652438900ff3aa262008746cc"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
@@ -248,3 +248,21 @@ No blocking gaps, behavior-unverified truths, or human-verification items remain
 
 _Verified: 2026-09-06T22:49:10Z_
 _Verifier: Codex (gsd-verifier)_
+
+## September 8 regression refresh
+
+Independent GLM/high source audit found no invariant regressions in covered
+changes since the prior verification. Phase12 adds the Cursor retry constant
+and test-only server helper without changing the existing retry policies;
+README additions retain four-locale parity. Historical evidence below remains
+historical, not a claim of fresh execution.
+
+Fresh root execution: full `cargo test --all-features --workspace` passed
+(2194 active library tests, two prior ignored benchmarks, main and integration
+suites all passed); format and warnings-denied all-target/all-feature Clippy
+passed. The five-check rebuilt-binary mock smoke passed. Every process tree
+used the isolated-home wrapper; live config mtime/SHA and backup/invalid-file
+inventory stayed unchanged. This is hermetic evidence, not live provider
+availability. Computer smoke was blocked by host Terminal/localhost controls
+and is not claimed passed. Fingerprint regenerated with the bundled GSD tool
+only after this audit and successful regression execution.

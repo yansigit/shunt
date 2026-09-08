@@ -1,6 +1,6 @@
 ---
 phase: 11-antigravity-protocol-and-credential-hardening
-verified: 2026-09-07T19:40:48Z
+verified: 2026-09-08T02:48:00Z
 status: passed
 score: 10/10 must-haves verified
 covered_files:
@@ -57,7 +57,7 @@ covered_files:
   - tests/antigravity_tool_scope.rs
   - tests/antigravity_translate.rs
   - tests/gemini_conformance.rs
-covered_digest: "v1:sha256:ca51823ef1681ac944211214f8f1eee82b77cdd3dfdfb65cf4bcfe5d9e7cbe60"
+covered_digest: "v1:sha256:c048996659d229e26f019a549feeb3f44e0a0e54c675c009ece2dd65c55067d1"
 behavior_unverified: 0
 overrides_applied: 0
 decision_coverage:
@@ -196,3 +196,21 @@ files still compare byte-for-byte equal. Production opencodex state/port and
 generated wiki were not touched.
 
 No unresolved phase-goal gap remains. Phases 12–16 remain separate work.
+
+## September 8 regression refresh
+
+Independent GLM/high source audit found no invariant regressions in covered
+changes since the prior verification. Phase12 adds the Cursor retry constant
+and test-only server helper without changing the existing retry policies;
+README additions retain four-locale parity. Historical evidence below remains
+historical, not a claim of fresh execution.
+
+Fresh root execution: full `cargo test --all-features --workspace` passed
+(2194 active library tests, two prior ignored benchmarks, main and integration
+suites all passed); format and warnings-denied all-target/all-feature Clippy
+passed. The five-check rebuilt-binary mock smoke passed. Every process tree
+used the isolated-home wrapper; live config mtime/SHA and backup/invalid-file
+inventory stayed unchanged. This is hermetic evidence, not live provider
+availability. Computer smoke was blocked by host Terminal/localhost controls
+and is not claimed passed. Fingerprint regenerated with the bundled GSD tool
+only after this audit and successful regression execution.
