@@ -15,7 +15,7 @@ Rust libtest, Tokio, Axum and existing mock/TLS socket helpers; Cargo.toml. No n
 
 Quick baseline: `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test openai_chat_conformance -- --test-threads=1`.
 Full suite: `node /tmp/shunt-phase12-isolated-run.cjs env 'RUSTFLAGS=-D warnings' cargo test --all-features --workspace`.
-Phase-specific targets/filters must reject zero selected tests. Plans 14-01 and 14-02 are executed; later groups remain pending. Their summaries contain RED/GREEN evidence and exact commands. The combined wave-1 build, formatter, warnings-denied Clippy and workspace suite passed (2,891 passed, 0 failed, 2 existing ignored; 30 result groups). API-key CLI/curl smoke passed; subscription invalid-explicit-token CLI smoke returned 401 with zero upstream/proxy connections. These are isolated checks, not live-provider or GUI acceptance.
+Phase-specific targets/filters must reject zero selected tests. Plans 14-01 through 14-05 are executed; 14-06 remains pending. Their summaries contain evidence and exact commands. The latest build, formatter, warnings-denied Clippy and workspace suite passed (2,937 passed, 0 failed, 2 existing ignored; 31 result groups). Plan 14-05 explicitly records its missing behavioral RED evidence; compiler errors are not counted as an assertion RED or gate pass. API-key CLI/curl smoke passed earlier; subscription invalid-explicit-token CLI smoke returned 401 with zero upstream/proxy connections. These are isolated checks, not live-provider or GUI acceptance.
 
 ## Sampling Rate
 
@@ -42,9 +42,9 @@ Planner-provided concrete map. Waves: W1 = 14-01 ∥ 14-02; W2 = 14-03; W3 = 14-
 | Response machine | 14-04 Task 1 | CCS-05/06, D-08 | pinned terminal grammar, usage precision (integers only), typed unknown, empty/null fail | cargo test --test command_code_translate command_code_translate_machine | unit | pass |
 | Streaming/unary relay | 14-04 Task 2 | CCS-05, D-08 | incremental relay, unary twin, one terminal, mid-body error, EOF fail | cargo test --lib command_code_tracer_response | real gateway | pass |
 | Byte boundaries | 14-04 Task 3 | CCS-06/08, D-09 | per-record/residual/semantic/tool/argument caps below/at/above; UTF-8 split; deadline; no repair | cargo test --test command_code_translate command_code_bounds; --lib command_code_bounds | byte-split + gateway | pass |
-| CLI fallback + dispatch gate | 14-05 Task 1 | CCS-01/02, D-03/04 | read-only auth.json matrix, env precedence, at-dispatch destination re-check | cargo test --lib command_code_lifetime_file; ... command_code_lifetime_destination_dispatch | fixture files + gateway | pending |
-| Replay discipline | 14-05 Task 2 | CCS-07, D-10 | ConnectOnly, pre-connect retry retains credential+session, post-send single attempt, no redirect | cargo test --lib command_code_lifetime_replay | real sockets | pending |
-| Cancellation ownership | 14-05 Task 3 | CCS-07, D-11 | pre-header + mid-body cancel both modes close upstream, capacity reused, no detached task | cargo test --lib command_code_lifetime_cancel | real sockets | pending |
+| CLI fallback + dispatch gate | 14-05 Task 1 | CCS-01/02, D-03/04 | read-only auth.json matrix, env precedence, at-dispatch destination re-check | cargo test --lib command_code_lifetime_file; ... command_code_lifetime_destination_dispatch | fixture files + gateway | pass; RED process gap recorded |
+| Replay discipline | 14-05 Task 2 | CCS-07, D-10 | ConnectOnly, pre-connect retry retains credential+session, post-send single attempt, no redirect | cargo test --lib command_code_lifetime_replay | real sockets | pass — characterization |
+| Cancellation ownership | 14-05 Task 3 | CCS-07, D-11 | pre-header + mid-body cancel both modes close upstream, capacity reused, no detached task | cargo test --lib command_code_lifetime_cancel | real sockets | pass — characterization |
 | Full matrix | 14-06 Task 1 | CCK-03, CCS-08, D-12 | positive subagent/continuation, tool-heavy, long-context bounds, auth-error matrix, error finish | cargo test --lib command_code_matrix | real gateway | pending |
 | Docs parity | 14-06 Task 2 | D-14 | README en+ko+ja+zh-cn, milestone note, site provider page + locales, configuration reference + locales; wiki untouched | npm --prefix site run build + rg env-name/locale checks | docs/site | pending |
 | Final gates + smoke | 14-06 Task 3 | D-13/14 | fmt; clippy -D warnings; full workspace suite; site build; owned CLI/curl smoke; live-home mtime/SHA invariant | chained node /tmp/shunt-phase12-isolated-run.cjs gates | CI-equivalent | pending |
@@ -54,7 +54,7 @@ Planner-provided concrete map. Waves: W1 = 14-01 ∥ 14-02; W2 = 14-03; W3 = 14-
 - [x] Dated protocol-evidence ledger preceded tracer RED fixtures; exact reporter-only rows corrected before model admission implementation.
 - [x] Synthetic minimal text/terminal NDJSON corpus and real gateway tracer test target; full semantic corpus remains 14-04.
 - [x] Canonical-host TLS test seam without public off-origin bearer bypass.
-- [ ] Credential fixtures use temporary files; byte/mtime/inventory checks verify read-only behavior.
+- [x] Credential fixtures use temporary files; byte/mtime/inventory checks verify read-only behavior.
 - [x] Every not-yet-created target referenced by plans has an owned creation task. (14-01 Task 1 creates tests/command_code_api_conformance.rs; 14-02 Task 1 creates tests/command_code_conformance.rs, src/adapters/command_code/*, 14-03 Task 1 creates tests/command_code_translate.rs; 14-06 Task 2 creates docs/site surfaces.)
 
 ## Manual-Only Verifications

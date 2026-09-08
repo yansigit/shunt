@@ -38,10 +38,10 @@
     },
     {
       "requirement_id": "CCS-02",
-      "category": "unclassified",
-      "status": "unresolved",
-      "verification": null,
-      "resolution": null,
+      "category": "destination",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Canonical destination validation precedes credential lookup and dispatch header construction. Negative snapshots produce no lookups; real canonical TLS 302 fixture observes one original lookup and zero follow-up connections.",
       "reason": null,
       "probe": "unclassified — review manually"
     },
@@ -56,10 +56,10 @@
     },
     {
       "requirement_id": "CCS-04",
-      "category": "unclassified",
-      "status": "unresolved",
-      "verification": null,
-      "resolution": null,
+      "category": "exact-match",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Pinned ten-row exact model/effort matrix rejects unknown, case-mismatched and reporter-only model IDs; omission and explicit effort are distinguished, and primary/fallback admission share validation. Plan 14-03 executed fixtures cover these boundaries.",
       "reason": null,
       "probe": "unclassified — review manually"
     },
@@ -83,10 +83,10 @@
     },
     {
       "requirement_id": "CCS-06",
-      "category": "unclassified",
-      "status": "unresolved",
-      "verification": null,
-      "resolution": null,
+      "category": "terminal-state",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Checked machine and gateway fixtures reject malformed, duplicate, late, unknown, incomplete and failed terminals; failures remain sticky after closure and streaming never emits message_stop on failure. Plan 14-04 passed boundary and EOF matrices.",
       "reason": null,
       "probe": "unclassified — review manually"
     },
@@ -129,10 +129,10 @@
   ],
   "coverage": {
     "applicable": 14,
-    "resolved": 11,
-    "unresolved": 3,
+    "resolved": 14,
+    "unresolved": 0,
     "byVerification": {
-      "explicit": 11,
+      "explicit": 14,
       "backstop": 0
     }
   }
