@@ -1,6 +1,104 @@
 use serde_json::{json, Value};
 use shunt::model::command_code_response::{CommandCodeMachine, FailureKind};
 
+#[test]
+fn command_code_translate_machine_all_present_usage_is_validated() {
+    let mut m = CommandCodeMachine::new("alias");
+    let result = m.process_record_checked(&json!({"type":"finish","finishReason":"stop",
+        "totalUsage":{"inputTokens":10,"outputTokens":4},"usage":{"outputTokens":-1}}));
+    assert!(result.is_err(), "invalid usage must not hide behind valid totalUsage");
+}
+
+#[test]
+fn command_code_translate_machine_late_record_failure_stays_failed() {
+    let mut m = CommandCodeMachine::new("alias");
+    m.process_record_checked(&finish("finish", "stop")).unwrap();
+    m.final_ndjson_checked().unwrap();
+    assert!(m.process_record_checked(&json!({"type":"text-delta","text":"late"})).is_err());
+    assert!(m.final_ndjson_checked().is_err(), "a rejected late record must not allow another success");
+}
+
+#[test]
+fn command_code_bounds_semantic_bytes_below_at_above() {
+    use shunt::model::command_code_response::MAX_SEMANTIC_BYTES;
+    for size in [
+        MAX_SEMANTIC_BYTES - 1,
+        MAX_SEMANTIC_BYTES,
+        MAX_SEMANTIC_BYTES + 1,
+    ] {
+        let mut m = CommandCodeMachine::new_streaming("alias");
+        let record = json!({"type":"text-delta","text":"x".repeat(size)});
+        assert_eq!(
+            m.process_record_checked(&record).is_ok(),
+            size <= MAX_SEMANTIC_BYTES
+        );
+        assert_eq!(m.retained_content_blocks(), 0);
+    }
+    let mut m = CommandCodeMachine::new("alias");
+    m.process_record_checked(
+        &json!({"type":"text-delta","text":"x".repeat(MAX_SEMANTIC_BYTES - 2)}),
+    )
+    .unwrap();
+    m.process_record_checked(&json!({"type":"reasoning-delta","text":"é"}))
+        .unwrap();
+    assert!(m
+        .process_record_checked(&json!({"type":"text-delta","text":"x"}))
+        .is_err());
+}
+
+#[test]
+fn command_code_bounds_tools_and_arguments_below_at_above() {
+    use shunt::model::command_code_response::{MAX_TOOLS, MAX_TOOL_ARGUMENT_BYTES};
+    for count in [MAX_TOOLS - 1, MAX_TOOLS, MAX_TOOLS + 1] {
+        let mut m = CommandCodeMachine::new("alias");
+        for index in 0..count {
+            let result = m.process_record_checked(&json!({"type":"tool-call","toolCallId":format!("id-{index}"),"toolName":"tool","input":{}}));
+            assert_eq!(result.is_ok(), index < MAX_TOOLS);
+        }
+    }
+    for size in [
+        MAX_TOOL_ARGUMENT_BYTES - 1,
+        MAX_TOOL_ARGUMENT_BYTES,
+        MAX_TOOL_ARGUMENT_BYTES + 1,
+    ] {
+        let mut m = CommandCodeMachine::new("alias");
+        let arguments = format!("{{\"x\":\"{}\"}}", "a".repeat(size - 8));
+        assert_eq!(arguments.len(), size);
+        assert_eq!(
+            m.process_record_checked(
+                &json!({"type":"tool-call","toolCallId":"a","toolName":"tool","args":arguments})
+            )
+            .is_ok(),
+            size <= MAX_TOOL_ARGUMENT_BYTES
+        );
+    }
+}
+
+#[test]
+fn command_code_bounds_empty_block_metadata_is_bounded() {
+    use shunt::model::command_code_response::MAX_CONTENT_BLOCKS;
+    for count in [
+        MAX_CONTENT_BLOCKS - 1,
+        MAX_CONTENT_BLOCKS,
+        MAX_CONTENT_BLOCKS + 1,
+    ] {
+        let mut m = CommandCodeMachine::new("alias");
+        for index in 0..count {
+            let kind = if index % 2 == 0 {
+                "text-delta"
+            } else {
+                "reasoning-delta"
+            };
+            assert_eq!(
+                m.process_record_checked(&json!({"type":kind,"text":""}))
+                    .is_ok(),
+                index < MAX_CONTENT_BLOCKS
+            );
+        }
+        assert!(m.retained_content_blocks() <= MAX_CONTENT_BLOCKS);
+    }
+}
+
 fn finish(kind: &str, reason: &str) -> Value {
     json!({"type":kind,"finishReason":reason,"usage":{"inputTokens":10,"outputTokens":4}})
 }

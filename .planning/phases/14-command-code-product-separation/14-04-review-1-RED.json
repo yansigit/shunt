@@ -1,0 +1,10 @@
+{
+  "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test command_code_translate command_code_translate_machine_ -- --test-threads=1",
+  "exitCode": 101,
+  "targetTest": "response::command_code_translate_machine_all_present_usage_is_validated",
+  "targetFile": "tests/command_code_translate/response.rs",
+  "expected": "every present usage object is validated",
+  "actual": "Compilation succeeded; named assertions failed. 7 passed, 2 failed, 14 filtered; production state unchanged.",
+  "output": "TAP version 13\nnot ok 2 - response::command_code_translate_machine_all_present_usage_is_validated\nnot ok 6 - response::command_code_translate_machine_late_record_failure_stays_failed\n1..9\n# tests 9\n# pass 7\n# fail 2\n",
+  "provenance": "Manual TAP transcription of real Rust libtest review regression failures; not raw TAP."
+}
