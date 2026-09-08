@@ -1,5 +1,11 @@
 use std::{io::ErrorKind, net::SocketAddr, sync::OnceLock};
 
+#[path = "openai_chat_conformance/lifetime.rs"]
+mod lifetime;
+
+#[path = "openai_chat_conformance/matrix.rs"]
+mod matrix;
+
 use reqwest::StatusCode;
 use serde_json::{json, Value};
 use shunt::{

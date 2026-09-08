@@ -10,6 +10,9 @@ use serde_json::{json, Value};
 #[path = "openai_chat_translate/assembly.rs"]
 mod assembly;
 
+#[path = "openai_chat_translate/caps.rs"]
+mod caps;
+
 #[test]
 fn response_root_null_empty_completion_has_text_block() {
     let out = unary_final(&completion_with(
