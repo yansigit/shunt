@@ -1,8 +1,8 @@
 //! Command Code subscription vertical slice, distinct from the Chat API product.
 //! Wire provenance: .planning/phases/14-command-code-product-separation/14-PROTOCOL-EVIDENCE.md.
 pub mod efforts;
-pub mod request;
 mod ndjson;
+pub mod request;
 #[cfg(test)]
 mod router_tests;
 
@@ -33,10 +33,10 @@ impl Adapter for CommandCodeAdapter {
         state: AppState,
         route: Route,
         _uri: &'a Uri,
-        _headers: &'a HeaderMap,
+        headers: &'a HeaderMap,
         body: RequestBody,
     ) -> AdapterFuture<'a> {
-        Box::pin(async move { forward(state, route, body).await })
+        Box::pin(async move { forward(state, route, headers, body).await })
     }
 }
 
@@ -72,10 +72,10 @@ fn client() -> &'static reqwest::Client {
     })
 }
 
-
 async fn forward(
     state: AppState,
     route: Route,
+    headers: &HeaderMap,
     body: RequestBody,
 ) -> Result<(StatusCode, Response<Body>), AdapterError> {
     let provider = state
@@ -83,7 +83,13 @@ async fn forward(
         .provider(&route.provider)
         .ok_or_else(|| invalid("unknown subscription provider"))?;
     validate_provider(provider).map_err(invalid)?;
-    let payload = request::translate_request(body.json(), &route.upstream_model, route.effort.as_deref())?;
+    if body.json().get("stream").and_then(Value::as_bool) == Some(true) {
+        return Err(invalid(
+            "Command Code streaming client support is not implemented in this slice",
+        ));
+    }
+    let payload =
+        request::translate_request(body.json(), &route.upstream_model, route.effort.as_deref())?;
     let credential = state.resolve_route_credential(&route).await?;
     let Credential::CommandCodeOauth { access_token } = credential else {
         return Err(crate::auth::auth_error(
@@ -95,17 +101,22 @@ async fn forward(
     let client = state.http_client.clone();
     #[cfg(not(test))]
     let client = client().clone();
-    let session = uuid::Uuid::new_v4().to_string();
+    let mut ids = headers.get_all("x-claude-code-session-id").iter();
+    let conversation = ids
+        .next()
+        .map(|v| {
+            v.to_str()
+                .map_err(|_| invalid("invalid Command Code conversation identity"))
+        })
+        .transpose()?;
+    if ids.next().is_some() {
+        return Err(invalid("ambiguous Command Code conversation identity"));
+    }
+    let outbound_headers = request::headers(&access_token, conversation)?;
     let send_once = || {
         let request = client
             .post(ENDPOINT)
-            .bearer_auth(&access_token)
-            .header("user-agent", "cli")
-            .header("x-command-code-version", "0.52.1")
-            .header("x-cli-environment", "production")
-            .header("x-taste-learning", "false")
-            .header("x-co-flag", "false")
-            .header("x-session-id", &session)
+            .headers(outbound_headers.clone())
             .json(&payload);
         crate::upstream_timeout::wait(
             state.config.server.timeouts.upstream_ttfb_ms,

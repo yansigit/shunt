@@ -1,7 +1,100 @@
 use serde_json::json;
 use shunt::adapters::command_code::efforts::{resolve, validate, MODEL_EFFORTS};
-use shunt::config::{AuthMode, Config, ProviderKind};
 use shunt::adapters::command_code::request::translate_request;
+use shunt::config::{AuthMode, Config, ProviderKind};
+
+#[test]
+fn command_code_translate_session_scope_and_request_local_fallback() {
+    use shunt::adapters::command_code::request::{session_id, MAX_CONVERSATION_ID_BYTES};
+    let a = session_id("synthetic-token-a", Some("conversation-a")).unwrap();
+    assert_eq!(
+        a,
+        session_id("synthetic-token-a", Some("conversation-a")).unwrap()
+    );
+    assert_ne!(
+        a,
+        session_id("synthetic-token-b", Some("conversation-a")).unwrap()
+    );
+    assert_ne!(
+        a,
+        session_id("synthetic-token-a", Some("conversation-b")).unwrap()
+    );
+    assert_ne!(
+        session_id("ab", Some("c")).unwrap(),
+        session_id("a", Some("bc")).unwrap()
+    );
+    assert_eq!(uuid::Uuid::parse_str(&a).unwrap().get_version_num(), 4);
+    assert!(!a.contains("synthetic") && !a.contains("conversation"));
+    assert_ne!(
+        session_id("synthetic-token-a", None).unwrap(),
+        session_id("synthetic-token-a", None).unwrap()
+    );
+    for invalid in [
+        "".to_string(),
+        "a b".into(),
+        "a\r\nb".into(),
+        "x".repeat(MAX_CONVERSATION_ID_BYTES + 1),
+    ] {
+        assert!(session_id("synthetic", Some(&invalid)).is_err());
+    }
+    assert!(session_id("synthetic", Some(&"x".repeat(MAX_CONVERSATION_ID_BYTES))).is_ok());
+}
+
+#[test]
+fn command_code_translate_headers_exact_and_sensitive() {
+    use shunt::adapters::command_code::request::headers;
+    let h = headers("synthetic-MixedCase-key", Some("conversation-a")).unwrap();
+    assert_eq!(h.len(), 8);
+    for (name, value) in [
+        ("authorization", "Bearer synthetic-MixedCase-key"),
+        ("content-type", "application/json"),
+        ("user-agent", "cli"),
+        ("x-command-code-version", "0.52.1"),
+        ("x-cli-environment", "production"),
+        ("x-taste-learning", "false"),
+        ("x-co-flag", "false"),
+    ] {
+        assert_eq!(h[name], value);
+    }
+    assert!(h["authorization"].is_sensitive());
+    assert!(!format!("{h:?}").contains("synthetic-MixedCase-key"));
+    assert!(h.get("x-project-slug").is_none());
+    assert_eq!(
+        h["x-session-id"],
+        headers("synthetic-MixedCase-key", Some("conversation-a")).unwrap()["x-session-id"]
+    );
+    for token in ["", "bad token", "bad\r\nheader"] {
+        assert!(headers(token, None).is_err());
+    }
+}
+
+#[test]
+fn command_code_translate_envelope_defaults_and_rejections() {
+    let model = "zai-org/GLM-5.3";
+    let base = json!({"model":model, "messages":[{"role":"user","content":"hello"}]});
+    let plain = translate_request(&base, model, None).unwrap();
+    assert_eq!(plain["config"], json!({}));
+    assert_eq!(plain["params"]["max_tokens"], 64000);
+    assert!(plain["params"].get("reasoning_effort").is_none());
+    assert!(plain["params"].get("temperature").is_none());
+    for (field, value) in [
+        ("temperature", json!("0.2")),
+        ("system", json!([{"type":"image"}])),
+        ("max_tokens", json!(0)),
+        ("stream", json!("true")),
+        ("cwd", json!("private")),
+    ] {
+        let mut bad = base.clone();
+        bad[field] = value;
+        assert!(translate_request(&bad, model, None).is_err(), "{field}");
+    }
+    let mut streaming = base;
+    streaming["stream"] = json!(true);
+    assert_eq!(
+        translate_request(&streaming, model, None).unwrap()["params"]["stream"],
+        true
+    );
+}
 
 #[test]
 fn command_code_translate_envelope_system_and_temperature() {
@@ -11,12 +104,15 @@ fn command_code_translate_envelope_system_and_temperature() {
         "messages":[{"role":"user","content":"hello"}]});
     let result = translate_request(&body, "zai-org/GLM-5.3", None);
     assert!(result.is_ok(), "supported envelope must compile");
-    assert_eq!(result.unwrap(), json!({"config":{}, "memory":"", "taste":null, "skills":null,
+    assert_eq!(
+        result.unwrap(),
+        json!({"config":{}, "memory":"", "taste":null, "skills":null,
         "permissionMode":"standard", "mode":"agent", "params":{
             "model":"zai-org/GLM-5.3", "stream":true, "system":"first\n\nsecond",
             "temperature":0.25, "reasoning_effort":"high", "max_tokens":64000,
             "tools":[], "messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
-        }}));
+        }})
+    );
 }
 
 #[test]
