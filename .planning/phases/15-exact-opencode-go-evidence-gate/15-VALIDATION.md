@@ -9,52 +9,47 @@ created: "2026-09-08"
 
 # Phase 15 — Validation Strategy
 
-## Test Infrastructure
+All stateful commands use `node /tmp/shunt-phase12-isolated-run.cjs`, a fresh
+`OPENCODEX_HOME`, and a non-10100 fixture port. Production config mtime/SHA and
+backup inventory are checked before and after. No credentials are inspected.
 
-Rust libtest and existing Axum/loopback fixtures; Cargo.toml owns the test setup.
-No new dependency. All stateful commands run through the isolated wrapper.
+## Per-task verification map
 
-- Quick: `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features opencode_go -- --test-threads=1`
-- Full: `node /tmp/shunt-phase12-isolated-run.cjs env 'RUSTFLAGS=-Dwarnings' cargo test --all-features --workspace`
-- Formatting and Clippy: isolated `cargo fmt --all --check` and `cargo clippy --all-targets --all-features -- -D warnings`.
-- Site: isolated `npm --prefix site run build`.
+| Plan/task | Requirement | Evidence | Status |
+|---|---|---|---|
+| 15-01 Task 1 | OGO-02/04 | crate-local behavioral RED then GREEN; primary/fallback/count-tokens/Codex zero lookup and zero HTTP counters | pending |
+| 15-01 Task 2 | OGO-03/04 | private seam proves no bearer/session header and generic positive controls | pending |
+| 15-02 Task 1 | OGO-01/02 | four complete candidate records, rejected ledger, seven resolved edges plus flagged OGO-02 | pending |
+| 15-03 Task 1 | OGO-01/02/03 | English provider/README/config contract | pending |
+| 15-03 Task 2 | REL-05 | ko/ja/zh-cn README/provider/config parity and links | pending |
+| 15-04 Task 1 | OGO-02/04 | synthetic isolated CLI status + zero outbound + cleanup | pending |
+| 15-04 Task 2 | OGO-02/03/04 | fmt, warm-cache RUSTFLAGS=-Dwarnings Clippy/workspace, site build, fingerprint audit | pending |
 
-## Sampling Rate
+## Exact focused commands
 
-After every task run its exact nonzero-selecting focused checks. After each wave
-run full regression. Before verify-work, all repository quality gates and owned
-smoke must pass. Expected warm feedback under 120s; record actual latency.
+- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib opencode_go_empty_admission -- --test-threads=1`
+- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib opencode_go_router_boundaries -- --test-threads=1`
+- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test opencode_go_evidence -- opencode_go_ledger -- --test-threads=1`
+- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test check_cli -- opencode_go_cli_negative -- --test-threads=1`
 
-## Per-Task Verification Map
+Each command must select at least one test; zero selection is failure. The
+first tracer run records behavioral RED, not compile failure.
 
-Planner must replace these provisional groups with actual plan/task IDs.
+## Release gates
 
-| Group | Requirement | Threat / secure behavior | Test type | Planned evidence | Status |
-|---|---|---|---|---|---|
-| 15-02 Task 1 | OGO-01/02 | No unsupported positive claims | source + deterministic ledger validation | Four exact candidates; all required fields; no captures falsely labelled live | pending |
-| 15-01 Task 1 | OGO-02/04 | Zero credential access and dispatch | real router | Explicit Go selections fail before resolver/network in both output modes | pending |
-| 15-01 Task 2 | OGO-03/04 | No Go credential/session egress | router + config | Primary, fallback, inbound Codex, count-tokens, off-origin and wrong auth | pending |
-| 15-02 Task 2 | OGO-01..04 | Generic providers preserved | workspace + CLI | All locales, generic-provider positive controls, isolated negative CLI smoke | pending |
+Run separately or with raw shell `&&` (never HTML-encoded):
 
-## Wave 0 Requirements
+`node /tmp/shunt-phase12-isolated-run.cjs cargo fmt --all --check`
 
-- [ ] New Go gateway fixtures and ledger checks created before implementation.
-- [ ] Exact plan filters and nonzero selection failure directions established.
-- [ ] No actual credentials needed: injected counters and visibly synthetic values.
+`node /tmp/shunt-phase12-isolated-run.cjs cargo clippy --all-targets --all-features -- -D warnings`
 
-## Manual-Only Verifications
+`node /tmp/shunt-phase12-isolated-run.cjs env RUSTFLAGS=-Dwarnings cargo test --all-features --workspace`
 
-No live success claim in the empty-admission implementation. Promoting any tuple
-requires separate bounded opt-in captured/live evidence and actual matching-wire
-hermetic tests; existing source-only metadata cannot satisfy that future gate.
+`node /tmp/shunt-phase12-isolated-run.cjs npm --prefix site run build`
 
-## Validation Sign-Off
-
-- [ ] All tasks have automated checks and real failure directions.
-- [ ] No three consecutive tasks without automated verification.
-- [ ] All missing test targets covered by Wave 0 creation.
-- [ ] No watch flags or disabled tests.
-- [ ] Actual feedback latency recorded.
-- [ ] Nyquist audit completed before marking validated.
+Rejected evidence must remain classified as failed evidence, unknown,
+wrong-wire, family-inferred, unsupported effort, or wrong terminal. OGO-02
+unclassified remains a flagged manual assumption. No live success claim is
+permitted in the empty-admission implementation.
 
 **Approval:** pending executed checks.

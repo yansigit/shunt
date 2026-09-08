@@ -152,13 +152,23 @@ The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent O
 ## Session Continuity
 
 Last session: 2026-09-08T20:18:14Z
-Stopped at: Phase 15 draft plans written; preflight requires revision and independent check
+Stopped at: Phase 15 revision 1 independently checked; 4 blockers and 4 warnings remain; revision 2 pending
 Resume file: .planning/phases/15-exact-opencode-go-evidence-gate/15-CONTEXT.md
 
 Luna/high planning retry completed and wrote two draft plans. Root preflight
 found decision coverage 5/11 plus invalid Cargo filters and execution-order gaps;
 see 15-PLAN-PREFLIGHT.md. Independent checker dispatch was unavailable afterward.
 Do not mark planned or execute until revised plans pass independent checking.
+
+Latest continuation: Luna/high revised Phase 15 into four draft plans, and
+GLM/high independently checked the revision. Decision coverage is now 11/11;
+remaining issue count decreased from 11 to 8 (4 blockers, 4 warnings). All four
+plans lack autonomous frontmatter; product-marker design and cfg(test) module
+ownership remain incomplete. Full findings and revision-2 input are recorded in
+15-PLAN-REVIEW.md. Revision iteration 2/3 is allowed but was not dispatched:
+spawn/follow-up controls were no longer exposed after the checker returned.
+No implementation or tests ran; no production state was touched. Continue with
+GLM/high planner revision, fresh independent checker, then execution gates.
 
 ## Operator Next Steps
 

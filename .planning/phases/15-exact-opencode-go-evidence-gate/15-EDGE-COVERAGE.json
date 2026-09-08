@@ -1,85 +1,13 @@
 {
   "items": [
-    {
-      "requirement_id": "OGO-01",
-      "category": "adjacency",
-      "status": "unresolved",
-      "verification": null,
-      "resolution": null,
-      "reason": null,
-      "probe": "When two things are exactly equal or just touch, do they merge, collide, or separate?"
-    },
-    {
-      "requirement_id": "OGO-01",
-      "category": "empty",
-      "status": "unresolved",
-      "verification": null,
-      "resolution": null,
-      "reason": null,
-      "probe": "What is the result for empty, single-element, or null input?"
-    },
-    {
-      "requirement_id": "OGO-01",
-      "category": "ordering",
-      "status": "unresolved",
-      "verification": null,
-      "resolution": null,
-      "reason": null,
-      "probe": "When elements compare equal, is output order specified and stable?"
-    },
-    {
-      "requirement_id": "OGO-02",
-      "category": "unclassified",
-      "status": "unresolved",
-      "verification": null,
-      "resolution": null,
-      "reason": null,
-      "probe": "unclassified — review manually"
-    },
-    {
-      "requirement_id": "OGO-03",
-      "category": "adjacency",
-      "status": "unresolved",
-      "verification": null,
-      "resolution": null,
-      "reason": null,
-      "probe": "When two things are exactly equal or just touch, do they merge, collide, or separate?"
-    },
-    {
-      "requirement_id": "OGO-03",
-      "category": "empty",
-      "status": "unresolved",
-      "verification": null,
-      "resolution": null,
-      "reason": null,
-      "probe": "What is the result for empty, single-element, or null input?"
-    },
-    {
-      "requirement_id": "OGO-03",
-      "category": "ordering",
-      "status": "unresolved",
-      "verification": null,
-      "resolution": null,
-      "reason": null,
-      "probe": "When elements compare equal, is output order specified and stable?"
-    },
-    {
-      "requirement_id": "OGO-04",
-      "category": "concurrency",
-      "status": "unresolved",
-      "verification": null,
-      "resolution": null,
-      "reason": null,
-      "probe": "If interrupted or run in parallel, what is guaranteed?"
-    }
+    {"requirement_id":"OGO-01","category":"adjacency","status":"resolved","verification":"tests/opencode_go_evidence.rs::opencode_go_ledger","resolution":"Adjacent candidate records remain separate exact tuples; no family merge.","reason":"Exact model, destination, wire, effort and capability keys are compared independently.","probe":"When two things are exactly equal or just touch, do they merge, collide, or separate?"},
+    {"requirement_id":"OGO-01","category":"empty","status":"resolved","verification":"tests/opencode_go_evidence.rs::opencode_go_ledger","resolution":"Empty admitted set is valid and asserted.","reason":"No candidate has both required hermetic and credential-safe evidence.","probe":"What is the result for empty, single-element, or null input?"},
+    {"requirement_id":"OGO-01","category":"ordering","status":"resolved","verification":"tests/opencode_go_evidence.rs::opencode_go_ledger","resolution":"Ledger order is stable by the four named candidate IDs.","reason":"Deterministic serialization prevents candidate drift.","probe":"When elements compare equal, is output order specified and stable?"},
+    {"requirement_id":"OGO-02","category":"unclassified","status":"unresolved","verification":null,"resolution":null,"reason":"Manual evidence review remains a flagged assumption; no silent resolution.","probe":"unclassified — review manually"},
+    {"requirement_id":"OGO-03","category":"adjacency","status":"resolved","verification":"src/proxy/opencode_go_tests.rs::opencode_go_router_boundaries","resolution":"No session header is emitted for the empty set; future promotion is exact-tuple scoped.","reason":"Private seam asserts absence before credential/client access.","probe":"When two things are exactly equal or just touch, do they merge, collide, or separate?"},
+    {"requirement_id":"OGO-03","category":"empty","status":"resolved","verification":"src/proxy/opencode_go_tests.rs::opencode_go_router_boundaries","resolution":"Zero admitted tuples produce neither session nor credential headers.","reason":"Admission fails before header construction.","probe":"What is the result for empty, single-element, or null input?"},
+    {"requirement_id":"OGO-03","category":"ordering","status":"resolved","verification":"src/proxy/opencode_go_tests.rs::opencode_go_router_boundaries","resolution":"Future session stability is a promotion criterion; current empty path has no header to order.","reason":"No speculative producer is implemented.","probe":"When elements compare equal, is output order specified and stable?"},
+    {"requirement_id":"OGO-04","category":"concurrency","status":"resolved","verification":"src/proxy/opencode_go_tests.rs::opencode_go_empty_admission","resolution":"All boundaries reject before resolver/client under primary and fallback concurrency paths.","reason":"Shared gate is evaluated before dispatch and cancellation ownership.","probe":"If interrupted or run in parallel, what is guaranteed?"}
   ],
-  "coverage": {
-    "applicable": 8,
-    "resolved": 0,
-    "unresolved": 8,
-    "byVerification": {
-      "explicit": 0,
-      "backstop": 0
-    }
-  }
+  "coverage":{"applicable":8,"resolved":7,"unresolved":1,"byVerification":{"explicit":7,"backstop":0}}
 }
