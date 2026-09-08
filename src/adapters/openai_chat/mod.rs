@@ -141,9 +141,7 @@ async fn collect_unary_response(
     let mut body = Vec::new();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|error| {
-            local_openai_chat_error(format!(
-                "failed to read OpenAI Chat response body: {error}"
-            ))
+            local_openai_chat_error(format!("failed to read OpenAI Chat response body: {error}"))
         })?;
         let new_len = body
             .len()
@@ -234,9 +232,8 @@ async fn forward(
             crate::upstream_timeout::SendError::Transport(ref transport_error)
                 if transport_error.is_connect() =>
             {
-                let message = format!(
-                    "network error calling OpenAI Chat backend: {transport_error}"
-                );
+                let message =
+                    format!("network error calling OpenAI Chat backend: {transport_error}");
                 AdapterError {
                     message,
                     response: Box::new(StatusCode::BAD_GATEWAY.into_response()),
@@ -267,8 +264,7 @@ async fn forward(
         let parsed = serde_json::from_slice::<Value>(&full_body).map_err(|error| {
             local_openai_chat_error(format!("invalid JSON from OpenAI Chat backend: {error}"))
         })?;
-        let mut machine =
-            OpenAiChatSseMachine::new_for_upstream(&route.model);
+        let mut machine = OpenAiChatSseMachine::new_for_upstream(&route.model);
         let events = machine
             .process_chunk_checked(&parsed)
             .map_err(|error| local_openai_chat_error(error.to_string()))?;
@@ -288,7 +284,10 @@ async fn forward(
             .final_json_checked()
             .map_err(|error| local_openai_chat_error(error.to_string()))?;
         let mut headers = HeaderMap::new();
-        headers.insert("content-type", axum::http::HeaderValue::from_static("application/json"));
+        headers.insert(
+            "content-type",
+            axum::http::HeaderValue::from_static("application/json"),
+        );
         let response_res = (StatusCode::OK, headers, axum::Json(final_json)).into_response();
         Ok((StatusCode::OK, response_res))
     }
@@ -307,7 +306,14 @@ async fn stream_sse_response(
     let machine = OpenAiChatSseMachine::new_streaming_for_upstream(&route.model);
 
     let sse_stream = futures_util::stream::unfold(
-        (byte_stream, decoder, machine, false, None::<Bytes>, None::<Bytes>),
+        (
+            byte_stream,
+            decoder,
+            machine,
+            false,
+            None::<Bytes>,
+            None::<Bytes>,
+        ),
         |(mut bytes, mut decoder, mut machine, finished, mut pending, mut deferred_terminal)| {
             async move {
                 if finished {
@@ -423,8 +429,7 @@ async fn stream_sse_response(
         },
     );
 
-    let keepalive_interval =
-        Duration::from_secs(state.config.server.sse_keepalive_seconds);
+    let keepalive_interval = Duration::from_secs(state.config.server.sse_keepalive_seconds);
     let response_res = Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "text/event-stream; charset=utf-8")
