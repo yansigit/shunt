@@ -59,9 +59,10 @@ fn chat_client() -> &'static reqwest::Client {
     CLIENT.get_or_init(|| build_chat_client(Duration::from_secs(120)))
 }
 
-fn build_chat_client(_read_idle: Duration) -> reqwest::Client {
+fn build_chat_client(read_idle: Duration) -> reqwest::Client {
     reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
+        .read_timeout(read_idle)
         .build()
         .expect("OpenAI Chat HTTP client must build")
 }
