@@ -8,6 +8,20 @@ fn integer(value: Option<&Value>) -> Result<u64, SemanticError> {
     })
 }
 
+pub(super) fn record_usage(record: &Value) -> Result<Value, SemanticError> {
+    // totalUsage has source-defined precedence, but an invalid second semantic
+    // field must not be hidden behind it. Per-step and total values may differ.
+    let total = record
+        .get("totalUsage")
+        .map(|v| usage(Some(v)))
+        .transpose()?;
+    let step = record.get("usage").map(|v| usage(Some(v))).transpose()?;
+    match total.or(step) {
+        Some(value) => Ok(value),
+        None => usage(None),
+    }
+}
+
 pub(super) fn usage(value: Option<&Value>) -> Result<Value, SemanticError> {
     let empty = json!({});
     let value = value.unwrap_or(&empty);

@@ -136,16 +136,21 @@ async fn turn_mode(wire: &str, status: u16, streaming: bool) -> (reqwest::Status
                 .any(|kind| wire.starts_with(&format!("{{\"type\":\"{kind}\"")))
         {
             let split = wire.find('\n').unwrap() + 1;
-            socket.write_all(wire[..split].as_bytes()).await.unwrap();
+            socket.write_all(&wire.as_bytes()[..split]).await.unwrap();
             socket.flush().await.unwrap();
             tokio::time::timeout(Duration::from_secs(3), wait_for_delta)
                 .await
                 .expect("client must receive delta before upstream finish")
                 .unwrap();
-            socket.write_all(wire[split..].as_bytes()).await.unwrap();
+            socket.write_all(&wire.as_bytes()[split..]).await.unwrap();
         } else {
             socket.write_all(wire.as_bytes()).await.unwrap();
         }
+        // Finish flushing TLS records and send close_notify. Dropping a buffered
+        // TLS writer can truncate the final large record. Rejection cases may
+        // already have closed their reader; client assertions still prove each
+        // accepted body is complete and each rejected body fails explicitly.
+        let _ = socket.shutdown().await;
     }));
     let (router, _, _) = crate::server::build_router_with_test_client(config, client).unwrap();
     let gateway = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -170,9 +175,10 @@ async fn turn_mode(wire: &str, status: u16, streaming: bool) -> (reqwest::Status
     let mut observed_delta = Some(observed_delta);
     while let Some(chunk) = bytes.next().await {
         body.extend_from_slice(&chunk.unwrap());
-        if body
-            .windows(b"content_block_delta".len())
-            .any(|s| s == b"content_block_delta")
+        if observed_delta.is_some()
+            && body
+                .windows(b"content_block_delta".len())
+                .any(|s| s == b"content_block_delta")
         {
             if let Some(signal) = observed_delta.take() {
                 let _ = signal.send(());
@@ -205,6 +211,42 @@ async fn command_code_tracer_response_incremental_and_unary() {
     assert!(stream.find("first").unwrap() < stream.find("second").unwrap());
     let (_, unary) = turn(wire, 200).await;
     assert_eq!(unary["content"][0]["text"], "firstsecond");
+}
+
+#[tokio::test]
+async fn command_code_bounds_wire_record_limit() {
+    let _lock = crate::config::CONFIG_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let _key = EnvGuard::set(Some("synthetic-subscription-token"));
+    let record = "{\"type\":\"text-delta\",\"text\":\"x\"}";
+    let cap = super::ndjson::MAX_RECORD_BYTES;
+    for size in [cap - 1, cap, cap + 1] {
+        let wire = format!(
+            "{}{record}\n{{\"type\":\"finish\",\"finishReason\":\"stop\"}}\n",
+            " ".repeat(size - record.len())
+        );
+        let (status, _) = turn(&wire, 200).await;
+        assert_eq!(
+            status,
+            if size <= cap {
+                reqwest::StatusCode::OK
+            } else {
+                reqwest::StatusCode::BAD_GATEWAY
+            }
+        );
+        let (_, stream) = turn_mode(&wire, 200, true).await;
+        assert_eq!(
+            stream.matches("event: message_stop\n").count(),
+            usize::from(size <= cap),
+            "record bytes {size}: {stream}"
+        );
+        assert_eq!(
+            stream.matches("event: error\n").count(),
+            usize::from(size > cap),
+            "record bytes {size}: {stream}"
+        );
+    }
 }
 
 #[tokio::test]

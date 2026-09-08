@@ -2,6 +2,8 @@
 use serde_json::Value;
 
 pub(crate) const MAX_RECORD_BYTES: usize = 1024 * 1024;
+// JSON bytes exclude LF and an optional framing CR; residual may retain that CR.
+pub(crate) const MAX_RESIDUAL_BYTES: usize = MAX_RECORD_BYTES + 1;
 pub(crate) const MAX_WIRE_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Default)]
@@ -47,7 +49,10 @@ impl Decoder {
                 records.push(value);
                 self.residual.clear();
             } else {
-                if self.residual.len() >= MAX_RECORD_BYTES {
+                if self.residual.len() >= MAX_RESIDUAL_BYTES {
+                    return Err("NDJSON residual budget exceeded");
+                }
+                if self.residual.len() == MAX_RECORD_BYTES && byte != b'\r' {
                     return Err("NDJSON record budget exceeded");
                 }
                 self.residual.push(byte);
@@ -67,12 +72,61 @@ impl Decoder {
 mod tests {
     use super::*;
     #[test]
+    fn command_code_bounds_residual_and_wire_below_at_above() {
+        for size in [
+            MAX_RESIDUAL_BYTES - 1,
+            MAX_RESIDUAL_BYTES,
+            MAX_RESIDUAL_BYTES + 1,
+        ] {
+            let mut bytes = vec![b' '; MAX_RECORD_BYTES - 2];
+            bytes.extend_from_slice(b"{}");
+            bytes.resize(size, b'\r');
+            let mut decoder = Decoder::default();
+            assert_eq!(decoder.feed(&bytes).is_ok(), size <= MAX_RESIDUAL_BYTES);
+            if size <= MAX_RESIDUAL_BYTES {
+                assert_eq!(decoder.feed(b"\n").unwrap().len(), 1);
+                assert!(decoder.finish().is_ok());
+            }
+        }
+        for size in [MAX_WIRE_BYTES - 1, MAX_WIRE_BYTES, MAX_WIRE_BYTES + 1] {
+            let mut decoder = Decoder::default();
+            let mut block = vec![b' '; MAX_RECORD_BYTES - 2];
+            block.extend_from_slice(b"{}\n");
+            let mut sent = 0;
+            while size - sent > block.len() {
+                decoder.feed(&block).unwrap();
+                sent += block.len();
+            }
+            let mut tail = vec![b' '; size - sent - 3];
+            tail.extend_from_slice(b"{}\n");
+            assert_eq!(decoder.feed(&tail).is_ok(), size <= MAX_WIRE_BYTES);
+        }
+    }
+
+    #[test]
+    fn command_code_bounds_utf8_split_at_every_offset() {
+        let bytes = "{\"type\":\"text-delta\",\"text\":\"é💡\"}\r\n".as_bytes();
+        for split in 0..=bytes.len() {
+            let mut d = Decoder::default();
+            let mut records = d.feed(&bytes[..split]).unwrap();
+            records.extend(d.feed(&bytes[split..]).unwrap());
+            assert_eq!(records[0]["text"], "é💡");
+            assert!(d.finish().is_ok());
+        }
+        let mut d = Decoder::default();
+        assert!(d.feed(b"{\"text\":\"\xff\"}\n").is_err());
+        assert!(d.finish().is_err());
+    }
+    #[test]
     fn command_code_bounds_record_crlf_at_cap() {
         let mut bytes = vec![b' '; MAX_RECORD_BYTES - 2];
         bytes.extend_from_slice(b"{}\r\n");
         let mut decoder = Decoder::default();
         let result = decoder.feed(&bytes);
-        assert!(result.is_ok(), "at-cap JSON record must accept CRLF framing");
+        assert!(
+            result.is_ok(),
+            "at-cap JSON record must accept CRLF framing"
+        );
         assert_eq!(result.unwrap(), vec![serde_json::json!({})]);
         assert!(decoder.finish().is_ok());
     }

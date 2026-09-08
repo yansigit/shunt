@@ -189,6 +189,7 @@ impl CommandCodeMachine {
         record: &Value,
     ) -> Result<Vec<SseEvent>, SemanticError> {
         if self.failed || self.closed {
+            self.failed = true;
             return Err(SemanticError::protocol(
                 "subscription machine already terminated",
             ));
@@ -282,8 +283,7 @@ impl CommandCodeMachine {
             "finish-step" | "finish" => {
                 let reason = validation::reason(record)?;
                 let mapped = validation::stop(reason)?;
-                let usage =
-                    validation::usage(record.get("totalUsage").or_else(|| record.get("usage")))?;
+                let usage = validation::record_usage(record)?;
                 if let Some((first, prior)) = &self.terminal {
                     if first != "finish-step"
                         || kind != "finish"
@@ -309,11 +309,11 @@ impl CommandCodeMachine {
                 Ok(Vec::new())
             }
             "error" => {
-                let usage = record
-                    .get("usage")
-                    .or_else(|| record.get("totalUsage"))
-                    .map(|v| validation::usage(Some(v)))
-                    .transpose()?;
+                let usage = if record.get("usage").is_some() || record.get("totalUsage").is_some() {
+                    Some(validation::record_usage(record)?)
+                } else {
+                    None
+                };
                 Err(SemanticError {
                     kind: FailureKind::Provider,
                     message: "Command Code subscription backend reported an error",

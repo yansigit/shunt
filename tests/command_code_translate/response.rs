@@ -6,7 +6,10 @@ fn command_code_translate_machine_all_present_usage_is_validated() {
     let mut m = CommandCodeMachine::new("alias");
     let result = m.process_record_checked(&json!({"type":"finish","finishReason":"stop",
         "totalUsage":{"inputTokens":10,"outputTokens":4},"usage":{"outputTokens":-1}}));
-    assert!(result.is_err(), "invalid usage must not hide behind valid totalUsage");
+    assert!(
+        result.is_err(),
+        "invalid usage must not hide behind valid totalUsage"
+    );
 }
 
 #[test]
@@ -14,8 +17,13 @@ fn command_code_translate_machine_late_record_failure_stays_failed() {
     let mut m = CommandCodeMachine::new("alias");
     m.process_record_checked(&finish("finish", "stop")).unwrap();
     m.final_ndjson_checked().unwrap();
-    assert!(m.process_record_checked(&json!({"type":"text-delta","text":"late"})).is_err());
-    assert!(m.final_ndjson_checked().is_err(), "a rejected late record must not allow another success");
+    assert!(m
+        .process_record_checked(&json!({"type":"text-delta","text":"late"}))
+        .is_err());
+    assert!(
+        m.final_ndjson_checked().is_err(),
+        "a rejected late record must not allow another success"
+    );
 }
 
 #[test]
