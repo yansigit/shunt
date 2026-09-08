@@ -25,7 +25,7 @@ management, audio, or realtime endpoints.
 | Embedded provider errors (payload error, finish_reason error, 200-error body) | INTEGRATE | CHAT-05 provider-error surfacing in the Anthropic error shape (13-03). |
 | Models-style discovery listing for the kind | INTEGRATE | D-01 wiring requires the kind to appear in existing capability/discovery listing; no new discovery endpoint. |
 | Multimodal image input (image_url / data URLs) | INTEGRATE | CHAT-03/CHAT-09 image scenario (13-02, 13-05). |
-| Long-context / byte-budget enforcement | INTEGRATE | CHAT-09 named bounds incl. E-12 triples (13-04/13-05). |
+| Long-context / byte-budget enforcement | INTEGRATE | CHAT-09/boundary named bounds incl. byte-cap triples (13-04/13-05). |
 | Cancellation before headers and mid-stream (both modes) | INTEGRATE | CHAT-09 ownership proofs (13-05). |
 | Redirect following | OPT-OUT | D-03: credential-bearing POST; redirect(Policy::none()) + refusal fixture (13-04). |
 | Post-send retry/fallback | OPT-OUT | D-09: ConnectOnly only; ambiguous post-send replay forbidden (13-01/13-04). |

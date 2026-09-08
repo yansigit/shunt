@@ -51,13 +51,13 @@ port) from worktree /Users/user/.codex/worktrees/0466/shunt.
 | 13-04-T2 | 04/4 | CHAT-06, CHAT-09 | T-13-04 | Boundary probes (plus/minus one) | \`cargo test --all-features --test openai_chat_translate bound -- --test-threads=1\` | tests/openai_chat_translate.rs (Wave 0) | pending |
 | 13-04-T3 | 04/4 | CHAT-08 | T-13-04 | Wire classification fixtures (redirect, timeout) | \`cargo test --all-features --test openai_chat_conformance openai_chat_auth -- --test-threads=1\` | tests/openai_chat_conformance.rs (Wave 0); extends tests/failover.rs, tests/retry.rs (existing) | pending |
 | 13-05-T1 | 05/5 | CHAT-09 | T-13-05 | Full 12-scenario conformance matrix | \`cargo test --all-features --test openai_chat_conformance -- --test-threads=1\` | tests/openai_chat_conformance.rs (Wave 0) | pending |
-| 13-05-T2 | 05/5 | CHAT-09 | T-13-05 | E-12 cap tri-probes | \`cargo test --all-features --test openai_chat_translate cap -- --test-threads=1\` | tests/openai_chat_translate.rs (Wave 0) | pending |
+| 13-05-T2 | 05/5 | CHAT-09 | T-13-05 | CHAT-09/boundary cap tri-probes | \`cargo test --all-features --test openai_chat_translate cap -- --test-threads=1\` | tests/openai_chat_translate.rs (Wave 0) | pending |
 | 13-05-T3 | 05/5 | CHAT-09 | T-13-05 | Docs surfaces + full chained gates | chained: fmt --check; clippy -D warnings; env RUSTFLAGS=-D warnings cargo test --all-features --workspace; npm --prefix site run build (each step wrapped) | README x4, docs/, site EN+ko/ja/zh-cn (created this task); wiki/ untouched | pending |
 
 Threat references T-13-01 through T-13-05 map to the threat_model blocks of plans
 13-01 through 13-05 respectively (ASVS level 1, block high).
 
-Unclassified edge rows: E-01 (CHAT-01) and E-07 (CHAT-07) are authored in plans
+Unclassified edge rows: CHAT-01/unclassified and CHAT-07/unclassified are authored in plans
 13-01 and 13-05 as flagged behavioral assumptions — request-local credential/model
 isolation and cancellation-by-ownership — asserted by fixtures, never silently
 dropped. The remaining 12 EDGE-COVERAGE rows are explicit resolutions covered by
