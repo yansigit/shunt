@@ -70,8 +70,8 @@ requirement maps to exactly one roadmap phase after roadmap creation.
 
 - [ ] **CCS-01**: The `command-code` subscription product reads a bearer from an approved environment source or existing local CLI credential file without creating, refreshing, migrating, or writing credential files.
 - [ ] **CCS-02**: Subscription bearers can be attached only to the canonical HTTPS Command Code origin and `/alpha/generate` transport, with off-origin redirects rejected.
-- [ ] **CCS-03**: Subscription requests carry the proven proprietary envelope and identity headers, an exact supported model/effort combination, and a stable opaque conversation session.
-- [ ] **CCS-04**: Subscription history preserves adjacent tool-call/result units, represents missing results explicitly, retains orphan results as user-visible context, and preserves supported tool-result images.
+- [x] **CCS-03**: Subscription requests carry the proven proprietary envelope and identity headers, an exact supported model/effort combination, and a stable opaque conversation session.
+- [x] **CCS-04**: Subscription history preserves adjacent tool-call/result units, represents missing results explicitly, retains orphan results as user-visible context, and preserves supported tool-result images.
 - [ ] **CCS-05**: Subscription NDJSON relays text, reasoning, tool calls, usage, provider errors, and finish events in order for streaming clients and through bounded accumulation for non-streaming clients.
 - [ ] **CCS-06**: Subscription NDJSON rejects malformed or oversized records, junk-only responses, incomplete tools, provider error finishes, duplicate terminals, and EOF without a trustworthy terminal.
 - [ ] **CCS-07**: Subscription retry or failover is bounded to failures before output or replay-unsafe tool activity and preserves the selected credential and session across a safe replay.
@@ -166,8 +166,8 @@ Each committed requirement has exactly one owning phase.
 | CCK-03 | Phase 14 | Pending |
 | CCS-01 | Phase 14 | Pending |
 | CCS-02 | Phase 14 | Pending |
-| CCS-03 | Phase 14 | Pending |
-| CCS-04 | Phase 14 | Pending |
+| CCS-03 | Phase 14 | Complete |
+| CCS-04 | Phase 14 | Complete |
 | CCS-05 | Phase 14 | Pending |
 | CCS-06 | Phase 14 | Pending |
 | CCS-07 | Phase 14 | Pending |
