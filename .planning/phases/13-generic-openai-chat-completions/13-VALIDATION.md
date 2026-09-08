@@ -1,9 +1,9 @@
 ---
 phase: "13"
 slug: generic-openai-chat-completions
-status: executed
-nyquist_compliant: false
-wave_0_complete: false
+status: validated
+nyquist_compliant: true
+wave_0_complete: true
 created: "2026-09-08"
 ---
 
@@ -88,3 +88,25 @@ Synthetic tests do not establish subscription/provider live availability.
 - [ ] Compliance set true only after executed evidence.
 
 Approval: pending independent plan check and execution.
+
+## Validation Audit 2026-09-08
+
+Root audited State A against all five plans and summaries, the actual Rust and
+Node fixtures, and the final executed results. All 13 task rows and all nine
+CHAT requirements are COVERED: tests exist, target the stated behavior, and run
+green. The explicit 12-scenario mapping is in 13-05-EVIDENCE.md. No additional
+test generation was needed after the plan-05 closure work. The historical
+independent-plan-check fields above are not claimed as an independent audit.
+
+| Metric | Count |
+|---|---|
+| Coverage gaps remaining | 0 |
+| Requirements covered | 9 |
+| Tasks covered | 13 |
+| Escalated | 0 |
+
+Execution sign-off: format, Clippy, 2,875 workspace tests, CLI/curl smoke,
+documentation consistency and 165-page site build passed. Every filtered
+spot-check selected a nonzero case. No Chat tests were skipped. Computer UI
+remains blocked supplemental evidence, not a substituted pass or a gap in this
+phase's hermetic protocol contract. Live smokes remain Phase 16 scope.
