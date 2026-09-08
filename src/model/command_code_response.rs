@@ -24,7 +24,7 @@ pub struct SemanticError {
     pub usage: Option<Value>,
 }
 impl SemanticError {
-    fn protocol(message: &'static str) -> Self {
+    pub(crate) fn protocol(message: &'static str) -> Self {
         Self {
             kind: FailureKind::Protocol,
             message,

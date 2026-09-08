@@ -130,12 +130,18 @@ async fn turn_mode(wire: &str, status: u16, streaming: bool) -> (reqwest::Status
             ""
         };
         socket.write_all(format!("HTTP/1.1 {status} Fixture\r\ncontent-type: application/x-ndjson\r\ncontent-length: {}\r\n{location}connection: close\r\n\r\n",wire.len()).as_bytes()).await.unwrap();
-        if streaming && wire.starts_with("{\"type\":\"text-delta\"") {
+        if streaming
+            && ["text-delta", "reasoning-delta", "tool-call"]
+                .iter()
+                .any(|kind| wire.starts_with(&format!("{{\"type\":\"{kind}\"")))
+        {
             let split = wire.find('\n').unwrap() + 1;
             socket.write_all(wire[..split].as_bytes()).await.unwrap();
             socket.flush().await.unwrap();
-            tokio::time::timeout(Duration::from_secs(3), wait_for_delta).await
-                .expect("client must receive delta before upstream finish").unwrap();
+            tokio::time::timeout(Duration::from_secs(3), wait_for_delta)
+                .await
+                .expect("client must receive delta before upstream finish")
+                .unwrap();
             socket.write_all(wire[split..].as_bytes()).await.unwrap();
         } else {
             socket.write_all(wire.as_bytes()).await.unwrap();
@@ -151,15 +157,26 @@ async fn turn_mode(wire: &str, status: u16, streaming: bool) -> (reqwest::Status
         .timeout(Duration::from_secs(5)).json(&json!({"model":"zai-org/GLM-5.3","stream":streaming,"max_tokens":64,"messages":[{"role":"user","content":"fixture"}]}))
         .send().await.unwrap();
     let status = response.status();
-    if streaming { assert_eq!(status, reqwest::StatusCode::OK, "streaming subscription turn must be admitted"); }
+    if streaming {
+        assert_eq!(
+            status,
+            reqwest::StatusCode::OK,
+            "streaming subscription turn must be admitted"
+        );
+    }
     use futures_util::StreamExt;
     let mut bytes = response.bytes_stream();
     let mut body = Vec::new();
     let mut observed_delta = Some(observed_delta);
     while let Some(chunk) = bytes.next().await {
         body.extend_from_slice(&chunk.unwrap());
-        if body.windows(b"content_block_delta".len()).any(|s| s == b"content_block_delta") {
-            if let Some(signal) = observed_delta.take() { let _ = signal.send(()); }
+        if body
+            .windows(b"content_block_delta".len())
+            .any(|s| s == b"content_block_delta")
+        {
+            if let Some(signal) = observed_delta.take() {
+                let _ = signal.send(());
+            }
         }
     }
     let body = String::from_utf8(body).unwrap();
@@ -176,7 +193,9 @@ async fn turn_mode(wire: &str, status: u16, streaming: bool) -> (reqwest::Status
 
 #[tokio::test]
 async fn command_code_tracer_response_incremental_and_unary() {
-    let _lock = crate::config::CONFIG_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _lock = crate::config::CONFIG_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let _key = EnvGuard::set(Some("synthetic-subscription-token"));
     let wire = "{\"type\":\"text-delta\",\"text\":\"first\"}\n{\"type\":\"text-delta\",\"text\":\"second\"}\n{\"type\":\"finish\",\"finishReason\":\"stop\"}\n";
     let (_, stream) = turn_mode(wire, 200, true).await;
@@ -186,6 +205,54 @@ async fn command_code_tracer_response_incremental_and_unary() {
     assert!(stream.find("first").unwrap() < stream.find("second").unwrap());
     let (_, unary) = turn(wire, 200).await;
     assert_eq!(unary["content"][0]["text"], "firstsecond");
+}
+
+#[tokio::test]
+async fn command_code_tracer_response_errors_never_emit_success() {
+    let _lock = crate::config::CONFIG_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let _key = EnvGuard::set(Some("synthetic-subscription-token"));
+    for tail in [
+        "", "junk\n", "null\n", "{\"type\":\"unknown\"}\n",
+        "{\"type\":\"error\",\"error\":\"synthetic-private-detail\"}\n",
+        "{\"type\":\"finish\",\"finishReason\":\"error\",\"usage\":{\"inputTokens\":2,\"outputTokens\":3}}\n",
+        "{\"type\":\"finish\",\"finishReason\":\"stop\"}",
+        "{\"type\":\"finish\",\"finishReason\":\"stop\"}\n{\"type\":\"finish\",\"finishReason\":\"stop\"}\n",
+    ] {
+        let wire = format!("{{\"type\":\"text-delta\",\"text\":\"prefix\"}}\n{tail}");
+        let (_, stream) = turn_mode(&wire, 200, true).await;
+        assert_eq!(stream.matches("event: error\n").count(), 1, "{tail}");
+        assert_eq!(stream.matches("event: message_stop\n").count(), 0, "{tail}");
+        assert!(!stream.contains("synthetic-private-detail"));
+        let (status, error) = turn(&wire, 200).await;
+        assert_eq!(status, reqwest::StatusCode::BAD_GATEWAY);
+        assert_eq!(error["type"], "error");
+        if tail.contains("inputTokens") {
+            assert_eq!(error["usage"]["output_tokens"], 3);
+            assert!(stream.contains("\"output_tokens\":3"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn command_code_tracer_response_reasoning_tool_first_and_usage() {
+    let _lock = crate::config::CONFIG_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let _key = EnvGuard::set(Some("synthetic-subscription-token"));
+    let wire = "{\"type\":\"tool-call\",\"toolCallId\":\"a\",\"toolName\":\"lookup\",\"input\":{}}\n{\"type\":\"reasoning-delta\",\"text\":\"why\"}\n{\"type\":\"finish\",\"rawFinishReason\":\"tool_use\",\"totalUsage\":{\"inputTokens\":10,\"outputTokens\":4,\"inputTokenDetails\":{\"cacheReadTokens\":6,\"cacheWriteTokens\":2}}}\n";
+    let (_, stream) = turn_mode(wire, 200, true).await;
+    assert!(
+        stream.find("event: message_start\n").unwrap()
+            < stream.find("event: content_block_start\n").unwrap()
+    );
+    assert_eq!(stream.matches("event: message_stop\n").count(), 1);
+    assert!(stream.contains("thinking_delta"));
+    let (_, unary) = turn(wire, 200).await;
+    assert_eq!(unary["content"][0]["id"], "a");
+    assert_eq!(unary["usage"]["input_tokens"], 2);
+    assert_eq!(unary["stop_reason"], "tool_use");
 }
 
 #[tokio::test]

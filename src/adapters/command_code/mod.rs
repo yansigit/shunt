@@ -3,6 +3,7 @@
 pub mod efforts;
 mod history;
 mod ndjson;
+mod relay;
 pub mod request;
 #[cfg(test)]
 mod router_tests;
@@ -22,7 +23,6 @@ use axum::{
     http::{HeaderMap, StatusCode, Uri},
     response::{IntoResponse, Response},
 };
-use futures_util::StreamExt;
 use serde_json::{json, Value};
 
 pub(crate) const COMMAND_CODE_RETRY_SAFETY: crate::retry::RetrySafety =
@@ -84,11 +84,7 @@ async fn forward(
         .provider(&route.provider)
         .ok_or_else(|| invalid("unknown subscription provider"))?;
     validate_provider(provider).map_err(invalid)?;
-    if body.json().get("stream").and_then(Value::as_bool) == Some(true) {
-        return Err(invalid(
-            "Command Code streaming client support is not implemented in this slice",
-        ));
-    }
+    let streaming = body.json().get("stream").and_then(Value::as_bool) == Some(true);
     let payload =
         request::translate_request(body.json(), &route.upstream_model, route.effort.as_deref())?;
     let credential = state.resolve_route_credential(&route).await?;
@@ -157,18 +153,13 @@ async fn forward(
             "Command Code subscription backend rejected the request",
         ));
     }
-    let mut stream = response.bytes_stream();
-    let mut decoder = ndjson::Decoder::default();
-    let mut machine = crate::model::command_code_response::CommandCodeMachine::new(&route.model);
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|_| protocol("subscription body transport failed"))?;
-        for record in decoder.feed(&chunk).map_err(protocol)? {
-            machine.process_record_checked(&record).map_err(semantic)?;
-        }
-    }
-    decoder.finish().map_err(protocol)?;
-    let result = machine.final_ndjson_checked().map_err(semantic)?;
-    Ok((StatusCode::OK, axum::Json(result).into_response()))
+    relay::respond(
+        response,
+        route.model,
+        streaming,
+        std::time::Duration::from_secs(state.config.server.sse_keepalive_seconds),
+    )
+    .await
 }
 
 fn semantic(error: crate::model::command_code_response::SemanticError) -> AdapterError {
