@@ -187,6 +187,32 @@ mod tests {
     }
 
     #[test]
+    fn openai_chat_fallback_matches_completed_request_whitelist() {
+        for request in [
+            json!({"output_config":{"format":{"type":"json_schema"}}}),
+            json!({"output_config":{"effort":"high"}}),
+        ] {
+            let mut routes = vec![
+                route("primary", AdapterKind::Anthropic),
+                route("chat", AdapterKind::OpenAiChat),
+                route("compatible", AdapterKind::Anthropic),
+            ];
+            filter_fallbacks(&mut routes, &request, "alias");
+            assert_eq!(routes.iter().map(|r| r.provider.as_str()).collect::<Vec<_>>(), vec!["primary", "compatible"]);
+        }
+        let supported = Requirements {
+            tools: true,
+            base64_images: true,
+            url_images: true,
+            ..Requirements::default()
+        };
+        assert!(supported.incompatibilities(&AdapterKind::OpenAiChat).is_empty());
+        let mut primary = vec![route("chat", AdapterKind::OpenAiChat), route("compatible", AdapterKind::Anthropic)];
+        filter_fallbacks(&mut primary, &json!({"output_config":{"effort":"high"}}), "alias");
+        assert_eq!(primary[0].provider, "chat");
+    }
+
+    #[test]
     fn eligibility_matrix_matches_existing_adapter_fidelity() {
         let all = Requirements {
             tools: true,

@@ -1,0 +1,11 @@
+{
+  "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib openai_chat_fallback_matches_completed_request_whitelist -- --test-threads=1",
+  "exitCode": 101,
+  "targetTest": "proxy::capability::tests::openai_chat_fallback_matches_completed_request_whitelist",
+  "failingTest": "proxy::capability::tests::openai_chat_fallback_matches_completed_request_whitelist",
+  "expected": "Incompatible Chat fallback is excluded while primary and compatible targets remain",
+  "actual": "[\"primary\",\"chat\",\"compatible\"] retained",
+  "output": "TAP version 13\nnot ok 1 - proxy::capability::tests::openai_chat_fallback_matches_completed_request_whitelist\n1..1\n# tests 1\n# pass 0\n# fail 1\n",
+  "nativeOutput": "    Finished `test` profile [unoptimized + debuginfo] target(s) in 45.04s\n     Running unittests src/lib.rs (target/debug/deps/shunt-601e1e525719bbed)\n\nrunning 1 test\ntest proxy::capability::tests::openai_chat_fallback_matches_completed_request_whitelist ... FAILED\n\nfailures:\n\n---- proxy::capability::tests::openai_chat_fallback_matches_completed_request_whitelist stdout ----\n\nthread 'proxy::capability::tests::openai_chat_fallback_matches_completed_request_whitelist' (24324395) panicked at src/proxy/capability.rs:201:13:\nassertion `left == right` failed\n  left: [\"primary\", \"chat\", \"compatible\"]\n right: [\"primary\", \"compatible\"]\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n\nfailures:\n    proxy::capability::tests::openai_chat_fallback_matches_completed_request_whitelist\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2201 filtered out; finished in 0.00s\n\nerror: test failed, to rerun pass `--lib`\nProduction OpenCodex config mtime/SHA and backup inventory unchanged.\n",
+  "provenance": "TAP adapter of captured native Cargo libtest output, actual failing assertion preserved"
+}
