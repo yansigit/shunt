@@ -2,22 +2,22 @@
 gsd_state_version: "1.0"
 milestone: v2
 milestone_name: Provider Compatibility
-current_phase: 12
-current_phase_name: Cursor Evidence-Backed Hardening
-current_plan: 8
-status: verifying
-stopped_at: Phase 12 all eight plans verified; phase goal verification next
-last_updated: "2026-09-07T22:45:12.678Z"
+current_phase: 13
+current_phase_name: Generic OpenAI Chat Completions
+current_plan: Not started
+status: planning
+stopped_at: Phase 12 complete, ready to plan Phase 13
+last_updated: "2026-09-08T01:23:02.106Z"
 last_activity: 2026-09-07
-last_activity_desc: All eight Cursor plans verified; phase goal verification next
-state_head: db2397e48b04ee1e5d0d9732fd8e2d4b08459f7d
+last_activity_desc: Phase 12 complete, transitioned to Phase 13
+state_head: 9814a8f505961b4f167c6cff8794167f4851f36a
 progress:
   total_phases: 8
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 26
   completed_plans: 26
-  percent: 38
-total_plans_in_phase: 8
+  percent: 50
+total_plans_in_phase: 0
 ---
 
 # Project State
@@ -27,21 +27,21 @@ total_plans_in_phase: 8
 See: `.planning/PROJECT.md` (updated 2026-09-07 after Phase 11)
 
 **Core value:** Protocol-faithful, streaming-safe client behavior in a bounded, lean gateway.
-**Current focus:** Phase 12 — Cursor Evidence-Backed Hardening
+**Current focus:** Phase 13 — Generic OpenAI Chat Completions
 
 ## Current Position
 
-Phase: 12 (Cursor Evidence-Backed Hardening) — EXECUTING
-Current Plan: 8
-Total Plans in Phase: 8
-Status: 8 of 8 plans summarized; phase verification next
-Last activity: 2026-09-07 — Plan 08 verified: workspace tests (library 2,192 passed), clippy, cargo check, translated site build and rebuilt binary smoke passed.
+Phase: 13 — Generic OpenAI Chat Completions
+Current Plan: Not started
+Total Plans in Phase: 0
+Status: Ready to plan
+Last activity: 2026-09-07 — Phase 12 complete, transitioned to Phase 13
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 43
+- Total plans completed: 51
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -60,6 +60,7 @@ Last activity: 2026-09-07 — Plan 08 verified: workspace tests (library 2,192 p
 | 9 | 4 | - | - |
 | 10 | 7 | - | - |
 | 11 | 7 | - | - |
+| 12 | 8 | - | - |
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
@@ -120,7 +121,7 @@ None yet.
 
 ### Blockers/Concerns
 
-The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent OpenCodex supplies schema-derived Run output-token deltas and context checkpoints; 83 hermetic tests passed in isolated state. After CLI installation, an isolated read-only Composer 2.5 probe succeeded with streamed events and result usage, including cache fields. CLI output is not raw Connect evidence: do not infer protobuf field mappings or claim Shunt live verification. Original CLI settings/credential files were backed up and remained unchanged. Plans 01–02 are verified. Plan 03 output tool identity is fixed, and the user approved the bounded request-local KV architecture recorded in 12-03-CHECKPOINT.md; implementation is in progress.
+The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent OpenCodex supplies schema-derived Run output-token deltas and context checkpoints; 83 hermetic tests passed in isolated state. After CLI installation, an isolated read-only Composer 2.5 probe succeeded with streamed events and result usage, including cache fields. CLI output is not raw Connect evidence: do not infer protobuf field mappings or claim Shunt live verification. Original CLI settings/credential files were backed up and remained unchanged. All eight Cursor plans and phase verification are complete. The approved bounded request-local KV architecture is implemented and tested; live gateway availability remains the Phase 16 opt-in gate.
 
 ## Deferred Items
 
@@ -132,7 +133,7 @@ The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent O
 ## Session Continuity
 
 Last session: 2026-09-07T19:45:00Z
-Stopped at: Phase 12 all eight plans verified; phase verification next
+Stopped at: Phase 12 complete, ready to plan Phase 13
 Resume file: None
 
 ## Operator Next Steps

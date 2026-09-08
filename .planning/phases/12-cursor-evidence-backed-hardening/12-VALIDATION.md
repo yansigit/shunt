@@ -1,9 +1,9 @@
 ---
 phase: "12"
 slug: "cursor-evidence-backed-hardening"
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: passed
+nyquist_compliant: true
+wave_0_complete: true
 created: "2026-09-07"
 ---
 
@@ -56,13 +56,21 @@ Live Cursor availability remains unexecuted. An isolated Cursor CLI (Composer 2.
 
 ## Validation Sign-Off
 
-- [ ] Exact per-task map completed
-- [ ] Every task has automated verification with nonzero selected tests and observable failure direction
-- [ ] No three consecutive tasks without verification
-- [ ] All focused filters are single, exact invocations selecting tests
-- [ ] Overlapping files serialized by dependency edges only
-- [ ] Real-router parity, cancellation/router-cancel, no-failover, docs-parity owners assigned
-- [ ] Format, Clippy, workspace and relevant docs gates pass
-- [ ] Nyquist compliance marked true only after actual execution
+- [x] Exact per-task map completed
+- [x] Every task has automated verification with nonzero selected tests and observable failure direction
+- [x] No three consecutive tasks without verification
+- [x] All focused filters are single, exact invocations selecting tests
+- [x] Overlapping files serialized by dependency edges only
+- [x] Real-router parity, cancellation/router-cancel, no-failover, docs-parity owners assigned
+- [x] Format, Clippy, workspace and relevant docs gates pass
+- [x] Nyquist compliance marked true only after actual execution
 
-**Approval:** pending execution evidence
+**Approval:** execution verified. All 18 focused filter invocations passed with
+nonzero test selection on the final source, including ordered JSON/SSE output.
+The full workspace suite passed (2,193 active library tests, two existing ignored
+benchmarks, all integration suites). The final additional HTTP error regression
+and cap/deadline test passed separately. Formatting, all-target all-feature clippy
+with warnings denied, 161-page four-locale site build and five rebuilt-binary smoke
+checks passed. Every command inherited a fresh isolated OPENCODEX_HOME;
+production config mtime/SHA and backup/invalid-file inventory remained unchanged.
+Live Shunt Cursor availability is not asserted; it remains the Phase 16 opt-in gate.

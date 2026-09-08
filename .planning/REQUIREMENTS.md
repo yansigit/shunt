@@ -39,14 +39,14 @@ requirement maps to exactly one roadmap phase after roadmap creation.
 
 ### Cursor
 
-- [ ] **CUR-01**: Cursor retains the currently proven AgentService Run destination until a captured or live protocol profile proves a replacement destination safe.
-- [ ] **CUR-02**: Cursor model, client, endpoint, and capability facts are exact and request-local so evidence from one model cannot alter another request.
-- [ ] **CUR-03**: Cursor preserves stable continuation identity and paired tool-call/result history across ordinary, compacted, recovered, and multi-round turns.
-- [ ] **CUR-04**: Cursor transmits executable and freeform tool schemas, tool guidance, image inputs, and tool arguments only in forms proven by fixtures or live evidence, otherwise returning an explicit unsupported error.
-- [ ] **CUR-05**: Cursor emits incremental reasoning, text, tool, usage, and exactly one terminal outcome, while cancellation releases upstream work and held resources.
-- [ ] **CUR-06**: Cursor treats malformed Connect/protobuf frames, decompression violations, provider errors, and premature EOF as errors rather than clean completion.
-- [ ] **CUR-07**: Cursor distinguishes local request/header construction failures from upstream transport failures and retries or fails over only before output or replay-unsafe tool activity.
-- [ ] **CUR-08**: Cursor does not add a semantic repetition or no-progress cancellation heuristic without a separately proven transport signal.
+- [x] **CUR-01**: Cursor retains the currently proven AgentService Run destination until a captured or live protocol profile proves a replacement destination safe.
+- [x] **CUR-02**: Cursor model, client, endpoint, and capability facts are exact and request-local so evidence from one model cannot alter another request.
+- [x] **CUR-03**: Cursor preserves stable continuation identity and paired tool-call/result history across ordinary, compacted, recovered, and multi-round turns.
+- [x] **CUR-04**: Cursor transmits executable and freeform tool schemas, tool guidance, image inputs, and tool arguments only in forms proven by fixtures or live evidence, otherwise returning an explicit unsupported error.
+- [x] **CUR-05**: Cursor emits incremental reasoning, text, tool, usage, and exactly one terminal outcome, while cancellation releases upstream work and held resources.
+- [x] **CUR-06**: Cursor treats malformed Connect/protobuf frames, decompression violations, provider errors, and premature EOF as errors rather than clean completion.
+- [x] **CUR-07**: Cursor distinguishes local request/header construction failures from upstream transport failures and retries or fails over only before output or replay-unsafe tool activity.
+- [x] **CUR-08**: Cursor does not add a semantic repetition or no-progress cancellation heuristic without a separately proven transport signal.
 
 ### Generic OpenAI Chat Completions
 
@@ -144,14 +144,14 @@ Each committed requirement has exactly one owning phase.
 | ANT-06 | Phase 11 | Complete |
 | ANT-07 | Phase 11 | Complete |
 | ANT-08 | Phase 11 | Complete |
-| CUR-01 | Phase 12 | Pending |
-| CUR-02 | Phase 12 | Pending |
-| CUR-03 | Phase 12 | Pending |
-| CUR-04 | Phase 12 | Pending |
-| CUR-05 | Phase 12 | Pending |
-| CUR-06 | Phase 12 | Pending |
-| CUR-07 | Phase 12 | Pending |
-| CUR-08 | Phase 12 | Pending |
+| CUR-01 | Phase 12 | Complete |
+| CUR-02 | Phase 12 | Complete |
+| CUR-03 | Phase 12 | Complete |
+| CUR-04 | Phase 12 | Complete |
+| CUR-05 | Phase 12 | Complete |
+| CUR-06 | Phase 12 | Complete |
+| CUR-07 | Phase 12 | Complete |
+| CUR-08 | Phase 12 | Complete |
 | CHAT-01 | Phase 13 | Pending |
 | CHAT-02 | Phase 13 | Pending |
 | CHAT-03 | Phase 13 | Pending |
