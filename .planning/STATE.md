@@ -6,7 +6,7 @@ current_phase: 15
 current_phase_name: Exact OpenCode Go Evidence Gate
 current_plan: Not started
 status: planning
-stopped_at: Phase 15 research and pattern mapping complete; independent planning next
+stopped_at: Phase 15 Omen/high planner stalled; Luna/high retry awaits dispatch controls
 last_updated: "2026-09-08T20:18:14.128Z"
 last_activity: 2026-09-08
 last_activity_desc: Phase 14 complete, transitioned to Phase 15
@@ -130,6 +130,16 @@ then completed pattern mapping and wrote 15-PATTERNS.md. Independent planning,
 checking and implementation remain pending; no model dispatch is Shunt wire proof.
 Source-only evidence admits zero tuples; strict EOF policy is already locked.
 
+Latest user preference: `opencode-go/omen-alpha`, `opencode-go/glm-5.3-flash`,
+and `gpt-5.6-luna` are all candidates, always with explicit high thinking effort.
+Omen/high planner attempt was accepted but stayed running for approximately ten
+minutes without a result or plan artifact, then was interrupted. No provider
+error was reported. Spawn/follow-up controls were no longer exposed afterward,
+so the Luna/high retry was not launched. Planning/checking remain incomplete.
+Preflight passed context-drift and UI checks; general codebase drift remains
+advisory. Eight deterministic edge-probe rows are in 15-EDGE-COVERAGE.json;
+OGO-02 remains unclassified and must be surfaced, never silently dismissed.
+
 The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent OpenCodex supplies schema-derived Run output-token deltas and context checkpoints; 83 hermetic tests passed in isolated state. After CLI installation, an isolated read-only Composer 2.5 probe succeeded with streamed events and result usage, including cache fields. CLI output is not raw Connect evidence: do not infer protobuf field mappings or claim Shunt live verification. Original CLI settings/credential files were backed up and remained unchanged. All eight Cursor plans and phase verification are complete. The approved bounded request-local KV architecture is implemented and tested; live gateway availability remains the Phase 16 opt-in gate.
 
 ## Deferred Items
@@ -142,7 +152,7 @@ The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent O
 ## Session Continuity
 
 Last session: 2026-09-08T20:18:14Z
-Stopped at: Phase 15 research and pattern mapping complete; independent planning next
+Stopped at: Phase 15 Omen/high planner stalled; Luna/high retry awaits dispatch controls
 Resume file: .planning/phases/15-exact-opencode-go-evidence-gate/15-CONTEXT.md
 
 ## Operator Next Steps
