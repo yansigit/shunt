@@ -105,6 +105,16 @@ async fn openai_chat_assembly_interleave_at_limit_multibyte() {
     ])
     .await;
     assert!(!events.iter().any(|(name, _)| name == "error"));
+    // CR-01: tool-only deltas remain buffered until the finish chunk. The
+    // resulting Anthropic stream must begin with message_start, not a block.
+    assert_eq!(events.first().unwrap().0, "message_start");
+    assert_eq!(
+        events
+            .iter()
+            .filter(|(name, _)| name == "message_start")
+            .count(),
+        1
+    );
     let starts: Vec<_> = events
         .iter()
         .filter(|(name, data)| {

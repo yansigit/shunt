@@ -109,9 +109,14 @@ impl Requirements {
                     reasons.push("reasoning-effort");
                 }
             }
-            // No capability restrictions for the Chat slice yet; 13-02+
-            // tighten this as the request whitelist expands.
-            AdapterKind::OpenAiChat => {}
+            AdapterKind::OpenAiChat => {
+                if self.structured_output {
+                    reasons.push("structured-output");
+                }
+                if self.explicit_effort {
+                    reasons.push("reasoning-effort");
+                }
+            }
         }
         reasons
     }
@@ -198,7 +203,13 @@ mod tests {
                 route("compatible", AdapterKind::Anthropic),
             ];
             filter_fallbacks(&mut routes, &request, "alias");
-            assert_eq!(routes.iter().map(|r| r.provider.as_str()).collect::<Vec<_>>(), vec!["primary", "compatible"]);
+            assert_eq!(
+                routes
+                    .iter()
+                    .map(|r| r.provider.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["primary", "compatible"]
+            );
         }
         let supported = Requirements {
             tools: true,
@@ -206,9 +217,18 @@ mod tests {
             url_images: true,
             ..Requirements::default()
         };
-        assert!(supported.incompatibilities(&AdapterKind::OpenAiChat).is_empty());
-        let mut primary = vec![route("chat", AdapterKind::OpenAiChat), route("compatible", AdapterKind::Anthropic)];
-        filter_fallbacks(&mut primary, &json!({"output_config":{"effort":"high"}}), "alias");
+        assert!(supported
+            .incompatibilities(&AdapterKind::OpenAiChat)
+            .is_empty());
+        let mut primary = vec![
+            route("chat", AdapterKind::OpenAiChat),
+            route("compatible", AdapterKind::Anthropic),
+        ];
+        filter_fallbacks(
+            &mut primary,
+            &json!({"output_config":{"effort":"high"}}),
+            "alias",
+        );
         assert_eq!(primary[0].provider, "chat");
     }
 
