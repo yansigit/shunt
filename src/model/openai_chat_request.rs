@@ -13,6 +13,10 @@ use serde_json::{json, Map, Value};
 
 use crate::adapters::AdapterError;
 
+/// Maximum UTF-8 bytes accepted for any single translated text payload.
+/// Enforced with checked arithmetic before dispatch; CHAT-03 boundary row.
+pub const MAX_TEXT_BLOCK_BYTES: usize = 8 * 1024 * 1024;
+
 pub(crate) fn bad_request(message: impl Into<String>) -> AdapterError {
     let message = message.into();
     AdapterError {
