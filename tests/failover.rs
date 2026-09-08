@@ -29,6 +29,29 @@ use wiremock::{
 
 const CLIENT_MODEL: &str = "failover-model";
 
+#[tokio::test]
+async fn openai_chat_auth_postsend_status_never_advances_fallback() {
+    assert!(can_bind_loopback());
+    let key_env = format!("SHUNT_CHAT_FAILOVER_{}", rand::random::<u64>());
+    std::env::set_var(&key_env, "fixture-chat-key");
+    for status in [429,502] {
+        let primary = MockServer::start().await;
+        let fallback = MockServer::start().await;
+        Mock::given(method("POST")).respond_with(ResponseTemplate::new(status).set_body_json(json!({"error":{"message":"failed"}}))).mount(&primary).await;
+        Mock::given(method("POST")).respond_with(ResponseTemplate::new(200).set_body_json(json!({"choices":[{"message":{"content":"fallback"},"finish_reason":"stop"}]}))).mount(&fallback).await;
+        let config = chain_config(vec![
+            upstream("chat-primary",primary.uri(),ProviderKind::OpenAiChat,UpstreamAuth::Map(AuthMap::ApiKey{env:Some(key_env.clone()),header:ApiKeyHeader::Bearer})),
+            upstream("chat-fallback",fallback.uri(),ProviderKind::OpenAiChat,UpstreamAuth::Map(AuthMap::ApiKey{env:Some(key_env.clone()),header:ApiKeyHeader::Bearer})),
+        ], &[("chat-primary","gpt-5"),("chat-fallback","gpt-5")]);
+        let gateway = start_gateway(config).await;
+        let response = post(&gateway).await;
+        assert_eq!(response.status().as_u16(),status);
+        assert_eq!(primary.received_requests().await.unwrap().len(),1);
+        assert_eq!(fallback.received_requests().await.unwrap().len(),0);
+    }
+    std::env::remove_var(key_env);
+}
+
 struct HeaderAbsent(&'static str);
 
 impl Match for HeaderAbsent {

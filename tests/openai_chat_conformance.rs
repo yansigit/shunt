@@ -12,6 +12,64 @@ use wiremock::{
     Mock, MockServer, ResponseTemplate,
 };
 
+#[tokio::test]
+async fn openai_chat_auth_redirect_refusal() {
+    assert!(can_bind_loopback());
+    let _lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY","fixture-openai-key");
+    let target = MockServer::start().await;
+    let backend = MockServer::start().await;
+    Mock::given(method("POST")).respond_with(ResponseTemplate::new(307).insert_header("location",format!("{}/chat/completions",target.uri()))).mount(&backend).await;
+    let gateway = start_gateway(single_provider_config(&backend.uri())).await;
+    let response = reqwest::Client::new().post(format!("{}/v1/messages",gateway.base_url)).body(anthropic_request("claude-via-chat")).send().await.unwrap();
+    assert_eq!(response.status(),StatusCode::BAD_GATEWAY);
+    assert_eq!(response.json::<Value>().await.unwrap()["type"],"error");
+    assert_eq!(backend.received_requests().await.unwrap().len(),1);
+    assert!(target.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn openai_chat_auth_postsend_timeout_single_attempt() {
+    assert!(can_bind_loopback());
+    let _lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY","fixture-openai-key");
+    let backend = MockServer::start().await;
+    Mock::given(method("POST")).respond_with(ResponseTemplate::new(200).set_delay(std::time::Duration::from_millis(200)).set_body_json(chat_completion_upstream())).mount(&backend).await;
+    let mut config = single_provider_config(&backend.uri());
+    config.server.timeouts.upstream_ttfb_ms = 40;
+    config.providers.get_mut("openai-chat-test").unwrap().retry.max_retries = 3;
+    let gateway = start_gateway(config).await;
+    let response = reqwest::Client::new().post(format!("{}/v1/messages",gateway.base_url)).body(anthropic_request("claude-via-chat")).send().await.unwrap();
+    assert_eq!(response.status(),StatusCode::GATEWAY_TIMEOUT);
+    assert_eq!(response.json::<Value>().await.unwrap()["type"],"error");
+    assert_eq!(backend.received_requests().await.unwrap().len(),1);
+}
+
+#[tokio::test]
+async fn openai_chat_assembly_interleave_at_limit_multibyte() {
+    assert!(can_bind_loopback());
+    let _lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY","fixture-openai-key");
+    let args = format!("{{\"v\":\"{}é\"}}","x".repeat(1024*1024-10));
+    assert_eq!(args.len(),1024*1024);
+    let events = openai_chat_terminal_stream_events(vec![
+        chat_delta(json!({"tool_calls":[{"index":9}]}),None),
+        chat_delta(json!({"tool_calls":[{"index":2,"id":"b","function":{"name":"g","arguments":"{"}}]}),None),
+        chat_delta(json!({"tool_calls":[{"index":9,"id":"a","function":{"name":"f","arguments":args}}]}),None),
+        chat_delta(json!({"tool_calls":[{"index":2,"function":{"arguments":"}"}}]}),None),
+        chat_delta(json!({}),Some("tool_calls")),"[DONE]".into(),
+    ]).await;
+    assert!(!events.iter().any(|(name,_)| name == "error"));
+    let starts: Vec<_> = events.iter().filter(|(name,data)| name == "content_block_start" && data["content_block"]["type"] == "tool_use").collect();
+    assert_eq!(starts.len(),2);
+    assert_eq!(starts[0].1["content_block"]["id"],"a");
+    assert_eq!(starts[1].1["content_block"]["id"],"b");
+    let deltas: Vec<_> = events.iter().filter(|(_,data)| data["delta"]["type"] == "input_json_delta").collect();
+    let first: Value = serde_json::from_str(deltas[0].1["delta"]["partial_json"].as_str().unwrap()).unwrap();
+    assert_eq!(first["v"].as_str().unwrap().len(),1024*1024-8);
+    assert_eq!(events.iter().filter(|(name,_)| name == "message_stop").count(),1);
+}
+
 struct EnvVarGuard {
     key: &'static str,
     previous: Option<std::ffi::OsString>,
