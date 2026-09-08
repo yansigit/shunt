@@ -20,14 +20,49 @@ pub const MAX_TEXT_BLOCK_BYTES: usize = 8 * 1024 * 1024;
 
 /// Build the Chat Completions endpoint URL from the configured API root.
 ///
-/// 13-01 behavior preserved verbatim so Task 3 tests can fail on the missing
-/// grammar (ambiguity rejection, no-double-append) rather than on compilation;
-/// the full grammar lands in the GREEN step of plan 13-02 Task 3.
+/// This is the single shared grammar for config boot validation and request
+/// construction (CHAT-02/D-02): exactly one /chat/completions path, a
+/// trailing-slash normalization, no doubling for roots that already end in
+/// /chat/completions, and hard rejection of query strings, fragments, and
+/// deterministic: repeated or concurrent builds yield identical bytes.
+/// userinfo. Deterministic: repeated builds yield identical bytes.
 pub fn chat_completions_endpoint(base_url: &str) -> Result<String, String> {
-    Ok(format!(
-        "{}/chat/completions",
-        base_url.trim_end_matches('/')
-    ))
+    let url = reqwest::Url::parse(base_url)
+        .map_err(|error| format!("invalid base URL {base_url:?}: {error}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(format!("base URL {base_url:?} must use http or https"));
+    }
+    if url.query().is_some() {
+        return Err(format!(
+            "base URL {base_url:?} must not contain a query string"
+        ));
+    }
+    if url.fragment().is_some() {
+        return Err(format!("base URL {base_url:?} must not contain a fragment"));
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(format!(
+            "base URL {base_url:?} must not contain userinfo (user:pass@)"
+        ));
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| format!("base URL {base_url:?} must include a host"))?;
+    let authority = match url.port() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_string(),
+    };
+    let path = url.path().trim_end_matches('/');
+    let base = if path.is_empty() {
+        format!("{}://{authority}", url.scheme())
+    } else {
+        format!("{}://{authority}{path}", url.scheme())
+    };
+    if base.ends_with("/chat/completions") {
+        Ok(base)
+    } else {
+        Ok(format!("{base}/chat/completions"))
+    }
 }
 
 pub(crate) fn bad_request(message: impl Into<String>) -> AdapterError {

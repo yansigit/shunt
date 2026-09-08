@@ -3366,6 +3366,17 @@ impl Config {
             }
         }
         for (name, provider) in &self.providers {
+            // CHAT-02/D-02: enforce the shared Chat Completions endpoint
+            // grammar at boot, before any credential lookup, so an ambiguous
+            // base URL (query, fragment, userinfo, non-http scheme) can never
+            // reach the request path.
+            if provider.kind == ProviderKind::OpenAiChat {
+                crate::model::openai_chat_request::chat_completions_endpoint(&provider.base_url)
+                    .map_err(|message| ConfigError::ProviderBaseUrl {
+                        provider: name.clone(),
+                        message,
+                    })?;
+            }
             let url = self.provider_base_url(name, &provider.base_url)?;
             if provider.auth == AuthMode::ApiKey
                 && provider

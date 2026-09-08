@@ -302,8 +302,8 @@ fn endpoint_single_append() {
 
 #[test]
 fn endpoint_trailing_slash_normalizes() {
-    let endpoint =
-        chat_completions_endpoint("https://host.example/v1/").expect("trailing slash must normalize");
+    let endpoint = chat_completions_endpoint("https://host.example/v1/")
+        .expect("trailing slash must normalize");
     assert_eq!(endpoint, "https://host.example/v1/chat/completions");
 }
 
@@ -319,11 +319,13 @@ fn endpoint_determinism() {
     let root = "https://host.example/api/v1";
     let first = chat_completions_endpoint(root).unwrap();
     let second = chat_completions_endpoint(root).unwrap();
-    assert_eq!(first.as_bytes(), second.as_bytes(), "repeated builds must be byte-identical");
+    assert_eq!(
+        first.as_bytes(),
+        second.as_bytes(),
+        "repeated builds must be byte-identical"
+    );
     let handles: Vec<_> = (0..4)
-        .map(|_| {
-            std::thread::spawn(move || chat_completions_endpoint(root).unwrap())
-        })
+        .map(|_| std::thread::spawn(move || chat_completions_endpoint(root).unwrap()))
         .collect();
     for handle in handles {
         assert_eq!(handle.join().unwrap().as_bytes(), first.as_bytes());

@@ -197,11 +197,11 @@ async fn forward(
     let is_streaming = json_body.get("stream").and_then(Value::as_bool) == Some(true);
     let payload = translate_request(json_body, &route.upstream_model, is_streaming)?;
 
-    // One-time path append on the trimmed base URL. The full base-URL
-    // ambiguity grammar (trailing path, versioned prefixes) is 13-02 Task 3;
-    // this shape must be replaceable without architectural change.
-    let base_url = provider.base_url.trim_end_matches('/');
-    let endpoint = format!("{base_url}/chat/completions");
+    // Shared grammar with config boot validation (CHAT-02/D-02): exactly one
+    // /chat/completions path, trailing-slash normalization, no doubling for
+    // roots that already end in /chat/completions.
+    let endpoint = crate::model::openai_chat_request::chat_completions_endpoint(&provider.base_url)
+        .map_err(crate::model::openai_chat_request::bad_request)?;
 
     let policy = provider.retry.policy();
     let ttfb_ms = state.config.server.timeouts.upstream_ttfb_ms;
