@@ -603,3 +603,284 @@ async fn openai_chat_tracer_streaming_duplicate_terminal() {
         "no success terminal may survive a duplicate [DONE]: {events:?}"
     );
 }
+
+/// Sends an inbound body and asserts it is rejected with a typed Anthropic
+/// 400 before any upstream dispatch.
+async fn reject_with_zero_upstream(
+    gateway: &Gateway,
+    backend: &MockServer,
+    body: impl Into<reqwest::Body>,
+) -> Value {
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .body(body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let error: Value = response.json().await.unwrap();
+    assert_eq!(
+        error["error"]["type"], "invalid_request_error",
+        "gateway-owned rejections must use the Anthropic error shape: {error}"
+    );
+    let requests = backend.received_requests().await.unwrap();
+    assert!(
+        requests.is_empty(),
+        "rejections must never reach the upstream: {requests:?}"
+    );
+    error
+}
+
+#[tokio::test]
+async fn openai_chat_translate_wire_exact_body() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+
+    let backend = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(chat_completion_upstream()))
+        .expect(1)
+        .mount(&backend)
+        .await;
+
+    let gateway = start_gateway(single_provider_config(&backend.uri())).await;
+    let inbound = json!({
+        "model": "claude-via-chat",
+        "system": "be brief",
+        "max_tokens": 64,
+        "temperature": 0.5,
+        "top_p": 0.9,
+        "stop_sequences": ["halt"],
+        "stream": false,
+        "messages": [{"role": "user", "content": "fixture"}]
+    });
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .body(inbound.to_string())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let requests = backend.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    let upstream_body: Value =
+        serde_json::from_slice(&requests[0].body).expect("upstream body is JSON");
+    assert_eq!(
+        upstream_body,
+        json!({
+            "model": "gpt-5",
+            "stream": false,
+            "max_tokens": 64,
+            "temperature": 0.5,
+            "top_p": 0.9,
+            "stop": ["halt"],
+            "messages": [
+                {"role": "system", "content": "be brief"},
+                {"role": "user", "content": "fixture"}
+            ]
+        }),
+        "the wire body must be exactly the whitelist mapping: {upstream_body}"
+    );
+    for forbidden in [
+        "system",
+        "metadata",
+        "top_k",
+        "stop_sequences",
+        "tool_choice",
+    ] {
+        assert!(
+            upstream_body.get(forbidden).is_none(),
+            "forbidden key {forbidden} must never reach the wire: {upstream_body}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn openai_chat_translate_wire_rejects_unknown_field() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let backend = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(chat_completion_upstream()))
+        .mount(&backend)
+        .await;
+    let gateway = start_gateway(single_provider_config(&backend.uri())).await;
+
+    let mut inbound: Value = serde_json::from_str(&anthropic_request("claude-via-chat")).unwrap();
+    inbound["top_k"] = json!(3);
+    let error = reject_with_zero_upstream(&gateway, &backend, inbound.to_string()).await;
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("top_k"),
+        "{error}"
+    );
+}
+
+#[tokio::test]
+async fn openai_chat_translate_wire_rejects_metadata() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let backend = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(chat_completion_upstream()))
+        .mount(&backend)
+        .await;
+    let gateway = start_gateway(single_provider_config(&backend.uri())).await;
+
+    let mut inbound: Value = serde_json::from_str(&anthropic_request("claude-via-chat")).unwrap();
+    inbound["metadata"] = json!({"user_id": "u1"});
+    let error = reject_with_zero_upstream(&gateway, &backend, inbound.to_string()).await;
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("metadata"),
+        "{error}"
+    );
+}
+
+#[tokio::test]
+async fn openai_chat_translate_wire_rejects_unknown_block() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let backend = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(chat_completion_upstream()))
+        .mount(&backend)
+        .await;
+    let gateway = start_gateway(single_provider_config(&backend.uri())).await;
+
+    let inbound = json!({
+        "model": "claude-via-chat",
+        "max_tokens": 64,
+        "messages": [{
+            "role": "user",
+            "content": [{"type": "document", "source": {"type": "url", "url": "https://x/f.pdf"}}]
+        }]
+    });
+    let error = reject_with_zero_upstream(&gateway, &backend, inbound.to_string()).await;
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("document"),
+        "{error}"
+    );
+}
+
+#[tokio::test]
+async fn openai_chat_translate_wire_rejects_signed_thinking() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let backend = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(chat_completion_upstream()))
+        .mount(&backend)
+        .await;
+    let gateway = start_gateway(single_provider_config(&backend.uri())).await;
+
+    let inbound = json!({
+        "model": "claude-via-chat",
+        "max_tokens": 64,
+        "messages": [{
+            "role": "assistant",
+            "content": [
+                {"type": "thinking", "thinking": "hmm", "signature": "sig"},
+                {"type": "text", "text": "answer"}
+            ]
+        }]
+    });
+    let error = reject_with_zero_upstream(&gateway, &backend, inbound.to_string()).await;
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("signature"),
+        "{error}"
+    );
+}
+
+#[tokio::test]
+async fn openai_chat_translate_wire_rejects_redacted_thinking() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let backend = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(chat_completion_upstream()))
+        .mount(&backend)
+        .await;
+    let gateway = start_gateway(single_provider_config(&backend.uri())).await;
+
+    let inbound = json!({
+        "model": "claude-via-chat",
+        "max_tokens": 64,
+        "messages": [{
+            "role": "assistant",
+            "content": [
+                {"type": "redacted_thinking", "data": "opaque"},
+                {"type": "text", "text": "answer"}
+            ]
+        }]
+    });
+    let error = reject_with_zero_upstream(&gateway, &backend, inbound.to_string()).await;
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("redacted"),
+        "{error}"
+    );
+}
+
+#[tokio::test]
+async fn openai_chat_translate_wire_rejects_malformed_utf8() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let backend = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(chat_completion_upstream()))
+        .mount(&backend)
+        .await;
+    let gateway = start_gateway(single_provider_config(&backend.uri())).await;
+
+    // Raw bytes with invalid UTF-8 inside a JSON string: the decode boundary
+    // must fail closed rather than lossily coercing the payload.
+    let raw = b"{\"model\":\"claude-via-chat\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"\xff\xfe\"}]}";
+    let error =
+        reject_with_zero_upstream(&gateway, &backend, reqwest::Body::from(raw.as_slice())).await;
+    assert!(
+        !error["error"]["message"].as_str().unwrap().is_empty(),
+        "{error}"
+    );
+}

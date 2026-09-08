@@ -57,7 +57,10 @@ fn translate_rejects_empty_content_blocks() {
 fn translate_single_message_input_is_accepted() {
     let out = translate(json!({"messages": [{"role": "user", "content": "hello"}]}))
         .expect("a single-message request is valid");
-    assert_eq!(out["messages"], json!([{"role": "user", "content": "hello"}]));
+    assert_eq!(
+        out["messages"],
+        json!([{"role": "user", "content": "hello"}])
+    );
 }
 
 #[test]
@@ -219,8 +222,14 @@ fn translate_preserves_cjk_text_bytes() {
     let text = " longitudinally-invalid: \u{6f22}\u{5b57}\u{30c6}\u{30b9}\u{30c8} emoji \u{1f600} ";
     let request = json!({"messages": [{"role": "user", "content": text}]});
     let out = translate(request).expect("CJK text must translate");
-    let translated = out["messages"][0]["content"].as_str().expect("string content");
-    assert_eq!(translated.as_bytes(), text.as_bytes(), "no normalization allowed");
+    let translated = out["messages"][0]["content"]
+        .as_str()
+        .expect("string content");
+    assert_eq!(
+        translated.as_bytes(),
+        text.as_bytes(),
+        "no normalization allowed"
+    );
 }
 
 #[test]
