@@ -4,6 +4,28 @@ use shunt::adapters::command_code::request::translate_request;
 use shunt::config::{AuthMode, Config, ProviderKind};
 
 #[test]
+fn command_code_translate_tools_adjacent_and_missing_result() {
+    let body = json!({"model":"zai-org/GLM-5.3",
+        "tools":[{"name":"delegate","description":"Plaintext subagent","input_schema":{"type":"object"}}],
+        "messages":[
+            {"role":"assistant","content":[{"type":"tool_use","id":"call-a","name":"delegate","input":{"task":"summarize"}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"call-a","content":"subagent result"}]},
+            {"role":"assistant","content":[{"type":"tool_use","id":"call-b","name":"delegate","input":{}}]},
+            {"role":"user","content":"continue"}
+        ]});
+    let result = translate_request(&body, "zai-org/GLM-5.3", None);
+    assert!(result.is_ok(), "supported tool history must compile");
+    let wire = result.unwrap();
+    let messages = wire["params"]["messages"].as_array().unwrap();
+    assert_eq!(messages[0]["content"][0]["toolCallId"], "call-a");
+    assert_eq!(messages[1], json!({"role":"tool","content":[{"type":"tool-result","toolCallId":"call-a","toolName":"delegate","output":{"type":"text","value":"subagent result"}}]}));
+    assert_eq!(messages[3]["content"][0]["toolCallId"], "call-b");
+    assert_eq!(messages[3]["content"][0]["output"]["type"], "error-text");
+    assert!(messages[3]["content"][0]["output"]["value"].as_str().unwrap().contains("execution status unknown"));
+    assert_eq!(messages[4]["content"][0]["text"], "continue");
+}
+
+#[test]
 fn command_code_translate_session_scope_and_request_local_fallback() {
     use shunt::adapters::command_code::request::{session_id, MAX_CONVERSATION_ID_BYTES};
     let a = session_id("synthetic-token-a", Some("conversation-a")).unwrap();

@@ -1,0 +1,10 @@
+{
+  "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test command_code_translate command_code_translate_tools -- --test-threads=1",
+  "exitCode": 101,
+  "targetTest": "command_code_translate_tools_adjacent_and_missing_result",
+  "targetFile": "tests/command_code_translate.rs",
+  "expected": "plaintext subagent call/result and missing-result continuation compile with authentic identities",
+  "actual": "Compilation succeeded; supported tool history assertion failed at line 17. 0 passed, 1 failed, 7 filtered. Production state unchanged.",
+  "output": "TAP version 13\nnot ok 1 - command_code_translate_tools_adjacent_and_missing_result\n1..1\n# tests 1\n# pass 0\n# fail 1\n",
+  "provenance": "Manual TAP transcription of actual Rust libtest assertion output before tool compiler implementation; not raw TAP."
+}
