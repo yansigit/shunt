@@ -13,6 +13,10 @@ description: 組み込みプロバイダーと、TOML テーブルで任意の A
 - **`kind = "antigravity"`** — HTTP 経由で Google Antigravity バックエンドに接続します。
 - **`kind = "antigravity_cli"`** — **非推奨**。ローカルの Antigravity `agy` CLI を呼び出します。
 
+## Command Code プリセット
+
+`commandcode` は API キー Chat 製品（`openai_chat`、`SHUNT_COMMANDCODE_API_KEY`）、`command-code` は別のサブスクリプション NDJSON 製品（`command_code`、`command_code_oauth`、`SHUNT_COMMAND_CODE_TOKEN`）です。`[[upstreams]]` に明示してください。トークン変数が存在しない場合のみ固定 `~/.commandcode/auth.json` を読み取り専用で使い、空・不正な明示値では切り替えません。更新・書き込みは行いません。正確なモデル・effort、上限、ライブ検証ではないソース由来の検証範囲は [Command Code](/ja/providers/command-code/)を参照してください。
+
 ## 機能を考慮したフェイルオーバーチェーン
 
 複数のアップストリームにマッピングされたモデルでも、shunt は設定された primary を必ず保持します。認証、認証情報の解決、ネットワーク I/O の前に、Messages リクエストから検出したツール、base64/URL 画像、構造化出力、明示的な reasoning effort を保持できない後続候補だけを除外します。不正または未知の形は、選択されたアダプターの通常の検証に委ねます。追加の設定キーはありません。

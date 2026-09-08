@@ -105,6 +105,15 @@ Responses 的请求体默认限制为 32 MiB;更大的文件或图片请求请�
 
 ## 提供方
 
+Command Code 区分两个有序 upstream 预设：`commandcode` 使用 `openai_chat` 和
+`SHUNT_COMMANDCODE_API_KEY` 连接 `/provider/v1/chat/completions`；`command-code`
+使用 `command_code` / `command_code_oauth` 和 `SHUNT_COMMAND_CODE_TOKEN` 连接规范
+HTTPS `/alpha/generate`。仅当订阅变量完全不存在时，才只读访问
+`~/.commandcode/auth.json`；显式空值或无效令牌直接拒绝。不新增凭据刷新或写回。
+这两个预设需要显式声明。精确订阅模型、effort 和限制见
+[Command Code 契约](https://shunt.dev/zh-cn/providers/command-code/)。源码推导的
+兼容性及隔离测试不证明实时可用性；Phase 16 的可选实时验证仍是独立检查。
+
 自定义Chat后端需设置 `kind = "openai_chat"`、显式使用 `http://` 或 `https://` 的 `base_url` 以及API密钥认证。有序upstream使用 `auth = { mode = "api_key", env = "CHAT_API_KEY" }`，旧式表使用 `auth = "api_key"` 和 `api_key_env`。URL不允许用户信息、查询、片段、点路径段、空白或反斜杠；`/chat/completions` 只追加一次。现有 `openai`/`codex` Responses设置保持不变。
 
 一个提供方可以是有序的 `[[upstreams]]` 条目，也可以是旧式 `[providers.<name>]` TOML 表（在 YAML 中，分别对应 sequence 或 mapping 中的条目）。三种转换类型即可覆盖大多数上游：`kind = "anthropic"`（上游讲 Anthropic Messages；透传，可选择换用不同的密钥）、`kind = "responses"`（上游讲 OpenAI Responses API；shunt 在 Anthropic Messages ⇄ Responses 之间转换，含流式传输）和 `kind = "openai_chat"`（上游讲 OpenAI Chat Completions API；shunt 在 Anthropic Messages ⇄ Chat Completions 之间转换，含流式传输 —— 仅支持 API 密钥认证，无内置预设；参见[提供方 → OpenAI 兼容](https://shunt.dev/providers/openai-chat/)）。第四种原生类型 `kind = "cursor"` 桥接 Cursor 的 ConnectRPC/protobuf AgentService，使 Cursor 订阅可通过同一套 Anthropic-Messages 接口访问。

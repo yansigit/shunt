@@ -6,8 +6,9 @@ description: 仅凭 API 密钥将映射的模型路由到任意 OpenAI Chat Comp
 **OpenAI 兼容 (Chat Completions)** 是一种通用 provider 类型,而非具名 provider:
 `kind = "openai_chat"` 将 shunt 指向任何提供 OpenAI Chat Completions API
 (`POST /chat/completions`) 的后端,shunt 会把 Claude Code 的 Anthropic Messages 请求翻译成该
-形态 — 包括流式传输。它没有内置 preset,因此 upstream 必须显式声明 `kind`、`base_url` 和
-API 密钥凭据。
+形态 — 包括流式传输。自定义后端需显式声明 `kind`、`base_url` 和 API 密钥。
+独立的 [Command Code API 产品](/zh-cn/providers/command-code/)提供使用此 kind 的
+`commandcode` 预设；它不是订阅传输。
 
 ## 配置 upstream
 

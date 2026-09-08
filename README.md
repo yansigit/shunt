@@ -109,6 +109,17 @@ those two sections still needs a restart. See [Config secret references](docs/co
 
 ## Providers
 
+Command Code has two distinct ordered-upstream presets: `commandcode` uses
+`openai_chat` and `SHUNT_COMMANDCODE_API_KEY` at `/provider/v1/chat/completions`;
+`command-code` uses `command_code` / `command_code_oauth` and
+`SHUNT_COMMAND_CODE_TOKEN` at canonical HTTPS `/alpha/generate`. Only an absent
+subscription variable permits read-only `~/.commandcode/auth.json` fallback;
+empty or invalid explicit tokens fail closed. No credential refresh/writeback is
+added. These presets must be declared explicitly. See the
+[Command Code contract](docs/m16-command-code.md) for exact subscription model/effort
+rows and limits. Compatibility is source-derived and hermetically tested, not a
+live-availability claim; Phase 16 retains the opt-in live gate.
+
 For a custom Chat backend, set `kind = "openai_chat"`, an explicit `http://` or `https://` `base_url`, and API-key auth: `auth = { mode = "api_key", env = "CHAT_API_KEY" }` in ordered upstreams, or `auth = "api_key"` plus `api_key_env` in legacy tables. Roots cannot contain userinfo, queries, fragments, dot segments, whitespace, or backslashes; `/chat/completions` is appended once. Existing `openai`/`codex` Responses settings are unchanged.
 
 A provider is either an ordered `[[upstreams]]` entry or a legacy `[providers.<name>]` TOML table (under YAML, an entry in the corresponding sequence or mapping). Three translation kinds cover most upstreams: `kind = "anthropic"` (the upstream speaks Anthropic Messages; passed through, optionally with a different key), `kind = "responses"` (the upstream speaks the OpenAI Responses API; shunt translates Anthropic Messages ⇄ Responses, streaming included), and `kind = "openai_chat"` (the upstream speaks the OpenAI Chat Completions API; shunt translates Anthropic Messages ⇄ Chat Completions, streaming included — API-key auth only, no built-in preset; see [Providers → OpenAI-compatible](https://shunt.dev/providers/openai-chat/)). A fourth native kind, `kind = "cursor"`, bridges Cursor's ConnectRPC/protobuf AgentService so a Cursor subscription is reachable through the same Anthropic-Messages interface.

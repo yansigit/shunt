@@ -6,8 +6,9 @@ description: API 키만으로 매핑된 모델을 임의의 OpenAI Chat Completi
 **OpenAI 호환 (Chat Completions)**은 이름이 붙은 프로바이더가 아니라 범용 프로바이더 종류입니다:
 `kind = "openai_chat"`은 OpenAI Chat Completions API(`POST /chat/completions`)를 제공하는
 어떤 백엔드든 shunt에 연결하며, shunt는 Claude Code의 Anthropic Messages 요청을 그 형태로
-변환합니다 — 스트리밍도 포함됩니다. 내장 프리셋이 없으므로 업스트림이 `kind`, `base_url`,
-API 키 자격증명을 직접 선언해야 합니다.
+변환합니다 — 스트리밍도 포함됩니다. 사용자 지정 백엔드는 `kind`, `base_url`, API 키
+자격증명을 직접 선언합니다. 별도의 [Command Code API 제품](/ko/providers/command-code/)은
+이 종류를 사용하는 `commandcode` 프리셋이 있으며, 구독 전송과는 다릅니다.
 
 ## 업스트림 구성
 

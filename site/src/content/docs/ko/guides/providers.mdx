@@ -13,6 +13,10 @@ description: 내장 프로바이더와 TOML 테이블로 Anthropic 호환 백엔
 - **`kind = "antigravity"`** — HTTP를 통해 Google Antigravity 백엔드에 연결합니다.
 - **`kind = "antigravity_cli"`** — **더 이상 사용되지 않습니다**. 로컬 Antigravity `agy` CLI를 호출합니다.
 
+## Command Code 프리셋
+
+`commandcode`는 API 키 Chat 제품(`openai_chat`, `SHUNT_COMMANDCODE_API_KEY`)이고, `command-code`는 별도 구독 NDJSON 제품(`command_code`, `command_code_oauth`, `SHUNT_COMMAND_CODE_TOKEN`)입니다. `[[upstreams]]`에 직접 선언하세요. 구독 토큰 변수가 아예 없을 때만 고정 `~/.commandcode/auth.json`을 읽기 전용으로 사용하며, 빈 값·잘못된 값은 대체하지 않습니다. 갱신·쓰기는 없습니다. 정확한 모델·노력 수준, 한도, 실서비스 검증이 아닌 소스 기반 증거 범위는 [Command Code](/ko/providers/command-code/)를 참조하세요.
+
 ## 기능 인식 페일오버 체인
 
 여러 업스트림에 매핑된 모델에서도 shunt는 설정된 primary를 항상 유지합니다. 인증, 자격 증명 조회, 네트워크 I/O 전에 Messages 요청에서 감지한 도구, base64/URL 이미지, 구조화 출력, 명시적 reasoning effort를 보존할 수 없는 후속 후보만 제거합니다. 잘못되었거나 알 수 없는 형식은 선택된 어댑터의 일반 검증에 맡깁니다. 별도 구성 키는 없습니다.

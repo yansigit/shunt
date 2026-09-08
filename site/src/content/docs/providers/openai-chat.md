@@ -6,8 +6,9 @@ description: Route mapped models to any OpenAI Chat Completions endpoint with an
 **OpenAI-compatible (Chat Completions)** is a generic provider kind, not a named provider:
 `kind = "openai_chat"` points shunt at any backend that serves the OpenAI Chat Completions API
 (`POST /chat/completions`), and shunt translates Claude Code's Anthropic Messages request into
-that shape — streaming included. There is no built-in preset, so the upstream declares `kind`,
-`base_url`, and an API-key credential explicitly.
+that shape — streaming included. Custom backends declare `kind`, `base_url`, and an API-key
+credential explicitly. The separate [Command Code API product](/providers/command-code/)
+has a `commandcode` preset using this kind; it is not the subscription transport.
 
 ## Configure the upstream
 

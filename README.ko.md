@@ -107,6 +107,17 @@ shunt add upstream https://provider.example/docs --print | claude
 
 ## 프로바이더
 
+Command Code는 두 순서형 업스트림 프리셋을 구분합니다. `commandcode`는
+`openai_chat`과 `SHUNT_COMMANDCODE_API_KEY`로 `/provider/v1/chat/completions`에
+연결하고, `command-code`는 `command_code` / `command_code_oauth` 및
+`SHUNT_COMMAND_CODE_TOKEN`으로 정규 HTTPS `/alpha/generate`에 연결합니다.
+구독 변수가 아예 없을 때만 `~/.commandcode/auth.json`을 읽기 전용으로 사용하며,
+비어 있거나 잘못된 명시적 토큰은 거부합니다. 자격증명 갱신·쓰기는 추가하지
+않습니다. 프리셋은 직접 선언해야 합니다. 정확한 구독 모델·노력 수준과 한도는
+[Command Code 계약](https://shunt.dev/ko/providers/command-code/)을 참조하세요.
+소스 기반 호환성과 격리 테스트는 실서비스 가용성 증명이 아니며, Phase 16의
+선택적 실서비스 검증은 별도입니다.
+
 사용자 정의 Chat 백엔드는 `kind = "openai_chat"`, 명시적인 `http://` 또는 `https://` `base_url`, API 키 인증을 설정합니다. 순서 있는 업스트림에는 `auth = { mode = "api_key", env = "CHAT_API_KEY" }`를, 레거시 테이블에는 `auth = "api_key"`와 `api_key_env`를 사용합니다. URL에는 사용자 정보, 쿼리, 프래그먼트, 점 경로 세그먼트, 공백, 백슬래시를 넣을 수 없으며 `/chat/completions`는 한 번만 추가됩니다. 기존 `openai`/`codex` Responses 설정은 바뀌지 않습니다.
 
 프로바이더는 순서가 있는 `[[upstreams]]` 항목 또는 레거시 `[providers.<name>]` TOML 테이블입니다(YAML에서는 각각 해당 sequence 또는 mapping의 항목). 세 가지 변환 종류가 대부분의 업스트림을 커버합니다. `kind = "anthropic"`(업스트림이 Anthropic Messages를 사용하며, 필요하면 다른 키로 패스스루), `kind = "responses"`(업스트림이 OpenAI Responses API를 사용하며, shunt가 Anthropic Messages ⇄ Responses를 스트리밍 포함하여 변환), `kind = "openai_chat"`(업스트림이 OpenAI Chat Completions API를 사용하며, shunt가 Anthropic Messages ⇄ Chat Completions를 스트리밍 포함하여 변환 — API 키 인증만 지원, 내장 프리셋 없음, [Providers → OpenAI 호환](https://shunt.dev/providers/openai-chat/) 참고)입니다. 네 번째 네이티브 종류인 `kind = "cursor"`는 Cursor의 ConnectRPC/protobuf AgentService를 브리지하여 Cursor 구독을 동일한 Anthropic-Messages 인터페이스로 사용할 수 있게 합니다.

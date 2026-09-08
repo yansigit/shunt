@@ -6,8 +6,9 @@ description: API キーだけでマッピングしたモデルを任意の OpenA
 **OpenAI 互換 (Chat Completions)** は名前付きプロバイダーではなく汎用のプロバイダー種別です:
 `kind = "openai_chat"` は OpenAI Chat Completions API（`POST /chat/completions`）を提供する
 任意のバックエンドに shunt を向けます。shunt は Claude Code の Anthropic Messages リクエストを
-その形状へ変換します — ストリーミングも含みます。組み込みプリセットはないため、upstream 側で
-`kind`、`base_url`、API キー資格情報を明示的に宣言します。
+その形状へ変換します — ストリーミングも含みます。カスタムバックエンドは `kind`、
+`base_url`、API キーを明示します。別製品の [Command Code API](/ja/providers/command-code/)
+にはこの kind の `commandcode` プリセットがあり、サブスクリプション転送とは異なります。
 
 ## upstream を設定する
 

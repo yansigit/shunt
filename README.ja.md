@@ -110,6 +110,17 @@ Anthropic Messages と受信 Codex Responses のリクエストボディはデ�
 
 ## プロバイダー
 
+Command Code には二つの順序付き upstream プリセットがあります。`commandcode` は
+`openai_chat` と `SHUNT_COMMANDCODE_API_KEY` で `/provider/v1/chat/completions` に、
+`command-code` は `command_code` / `command_code_oauth` と
+`SHUNT_COMMAND_CODE_TOKEN` で正規 HTTPS `/alpha/generate` に接続します。
+サブスクリプション変数が存在しない場合のみ `~/.commandcode/auth.json` を読み取り
+専用で使用し、空や不正な明示トークンは拒否します。認証情報の更新・書き込みは
+追加しません。プリセットは明示的に宣言してください。正確なモデル・effort と
+上限は [Command Code 契約](https://shunt.dev/ja/providers/command-code/)を参照。
+ソース由来の互換性と隔離テストは実サービスの可用性証明ではなく、Phase 16 の
+任意ライブ検証は別途必要です。
+
 カスタムChatバックエンドには `kind = "openai_chat"`、明示的な `http://` または `https://` の `base_url`、APIキー認証を設定します。順序付きupstreamでは `auth = { mode = "api_key", env = "CHAT_API_KEY" }`、レガシーテーブルでは `auth = "api_key"` と `api_key_env` を使います。URLにユーザー情報、クエリ、フラグメント、ドットセグメント、空白、バックスラッシュは使えず、`/chat/completions` は一度だけ追加されます。既存の `openai`/`codex` Responses設定は変わりません。
 
 プロバイダーは、順序付き `[[upstreams]]` エントリまたはレガシーな `[providers.<name>]` TOML テーブルです（YAML では、それぞれ対応する sequence または mapping のエントリ）。3 種類の変換アダプターでほとんどの上流をカバーします。`kind = "anthropic"`（上流が Anthropic Messages を話す場合。別のキーを付けてパススルー可能）、`kind = "responses"`（上流が OpenAI Responses API を話す場合。shunt が Anthropic Messages ⇄ Responses をストリーミング込みで変換）、`kind = "openai_chat"`（上流が OpenAI Chat Completions API を話す場合。shunt が Anthropic Messages ⇄ Chat Completions をストリーミング込みで変換 — API キー認証のみ、内蔵プリセットなし。[Providers → OpenAI 互換](https://shunt.dev/providers/openai-chat/) を参照）です。4 つ目のネイティブな種類である `kind = "cursor"` は、Cursor の ConnectRPC/protobuf AgentService をブリッジし、Cursor サブスクリプションを同じ Anthropic Messages インターフェース経由で利用できるようにします。

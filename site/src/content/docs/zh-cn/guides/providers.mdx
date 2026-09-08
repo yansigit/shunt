@@ -13,6 +13,10 @@ description: 内置的提供方,以及如何用一个 TOML 表添加任意兼容
 - **`kind = "antigravity"`** —— 通过 HTTP 连接 Google Antigravity 后端。
 - **`kind = "antigravity_cli"`** —— **已废弃**;调用本地的 Antigravity `agy` CLI。
 
+## Command Code 预设
+
+`commandcode` 是 API 密钥 Chat 产品（`openai_chat`、`SHUNT_COMMANDCODE_API_KEY`）；`command-code` 是独立订阅 NDJSON 产品（`command_code`、`command_code_oauth`、`SHUNT_COMMAND_CODE_TOKEN`）。请在 `[[upstreams]]` 中显式声明。仅当订阅令牌变量完全不存在时，才只读访问固定的 `~/.commandcode/auth.json`；空值或无效显式值不回退。不进行刷新或写回。精确模型、effort、限制，以及源码推导而非实时验证的证据边界，见 [Command Code](/zh-cn/providers/command-code/)。
+
 ## 感知能力的故障转移链
 
 模型映射到多个上游时，shunt 始终保留已配置的 primary。在认证、凭据查找和网络 I/O 之前，它仅移除无法保留 Messages 请求所需工具、base64/URL 图像、结构化输出或显式 reasoning effort 的后续候选。畸形或未知结构仍交由所选适配器正常验证。该行为无需新增配置键。
