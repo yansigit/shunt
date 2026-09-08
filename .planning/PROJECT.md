@@ -61,12 +61,11 @@ behavior while Shunt stays bounded, predictable, and operationally lean.
 - ✓ Gemini preserves checked streaming/unary semantics, authentic tool pairing, immutable Code Assist identity, and conservative retries — Phase 10
 - ✓ Native Antigravity uses canonical destinations, account-bound catalog/session/signature state, strict always-SSE semantics, cancellation, and one pre-output same-account 401 replay without new credential writes — Phase 11
 
+- ✓ Cursor has evidence-backed model, continuation, tool, error and retry hardening with bounded request-local state — Phase 12
+- ✓ Generic OpenAI Chat serves Anthropic Messages with strict request translation, bounded unary/SSE semantics, tool assembly, cancellation and credential-safe conservative retries — Phase 13
+
 ### Active
 
-- [ ] Cursor's existing provider gains evidence-backed model, continuation,
-  tool, error, and retry hardening without speculative no-progress heuristics.
-- [ ] OpenAI Chat Completions-compatible upstreams can serve Anthropic Messages
-  clients with bounded streaming and tool-call translation.
 - [ ] Command Code subscription and API-key users can run normal, streaming,
   tool-heavy, subagent, long-context, and error-path turns without new
   credential persistence behavior.
@@ -165,4 +164,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Revisit deferred work only with evidence from usage or failing transcripts.
 
 ---
-*Last updated: 2026-09-07 after Phase 11*
+*Last updated: 2026-09-08 after Phase 13*

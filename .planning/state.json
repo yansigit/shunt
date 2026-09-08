@@ -31,7 +31,7 @@
     {
       "number": "13",
       "name": "Generic OpenAI Chat Completions",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "14",
@@ -51,8 +51,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step",
-    "reason": "Phase 13 of 8 · 63% · executing"
+    "label": "Advance to the next step (plan phase 14)",
+    "reason": "Phase 14 of 8 — needs a plan"
   },
-  "updated_at": "2026-09-08T08:43:25.642Z"
+  "updated_at": "2026-09-08T09:37:53.377Z"
 }

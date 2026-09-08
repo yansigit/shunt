@@ -63,7 +63,7 @@ covered_files:
   - tests/openai_chat_translate/assembly.rs
   - tests/openai_chat_translate/caps.rs
   - tests/retry.rs
-covered_digest: "v1:sha256:6d537f50ea44d7bb6f297ee5a3d884c6604d8ff2eebfd8087065e1ad073a96d4"
+covered_digest: "v1:sha256:ca206f1730229b68533f3f896eab0ca01bb47e0f9063bc79a9306bec35750707"
 decision_coverage:
   honored: 11
   total: 11

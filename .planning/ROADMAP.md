@@ -33,7 +33,7 @@ Full phase goals, requirements, success criteria, and plan references are kept i
 - [x] **Phase 10: Gemini Semantic Hardening** - Give streaming and non-streaming Google Code Assist turns one strict, replay-safe semantic contract. (completed 2026-09-07)
 - [x] **Phase 11: Antigravity Protocol and Credential Hardening** - Enforce Antigravity's exact Cloud Code Assist envelope, identity, destination, model, signature, tool, and SSE rules. (completed 2026-09-07)
 - [x] **Phase 12: Cursor Evidence-Backed Hardening** - Correct Cursor profiles, continuation, tools, terminal handling, cancellation, and pre-output failover from verified evidence. (completed 2026-09-07)
-- [ ] **Phase 13: Generic OpenAI Chat Completions** - Add a bounded OpenAI Chat transport with complete Anthropic message, tool, image, streaming, and error translation.
+- [x] **Phase 13: Generic OpenAI Chat Completions** - Add a bounded OpenAI Chat transport with complete Anthropic message, tool, image, streaming, and error translation. (completed 2026-09-08)
 - [ ] **Phase 14: Command Code Product Separation** - Support the API-key Chat product and proprietary subscription product as distinct authenticated transports.
 - [ ] **Phase 15: Exact OpenCode Go Evidence Gate** - Expose only exact model/wire tuples that pass dated captured and safe live evidence, with zero tuples as a valid result.
 - [ ] **Phase 16: Cross-Provider Release Gate** - Prove provider coverage, provenance, credential safety, documentation parity, and repository quality before merge.
@@ -205,7 +205,7 @@ Plans:
 - [x] 13-02-PLAN.md
 - [x] 13-03-PLAN.md
 - [x] 13-04-PLAN.md
-- [ ] 13-05-PLAN.md
+- [x] 13-05-PLAN.md
 
 ### Phase 14: Command Code Product Separation
 
@@ -261,7 +261,7 @@ Plans:
 | 10. Gemini Semantic Hardening | v2 | 7/7 | Complete | 2026-09-07 |
 | 11. Antigravity Protocol and Credential Hardening | v2 | 7/7 | Complete    | 2026-09-07 |
 | 12. Cursor Evidence-Backed Hardening | v2 | 8/8 | Complete    | 2026-09-07 |
-| 13. Generic OpenAI Chat Completions | v2 | 4/5 | In Progress|  |
+| 13. Generic OpenAI Chat Completions | v2 | 5/5 | Complete    | 2026-09-08 |
 | 14. Command Code Product Separation | v2 | 0/TBD | Not started | - |
 | 15. Exact OpenCode Go Evidence Gate | v2 | 0/TBD | Not started | - |
 | 16. Cross-Provider Release Gate | v2 | 0/TBD | Not started | - |

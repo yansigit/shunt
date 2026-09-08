@@ -2,21 +2,21 @@
 gsd_state_version: "1.0"
 milestone: v2
 milestone_name: Provider Compatibility
-current_phase: 13
-current_phase_name: Generic OpenAI Chat Completions
-current_plan: 5
-status: executing
-stopped_at: Completed 13-04; continuing 13-05
-last_updated: "2026-09-08T08:43:25.619Z"
-last_activity: 2026-09-07
-last_activity_desc: Phase 13 execution started
-state_head: 6fafbd4b54716ec6912940fafc63dd8ad0b30c23
+current_phase: 14
+current_phase_name: Command Code Product Separation
+current_plan: Not started
+status: planning
+stopped_at: Phase 13 complete, ready to plan Phase 14
+last_updated: "2026-09-08T09:37:53.353Z"
+last_activity: 2026-09-08
+last_activity_desc: Phase 13 complete, transitioned to Phase 14
+state_head: b31836604177446a6dda9c4bc13c1ea67a50d58c
 progress:
   total_phases: 8
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 31
-  completed_plans: 30
-  percent: 63
+  completed_plans: 31
+  percent: 67
 total_plans_in_phase: 0
 ---
 
@@ -24,24 +24,24 @@ total_plans_in_phase: 0
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-09-07 after Phase 11)
+See: `.planning/PROJECT.md` (updated 2026-09-08 after Phase 13)
 
 **Core value:** Protocol-faithful, streaming-safe client behavior in a bounded, lean gateway.
-**Current focus:** Phase 13 — Generic OpenAI Chat Completions
+**Current focus:** Phase 14 — Command Code Product Separation
 
 ## Current Position
 
-Phase: 13 (Generic OpenAI Chat Completions) — EXECUTING
-Current Plan: 5
-Total Plans in Phase: 5
-Status: Ready to execute
-Last activity: 2026-09-07 — Phase 13 execution started
+Phase: 14 — Command Code Product Separation
+Current Plan: Not started
+Total Plans in Phase: Not yet planned
+Status: Ready to plan
+Last activity: 2026-09-08 — Phase 13 complete, transitioned to Phase 14
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 51
+- Total plans completed: 56
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -61,6 +61,7 @@ Last activity: 2026-09-07 — Phase 13 execution started
 | 10 | 7 | - | - |
 | 11 | 7 | - | - |
 | 12 | 8 | - | - |
+| 13 | 5 | - | - |
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
@@ -133,11 +134,11 @@ The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent O
 ## Session Continuity
 
 Last session: 2026-09-08T08:21:19.158Z
-Stopped at: Completed 13-04; continuing 13-05
+Stopped at: Phase 13 complete, ready to plan Phase 14
 Resume file: .planning/phases/13-generic-openai-chat-completions/13-05-PLAN.md
 
 ## Operator Next Steps
 
 - The user-approved installed GSD gate validator repair is complete and backed up at `/Users/user/gsd-gate-backup-mEVeg3`. Dotted query names validate; gate checks were rerun without disabling them. See 13-01-SUMMARY.md.
-- Phase 13 plans 01–04 are verified (latest workspace run: 2,852 passed, 0 failed, 2 ignored; focused post-lint suites and CLI smoke passed). Continue plan 05 cancellation/conformance breadth and all documentation locales; Phase 13 remains incomplete.
+- Phase 13 is complete: 5/5 plans, 2,875 passed, 0 failed, 2 existing ignored; CLI/curl Chat smoke and all documentation locales pass. Validation has no gaps; all 19 authored security threats have mitigations. Computer visual checks remain skipped/blocked, never passed.
 - Continue the approved milestone sequentially through Phase 16, verifying each phase. Preserve credential-file behavior and request approval for new public configuration choices.

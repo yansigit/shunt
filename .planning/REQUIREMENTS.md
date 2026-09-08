@@ -50,15 +50,15 @@ requirement maps to exactly one roadmap phase after roadmap creation.
 
 ### Generic OpenAI Chat Completions
 
-- [ ] **CHAT-01**: An operator can configure an OpenAI Chat Completions-compatible upstream independently from OpenAI Responses and Anthropic Messages upstreams.
-- [ ] **CHAT-02**: Chat endpoint construction produces exactly one `/chat/completions` path from an accepted API root and rejects ambiguous query, fragment, or malformed URL configurations.
-- [ ] **CHAT-03**: Chat requests translate Anthropic system, user, assistant, text, image, generation-control, and model fields without sending Responses-only fields.
-- [ ] **CHAT-04**: Chat requests preserve declared tools, tool choice, parallel assistant tool calls, and correctly paired tool-result messages with stable call identities.
-- [ ] **CHAT-05**: Non-streaming Chat responses translate bounded text, reasoning, tools, usage, finish reasons, and recognized provider errors into the Anthropic response contract.
-- [ ] **CHAT-06**: Streaming Chat responses relay text and reasoning incrementally and assemble interleaved indexed tool-call deltas without reordering or losing identities or arguments.
-- [ ] **CHAT-07**: Chat streaming requires a trustworthy terminal, emits exactly one terminal outcome, and rejects malformed events, incomplete tool arguments, oversized state, and premature EOF.
-- [ ] **CHAT-08**: Chat authentication uses the configured API-key source, strips inbound credential slots before dispatch, and does not expose credentials in requests to any destination other than the configured upstream.
-- [ ] **CHAT-09**: Chat supports normal, streaming, image, tool-heavy, long-context boundary, cancellation, and provider-error scenarios through hermetic conformance tests.
+- [x] **CHAT-01**: An operator can configure an OpenAI Chat Completions-compatible upstream independently from OpenAI Responses and Anthropic Messages upstreams.
+- [x] **CHAT-02**: Chat endpoint construction produces exactly one `/chat/completions` path from an accepted API root and rejects ambiguous query, fragment, or malformed URL configurations.
+- [x] **CHAT-03**: Chat requests translate Anthropic system, user, assistant, text, image, generation-control, and model fields without sending Responses-only fields.
+- [x] **CHAT-04**: Chat requests preserve declared tools, tool choice, parallel assistant tool calls, and correctly paired tool-result messages with stable call identities.
+- [x] **CHAT-05**: Non-streaming Chat responses translate bounded text, reasoning, tools, usage, finish reasons, and recognized provider errors into the Anthropic response contract.
+- [x] **CHAT-06**: Streaming Chat responses relay text and reasoning incrementally and assemble interleaved indexed tool-call deltas without reordering or losing identities or arguments.
+- [x] **CHAT-07**: Chat streaming requires a trustworthy terminal, emits exactly one terminal outcome, and rejects malformed events, incomplete tool arguments, oversized state, and premature EOF.
+- [x] **CHAT-08**: Chat authentication uses the configured API-key source, strips inbound credential slots before dispatch, and does not expose credentials in requests to any destination other than the configured upstream.
+- [x] **CHAT-09**: Chat supports normal, streaming, image, tool-heavy, long-context boundary, cancellation, and provider-error scenarios through hermetic conformance tests.
 
 ### Command Code API-Key Product
 
@@ -152,15 +152,15 @@ Each committed requirement has exactly one owning phase.
 | CUR-06 | Phase 12 | Complete |
 | CUR-07 | Phase 12 | Complete |
 | CUR-08 | Phase 12 | Complete |
-| CHAT-01 | Phase 13 | Pending |
-| CHAT-02 | Phase 13 | Pending |
-| CHAT-03 | Phase 13 | Pending |
-| CHAT-04 | Phase 13 | Pending |
-| CHAT-05 | Phase 13 | Pending |
-| CHAT-06 | Phase 13 | Pending |
-| CHAT-07 | Phase 13 | Pending |
-| CHAT-08 | Phase 13 | Pending |
-| CHAT-09 | Phase 13 | Pending |
+| CHAT-01 | Phase 13 | Complete |
+| CHAT-02 | Phase 13 | Complete |
+| CHAT-03 | Phase 13 | Complete |
+| CHAT-04 | Phase 13 | Complete |
+| CHAT-05 | Phase 13 | Complete |
+| CHAT-06 | Phase 13 | Complete |
+| CHAT-07 | Phase 13 | Complete |
+| CHAT-08 | Phase 13 | Complete |
+| CHAT-09 | Phase 13 | Complete |
 | CCK-01 | Phase 14 | Pending |
 | CCK-02 | Phase 14 | Pending |
 | CCK-03 | Phase 14 | Pending |

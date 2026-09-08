@@ -203,7 +203,7 @@ Final root verification on the corrected code:
 - Chat translation: **95 passed**; Chat conformance: **30 passed**, including real
   loopback gateway JSON and incremental SSE fixtures.
 - `cargo fmt --all --check`, strict all-target/all-feature Clippy, and build pass.
-- Project `run-shunt/smoke.sh`: all five checks passed (CLI config check, liveness,
+- Project `.claude/skills/run-shunt/smoke.sh`: all five checks passed (CLI config check, liveness,
   model discovery, mock Anthropic proxy response, malformed-request error), on
   gateway port 31981 and mock port 31982. This baseline smoke is not a live Chat
   provider or Computer evaluation; Chat behavior is covered by the router suite.
