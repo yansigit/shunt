@@ -66,6 +66,9 @@ impl ConnectFrameDecoder {
             if self.buffer.len() < 5 {
                 break;
             }
+            if self.buffer[0] & !(FLAG_GZIP | FLAG_END) != 0 {
+                return Err(ConnectError::InvalidFlags(self.buffer[0]));
+            }
             let len = u32::from_be_bytes([
                 self.buffer[1],
                 self.buffer[2],
@@ -115,7 +118,7 @@ impl ConnectFrameDecoder {
 
 /// Maximum bytes we will decompress from a single gzipped Connect frame. Bounds
 /// decompression so a malicious "zip bomb" payload cannot exhaust memory.
-const MAX_DECOMPRESSED_FRAME_BYTES: u64 = 64 * 1024 * 1024;
+pub(super) const MAX_DECOMPRESSED_FRAME_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Compressed-size pre-filter for gzip frames that may be decoded inline.
 ///
@@ -233,7 +236,7 @@ pub fn decode_gzip_frame(payload: &[u8]) -> Result<Vec<u8>, std::io::Error> {
 
 #[derive(serde::Deserialize)]
 struct ConnectErrorPayload {
-    error: ConnectErrorDetails,
+    error: Option<ConnectErrorDetails>,
 }
 
 #[derive(serde::Deserialize)]
@@ -250,15 +253,28 @@ struct ConnectErrorDetails {
 /// parsing into `serde_json::Value`, and treats `message` as optional so a
 /// coded error without a message is still surfaced.
 pub fn parse_connect_error(payload: &[u8]) -> Option<ConnectEndError> {
+    parse_connect_end(payload).ok().flatten()
+}
+
+/// Active transport trailer parsing: empty payload and an object without an
+/// error are valid. Malformed JSON/error fields must not impersonate success.
+pub(super) fn parse_connect_end(payload: &[u8]) -> Result<Option<ConnectEndError>, String> {
     if payload.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let parsed: ConnectErrorPayload = serde_json::from_slice(payload).ok()?;
-    let code = parsed.error.code;
-    let message = parsed
-        .error
-        .message
-        .unwrap_or_else(|| "Connect error".to_string());
+    if payload.iter().find(|b| !b.is_ascii_whitespace()) != Some(&b'{') {
+        return Err("cursor END trailer must be a JSON object".into());
+    }
+    let parsed: ConnectErrorPayload = serde_json::from_slice(payload)
+        .map_err(|_| "cursor END trailer has malformed JSON or error fields".to_string())?;
+    let Some(error) = parsed.error else {
+        return Ok(None);
+    };
+    let code = error.code;
+    if code.is_empty() {
+        return Err("cursor END error code is empty".into());
+    }
+    let message = error.message.unwrap_or_else(|| "Connect error".to_string());
     let status = match code.as_str() {
         // Preserve auth semantics so map_decode_error can surface 401/403 to the
         // client instead of masking them as a generic 502 Bad Gateway.
@@ -271,12 +287,12 @@ pub fn parse_connect_error(payload: &[u8]) -> Option<ConnectEndError> {
         "context_length_exceeded" => 400,
         _ => 502,
     };
-    Some(ConnectEndError {
+    Ok(Some(ConnectEndError {
         code,
         message,
         detail: String::from_utf8_lossy(payload).into_owned(),
         status,
-    })
+    }))
 }
 
 #[derive(Debug, Clone)]
@@ -301,6 +317,7 @@ impl std::error::Error for ConnectEndError {}
 
 #[derive(Debug, Clone)]
 pub enum ConnectError {
+    InvalidFlags(u8),
     PayloadTooLarge { length: usize, max: usize },
     TruncatedFrame { buffered: usize },
 }
@@ -308,6 +325,9 @@ pub enum ConnectError {
 impl std::fmt::Display for ConnectError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ConnectError::InvalidFlags(flags) => {
+                write!(f, "invalid Connect frame flags: {flags:#x}")
+            }
             ConnectError::PayloadTooLarge { length, max } => {
                 write!(f, "Connect frame payload {length} exceeds max {max}")
             }

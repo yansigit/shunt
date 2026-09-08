@@ -7,6 +7,7 @@ pub mod model;
 pub(crate) mod offload;
 pub mod request;
 pub mod sse;
+mod strict;
 mod usage;
 mod wire;
 // Retained pending #170 follow-up: the old `api2.cursor.sh` proto/transport and

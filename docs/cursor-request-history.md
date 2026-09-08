@@ -66,3 +66,15 @@ labels this approximation. Required numeric fields use zero when unavailable;
 zero without an upstream metric is not a measured count. Cache counts are
 unavailable on the evidenced Run fields. No CLI aggregate cache values or retired
 StreamUnifiedChatWithTools field mappings are imported as Run measurements.
+
+## Strict wire decoding (plan 06)
+
+The active Run path rejects malformed END JSON, corrupt gzip, invalid flags,
+truncated protobuf, invalid UTF-8, and malformed nested MCP arguments instead of
+synthesizing completion or substituting null/empty values. Empty END trailers
+and valid gzip-compressed JSON remain valid; structured authentication errors
+retain their status. Unknown protobuf fields with supported wire encodings
+remain forward-compatible. The existing 64 MiB frame/decompression bound is
+unchanged; decoded arguments also use that aggregate allocation budget and a
+64-level depth boundary. Large argument decoding uses the existing bounded
+response-work pool. No retry, configuration, or credential behavior changes.

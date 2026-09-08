@@ -29,7 +29,6 @@
 //! native MCP tool calls, and inline image context are all mapped to this wire
 //! format; Cursor's own agentic file/shell tools are not exposed.
 
-use std::borrow::Cow;
 #[cfg(test)]
 #[path = "router_parity_tests.rs"]
 mod router_parity_tests;
@@ -45,7 +44,7 @@ use tokio::time::{interval_at, Instant};
 
 use crate::adapters::cursor::client::CursorError;
 use crate::adapters::cursor::connect::{
-    decode_gzip_frame_async, parse_connect_error, ConnectError, ConnectFrameDecoder, FLAG_END,
+    decode_gzip_frame_async, parse_connect_end, ConnectError, ConnectFrameDecoder, FLAG_END,
     FLAG_GZIP,
 };
 use crate::adapters::cursor::response::CursorStreamEvent;
@@ -290,6 +289,10 @@ struct TurnGuard {
 #[path = "history_lifetime_tests.rs"]
 mod history_lifetime_tests;
 
+#[cfg(test)]
+#[path = "protocol_tests.rs"]
+mod protocol_tests;
+
 impl Drop for TurnGuard {
     fn drop(&mut self) {
         // Signal the paced loop first (it may be mid-await on a pace sleep or
@@ -470,23 +473,9 @@ impl ReadState {
         }
         let frame_count = frames.len();
         for (index, frame) in frames.into_iter().enumerate() {
-            if frame.flags & FLAG_END != 0 {
-                if let Some(error) = parse_connect_error(&frame.payload) {
-                    self.finished = true;
-                    self.pending.push_back(Err(CursorError::new(
-                        error.status,
-                        error.to_string(),
-                        Some(error.detail.clone()),
-                    )));
-                } else {
-                    self.finished = true;
-                    self.pending.push_back(Ok(CursorStreamEvent::End));
-                }
-                return;
-            }
-            let payload: Cow<'_, [u8]> = if frame.flags & FLAG_GZIP != 0 {
+            let payload: Bytes = if frame.flags & FLAG_GZIP != 0 {
                 match decode_gzip_frame_async(frame.payload).await {
-                    Ok(bytes) => Cow::Owned(bytes),
+                    Ok(bytes) => Bytes::from(bytes),
                     Err(error) => {
                         self.finished = true;
                         self.pending
@@ -495,7 +484,28 @@ impl ReadState {
                     }
                 }
             } else {
-                Cow::Borrowed(&frame.payload[..])
+                frame.payload
+            };
+            if frame.flags & FLAG_END != 0 {
+                self.finished = true;
+                self.pending.push_back(match parse_connect_end(&payload) {
+                    Ok(Some(error)) => Err(CursorError::new(
+                        error.status,
+                        error.to_string(),
+                        Some(error.detail),
+                    )),
+                    Ok(None) => Ok(CursorStreamEvent::End),
+                    Err(error) => Err(CursorError::internal(error)),
+                });
+                return;
+            }
+            let tool = match super::strict::tool(payload.clone()).await {
+                Ok(tool) => tool,
+                Err(error) => {
+                    self.finished = true;
+                    self.pending.push_back(Err(CursorError::internal(error)));
+                    return;
+                }
             };
             // 12-03 bounded KV/blob exchange (OpenCodex rev 055c3ecf0de6c35f59195fc434d6b08525182b7f:
             // AgentServerMessage.kv_server_message is field 4, answered with
@@ -582,14 +592,12 @@ impl ReadState {
             // for an exec-result on the stream. The stateless bridge surfaces the
             // call as a tool_use pause and re-runs with the result in history, so
             // finish the turn here rather than sending an exec-result back.
-            if let Some((name, input_json)) = extract_tool_call(&payload) {
-                let Some(id) = extract_tool_call_id(&payload) else {
-                    self.finished = true;
-                    self.pending.push_back(Err(CursorError::internal(
-                        "cursor: native MCP call has no authentic tool_call_id",
-                    )));
-                    return;
-                };
+            if let Some(super::strict::Tool {
+                id,
+                name,
+                input_json,
+            }) = tool
+            {
                 self.got_text = true;
                 self.finished = true;
                 self.pending.push_back(Ok(CursorStreamEvent::ToolCall {
@@ -1005,6 +1013,7 @@ fn extract_reasoning_text(payload: &[u8]) -> Option<String> {
 /// Decode a native MCP tool call from a response message:
 /// `exec_server_message(2) → ExecServerMessage.mcp_args(11) → McpArgs`.
 /// Returns `(tool name, input JSON)`; `tool_name`(5) wins over `name`(1).
+#[cfg(test)]
 fn extract_tool_call(payload: &[u8]) -> Option<(String, String)> {
     for esm in iter_fields(payload) {
         // AgentServerMessage.exec_server_message = field 2.
@@ -1023,26 +1032,11 @@ fn extract_tool_call(payload: &[u8]) -> Option<(String, String)> {
     None
 }
 
-/// AgentService Run: McpArgs.tool_call_id is field 3 (OpenCodex schema
-/// 055c3ecf0de6c35f59195fc434d6b08525182b7f, inspected 2026-09-07).
-/// A missing identity cannot be replaced by a gateway-generated UUID.
-fn extract_tool_call_id(payload: &[u8]) -> Option<String> {
-    let exec = iter_fields(payload).find(|f| f.field == 2 && f.wire == 2)?;
-    let args = iter_fields(exec.data).find(|f| f.field == 11 && f.wire == 2)?;
-    let mut ids = iter_fields(args.data).filter(|f| f.field == 3);
-    let field = ids.next()?;
-    if field.wire != 2 || ids.next().is_some() {
-        return None;
-    }
-    let id = std::str::from_utf8(field.data).ok()?;
-    (!id.is_empty() && id.len() <= 512).then(|| id.to_owned())
-}
-
 /// Detect a tool call Cursor issued through one of its OWN built-in tools rather
 /// than through a bridged MCP tool.
 ///
 /// Composer picks a transport per turn: a bridged caller tool arrives as
-/// `ExecServerMessage.mcp_args` (field 11, handled by [`extract_tool_call`]),
+/// `ExecServerMessage.mcp_args` (field 11, handled by the strict decoder),
 /// but a built-in tool arrives under a different, tool-specific field carrying
 /// only its arguments and a `tool_<uuid>` call id — no tool name, the identity
 /// being the field number. Observed shape for the built-in file read
@@ -1116,7 +1110,9 @@ const MAX_TOOL_ID_SCAN_DEPTH: usize = 8;
 
 /// Decode `McpArgs { name=1, args=2 (map<string,Value>), tool_call_id=3,
 /// tool_name=5 }` into `(name, input JSON)`. `tool_call_id` is intentionally
-/// decoded separately by extract_tool_call_id for the active transport.
+/// not used here: this decoder is retained only for characterization tests.
+/// The active transport uses strict.rs and validates the authentic ID there.
+#[cfg(test)]
 fn decode_mcp_args(buf: &[u8]) -> Option<(String, String)> {
     let mut name: Option<String> = None;
     let mut tool_name: Option<String> = None;
@@ -1155,13 +1151,16 @@ fn decode_mcp_args(buf: &[u8]) -> Option<(String, String)> {
 /// so a hostile/malformed deeply-nested payload cannot overflow the stack
 /// (mirrors the gzip-size cap in `connect.rs`). Nesting past the cap decodes to
 /// `Null`.
+#[cfg(test)]
 const MAX_PROTOBUF_VALUE_DEPTH: usize = 64;
 
 /// Decode a `google.protobuf.Value` (exactly one oneof field set) into JSON.
+#[cfg(test)]
 fn decode_protobuf_value(buf: &[u8]) -> serde_json::Value {
     decode_protobuf_value_at(buf, 0)
 }
 
+#[cfg(test)]
 fn decode_protobuf_value_at(buf: &[u8], depth: usize) -> serde_json::Value {
     if depth >= MAX_PROTOBUF_VALUE_DEPTH {
         return serde_json::Value::Null;
@@ -1207,6 +1206,7 @@ fn decode_protobuf_value_at(buf: &[u8], depth: usize) -> serde_json::Value {
 }
 
 /// Decode `google.protobuf.Struct { fields = 1 (map<string,Value>) }`.
+#[cfg(test)]
 fn decode_protobuf_struct_at(buf: &[u8], depth: usize) -> serde_json::Value {
     let mut map = serde_json::Map::new();
     for field in iter_fields(buf) {
@@ -1230,6 +1230,7 @@ fn decode_protobuf_struct_at(buf: &[u8], depth: usize) -> serde_json::Value {
 }
 
 /// Decode `google.protobuf.ListValue { values = 1 (repeated Value) }`.
+#[cfg(test)]
 fn decode_protobuf_list_at(buf: &[u8], depth: usize) -> serde_json::Value {
     let mut items = Vec::new();
     for field in iter_fields(buf) {
@@ -1641,7 +1642,7 @@ mod tests {
         assert_eq!(name, "Preferred");
     }
 
-    async fn turn_from_frames(frames: Vec<u8>) -> CursorAgentTurn {
+    pub(super) async fn turn_from_frames(frames: Vec<u8>) -> CursorAgentTurn {
         use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};
 
         let server = MockServer::start().await;
