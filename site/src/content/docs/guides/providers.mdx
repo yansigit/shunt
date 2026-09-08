@@ -7,6 +7,7 @@ Providers are a **name → config map**. Anthropic-compatible and Responses-comp
 
 - **`kind = "anthropic"`** — the upstream speaks the Anthropic Messages API. shunt passes the request through, optionally injecting a different API key.
 - **`kind = "responses"`** — the upstream speaks the OpenAI Responses API. shunt translates Anthropic Messages ⇄ Responses, including streaming.
+- **`kind = "openai_chat"`** — the upstream speaks the OpenAI Chat Completions API. shunt translates Anthropic Messages ⇄ Chat Completions, including streaming; see the [OpenAI-compatible provider page](/providers/openai-chat/).
 - **`kind = "cursor"`** — the native Cursor ConnectRPC/protobuf adapter.
 - **`kind = "gemini"`** — the native Google Code Assist `generateContent` adapter.
 - **`kind = "antigravity"`** — the Google Antigravity backend over HTTP.
@@ -20,6 +21,8 @@ only later candidates that cannot preserve requirements detected in the
 Messages request: tools, base64 or URL images, structured output, and explicit
 reasoning effort. Malformed or unknown shapes are left to the selected adapter's
 normal validation. This behavior is automatic and has no configuration keys.
+
+`openai_chat` fallbacks support tools and base64/URL images, but are excluded for structured output or explicit reasoning effort. The configured primary is retained and validates unsupported input normally.
 
 | Requirement | Anthropic | Responses | Gemini / Antigravity | Cursor | Antigravity CLI |
 |-------------|-----------|-----------|------------------------|--------|-----------------|

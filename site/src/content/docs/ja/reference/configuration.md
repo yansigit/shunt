@@ -263,8 +263,8 @@ codex-fallback = "gpt-5.2"
 | :-- | :-- | :-- |
 | `name` | はい | 空でない一意のアップストリーム名。ルート、モデルマップ、`server.default_provider`、メトリクス、管理画面で使われます。 |
 | `provider` | `kind` と `base_url` を設定しない場合 | 組み込み preset。`kind`、`base_url`、デフォルト auth を提供します。明示したフィールドは preset 値を上書きします。 |
-| `kind` | preset がない場合 | `anthropic`、`responses`、`cursor`、`gemini`、`antigravity`、`antigravity_cli`。後者 3 つは下記の preset 表に項目がないため（組み込みの `[providers.gemini]`、`[providers.antigravity]`、`[providers.antigravity-cli]` テーブルは preset ではなく、別建てのレガシー方式です）、順序付き upstream では `kind` を明示的に指定する必要があります。CLI provider のテーブル名はハイフンの `antigravity-cli` ですが、`kind` 値はアンダースコアの `antigravity_cli` です。 |
-| `base_url` | preset がない場合 | アップストリームの base URL。`kind = "cursor"` ではログイン／トークン更新用エンドポイントにのみ使われます。推論は固定のエージェントホスト `https://agentn.global.api5.cursor.sh` を使用し、`SHUNT_CURSOR_AGENT_BASE_URL` でのみ上書きできます。 |
+| `kind` | preset がない場合 | `anthropic`、`responses`、`openai_chat`、`cursor`、`gemini`、`antigravity`、`antigravity_cli`。`openai_chat` と後者 3 つは下記の preset 表に項目がないため（組み込みの `[providers.gemini]`、`[providers.antigravity]`、`[providers.antigravity-cli]` テーブルは preset ではなく、別建てのレガシー方式です）、順序付き upstream では `kind` を明示的に指定する必要があります。CLI provider のテーブル名はハイフンの `antigravity-cli` ですが、`kind` 値はアンダースコアの `antigravity_cli` です。`kind = "openai_chat"` は追加で `env`（レガシー形式では `api_key_env`）付きの `auth = "api_key"` が必要で、他の credential モードは受け付けません。 |
+| `base_url` | preset がない場合 | アップストリームの base URL。`kind = "cursor"` ではログイン／トークン更新用エンドポイントにのみ使われます。推論は固定のエージェントホスト `https://agentn.global.api5.cursor.sh` を使用し、`SHUNT_CURSOR_AGENT_BASE_URL` でのみ上書きできます。`kind = "openai_chat"` では、URL はクエリ・フラグメント・userinfo・ドットパスセグメント・空白・バックスラッシュを含まない平易な `http://`／`https://` ルートである必要があります。shunt はちょうど 1 つの `/chat/completions` パスを追加します（すでに `/chat/completions` で終わるルートはそのまま維持されます）。 |
 | `auth` | いいえ | auth mode の文字列、または mode 固有のマップ。デフォルトは preset の auth、preset もなければ `passthrough`。 |
 | `effort`, `count_tokens`, `websocket`, `tool_search`, `request_compression`, `retry` | いいえ | レガシー provider と同じアップストリーム単位の設定。preset は `count_tokens` を上書きしません。Cursor アップストリームでも `retry` は正規化されますが、Cursor のストリーミングターンには適用されません。 |
 
@@ -319,7 +319,7 @@ Cursor の履歴やキャンセル用の設定キーは追加されません。�
 
 | キー | 値 | 意味 |
 | :-- | :-- | :-- |
-| `kind` | `anthropic` \| `responses` \| `cursor` \| `gemini` \| `antigravity` \| `antigravity_cli` | 上流プロトコル / アダプター。`anthropic` = Messages API（パススルー、オプションで再キー付け）。`responses` = Anthropic Messages を OpenAI Responses API へ変換。`cursor` = ネイティブな Cursor ConnectRPC/protobuf AgentService アダプター。`gemini` = Anthropic Messages を Google Code Assist バックエンドの Gemini `generateContent`/`streamGenerateContent` へ変換。`antigravity` = Google Antigravity バックエンドに HTTP で接続。`gemini` と同じ Code Assist プロトコルを話しますが、Antigravity のサブスクリプショントークンで認証し、プロジェクト探索では `ideType: ANTIGRAVITY` として自身を識別します。`antigravity_cli` = **非推奨** — 上流を持たず、ローカルの Antigravity CLI バイナリ（`agy`）をサブプロセスとして実行。`agy` が自身のツール呼び出しを解決し、`tool_use` ブロックを返せないため、実際にツール呼び出しを要求するリクエスト（空でない `tools` 配列、または `any`・`tool` の `tool_choice`）は、テキストとして黙って応答するのではなく `400 invalid_request_error` で拒否されます。`tool_choice: none`（`tools` と併用していても）、ツールのない `tool_choice: auto`、空の `tools: []` はいずれもツール呼び出しを強制しないため受け付けられます。 |
+| `kind` | `anthropic` \| `responses` \| `openai_chat` \| `cursor` \| `gemini` \| `antigravity` \| `antigravity_cli` | 上流プロトコル / アダプター。`anthropic` = Messages API（パススルー、オプションで再キー付け）。`responses` = Anthropic Messages を OpenAI Responses API へ変換。`cursor` = ネイティブな Cursor ConnectRPC/protobuf AgentService アダプター。`gemini` = Anthropic Messages を Google Code Assist バックエンドの Gemini `generateContent`/`streamGenerateContent` へ変換。`antigravity` = Google Antigravity バックエンドに HTTP で接続。`gemini` と同じ Code Assist プロトコルを話しますが、Antigravity のサブスクリプショントークンで認証し、プロジェクト探索では `ideType: ANTIGRAVITY` として自身を識別します。`antigravity_cli` = **非推奨** — 上流を持たず、ローカルの Antigravity CLI バイナリ（`agy`）をサブプロセスとして実行。`agy` が自身のツール呼び出しを解決し、`tool_use` ブロックを返せないため、実際にツール呼び出しを要求するリクエスト（空でない `tools` 配列、または `any`・`tool` の `tool_choice`）は、テキストとして黙って応答するのではなく `400 invalid_request_error` で拒否されます。`tool_choice: none`（`tools` と併用していても）、ツールのない `tool_choice: auto`、空の `tools: []` はいずれもツール呼び出しを強制しないため受け付けられます。 |
 | `base_url` | URL | 上流のベース。shunt がエンドポイントパスを追加します。`kind = "cursor"` ではログイン／トークン更新用エンドポイントにのみ使われ、エージェント／推論ホストは選択しません。 |
 | `auth` | `passthrough` \| `api_key` \| `chatgpt_oauth` \| `claude_oauth` \| `xai_oauth` \| `cursor_oauth` \| `google_oauth` \| `antigravity_oauth` \| `none` | `passthrough` はクライアント自身の credential を転送。`api_key` は `api_key_env` からキーを注入。`chatgpt_oauth` は `~/.codex/auth.json` を再利用。`claude_oauth` は明示的な Anthropic アカウントから選択。`xai_oauth` は `shunt login xai` からの `~/.shunt/xai-auth.json` を再利用（HTTPS 上の x.ai/grok.com ホストへのみ送信）。`cursor_oauth` は `~/.shunt/cursor-auth.json`（`shunt login cursor`）を再利用。`google_oauth` は gemini CLI ログインの `~/.gemini/oauth_creds.json` を再利用し、`kind = "gemini"` でのみ有効。`antigravity_oauth` は `shunt login antigravity` からの `~/.shunt/antigravity-auth.json` を再利用し、`kind = "antigravity"` でのみ有効で、`google_oauth` とは**互換性がありません** — Antigravity は Gemini CLI のトークンには含まれない 2 つのスコープ（`cclog`、`experimentsandconfigs`）を要求します。`none` は認証すべき上流を持たないアダプター（`kind = "antigravity_cli"`）向けに、credential を一切送信しません。 |
 | `api_key_env` | 環境変数名 | `auth = "api_key"` のとき、キーを読み取る場所。この値自体も `${VAR}` / `${file:...}` で書けます([Secret 参照](#secret-参照)を参照)。 |
@@ -423,6 +423,8 @@ codex = "gpt-5.2"
 | キー | 意味 |
 | :-- | :-- |
 | 任意 | ヘッダー名 → 値、例: `authorization = "Bearer <token>"` |
+
+`kind = "openai_chat"` の `count_tokens` は設定した戦略に関係なくローカル推定値を使います。読み取りアイドル制限は120秒固定です。順序付きupstreamでは `auth = { mode = "api_key", env = "CHAT_API_KEY" }` を使ってください。[Chatプロバイダーの制限](/ja/providers/openai-chat/)を参照してください。
 
 ## ルーティング優先順位
 

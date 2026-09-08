@@ -3,9 +3,9 @@
     {
       "requirement_id": "CHAT-01",
       "category": "unclassified",
-      "status": "unresolved",
-      "verification": null,
-      "resolution": null,
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Request-local model and credentials are proven by openai_chat_tracer_unary_isolation and openai_chat_auth_concurrent_keys_survive_no_redirect in tests/openai_chat_conformance.rs; interleaved tool assembly is independently request-local.",
       "reason": null,
       "probe": "unclassified — review manually"
     },
@@ -93,9 +93,9 @@
     {
       "requirement_id": "CHAT-07",
       "category": "unclassified",
-      "status": "unresolved",
-      "verification": null,
-      "resolution": null,
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Five real TCP fixtures in tests/openai_chat_conformance/lifetime.rs cover cancellation before headers for unary and streaming, unary body collection, streamed text, and incomplete tool arguments. Each observes upstream EOF, joins the backend task, and proves the held admission permit is reclaimed with a subsequent successful request within bounded deadlines. No claim is made about already-in-flight bytes.",
       "reason": null,
       "probe": "unclassified — review manually"
     },
@@ -129,10 +129,10 @@
   ],
   "coverage": {
     "applicable": 14,
-    "resolved": 12,
-    "unresolved": 2,
+    "resolved": 14,
+    "unresolved": 0,
     "byVerification": {
-      "explicit": 12,
+      "explicit": 14,
       "backstop": 0
     }
   }

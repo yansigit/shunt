@@ -5,7 +5,7 @@ const fs = require('node:fs');
 test('openai_chat documentation surfaces and locales', () => {
   const files = ['README.md','README.ko.md','README.ja.md','README.zh-CN.md','docs/openai-chat-translation.md'];
   for (const locale of ['', 'ko/', 'ja/', 'zh-cn/']) {
-    for (const page of ['providers/openai-chat.md','reference/configuration.md','guides/providers.md']) {
+    for (const page of ['providers/openai-chat.md','reference/configuration.md','guides/providers.mdx']) {
       files.push(`site/src/content/docs/${locale}${page}`);
     }
   }

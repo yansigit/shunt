@@ -40,6 +40,11 @@ export const NAVIGATION: NavigationGroup[] = [
       { label: "Overview", translations: { ko: "개요", ja: "概要", "zh-cn": "概览" }, slug: "guides/providers" },
       { label: "Anthropic", slug: "providers/anthropic" },
       { label: "OpenAI", slug: "providers/openai" },
+      {
+        label: "OpenAI-compatible (Chat Completions)",
+        translations: { ko: "OpenAI 호환 (Chat Completions)", ja: "OpenAI 互換 (Chat Completions)", "zh-cn": "OpenAI 兼容（Chat Completions）" },
+        slug: "providers/openai-chat",
+      },
       { label: "ChatGPT / Codex", translations: { ko: "ChatGPT / Codex", ja: "ChatGPT / Codex", "zh-cn": "ChatGPT / Codex" }, slug: "guides/codex" },
       { label: "xAI / Grok", translations: { ko: "xAI / Grok", ja: "xAI / Grok", "zh-cn": "xAI / Grok" }, slug: "guides/xai" },
       { label: "Cursor", slug: "providers/cursor" },

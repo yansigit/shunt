@@ -7,6 +7,7 @@ description: 内置的提供方,以及如何用一个 TOML 表添加任意兼容
 
 - **`kind = "anthropic"`** —— 上游讲 Anthropic Messages API。shunt 将请求透传,可选择注入一个不同的 API 密钥。
 - **`kind = "responses"`** —— 上游讲 OpenAI Responses API。shunt 在 Anthropic Messages ⇄ Responses 之间转换,含流式传输。
+- **`kind = "openai_chat"`** —— 上游讲 OpenAI Chat Completions API。shunt 在 Anthropic Messages ⇄ Chat Completions 之间转换,含流式传输。详见 [OpenAI 兼容提供方页面](/zh-cn/providers/openai-chat/)。
 - **`kind = "cursor"`** —— 原生 Cursor 适配器。shunt 将 Cursor 的 ConnectRPC/protobuf AgentService 桥接到 Anthropic Messages API,含流式传输、推理(流式响应中)、原生工具调用与内联图像。由内置的 `cursor` 提供方使用。
 - **`kind = "gemini"`** —— 原生的 Google Code Assist `generateContent` 适配器。
 - **`kind = "antigravity"`** —— 通过 HTTP 连接 Google Antigravity 后端。
@@ -15,6 +16,8 @@ description: 内置的提供方,以及如何用一个 TOML 表添加任意兼容
 ## 感知能力的故障转移链
 
 模型映射到多个上游时，shunt 始终保留已配置的 primary。在认证、凭据查找和网络 I/O 之前，它仅移除无法保留 Messages 请求所需工具、base64/URL 图像、结构化输出或显式 reasoning effort 的后续候选。畸形或未知结构仍交由所选适配器正常验证。该行为无需新增配置键。
+
+`openai_chat` 回退支持工具和base64/URL图像，但在请求结构化输出或显式reasoning effort时会被排除。配置的主目标仍会保留，并通过正常验证拒绝不支持的输入。
 
 | 要求 | Anthropic | Responses | Gemini / Antigravity | Cursor | Antigravity CLI |
 |------|-----------|-----------|------------------------|--------|-----------------|

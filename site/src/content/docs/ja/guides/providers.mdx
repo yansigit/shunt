@@ -7,6 +7,7 @@ description: 組み込みプロバイダーと、TOML テーブルで任意の A
 
 - **`kind = "anthropic"`** — 上流が Anthropic Messages API を話します。shunt はリクエストをパススルーし、オプションで別の API キーを注入します。
 - **`kind = "responses"`** — 上流が OpenAI Responses API を話します。shunt は Anthropic Messages ⇄ Responses を、ストリーミングを含めて変換します。
+- **`kind = "openai_chat"`** — 上流が OpenAI Chat Completions API を話します。shunt は Anthropic Messages ⇄ Chat Completions を、ストリーミングを含めて変換します。詳しくは [OpenAI 互換プロバイダーのページ](/ja/providers/openai-chat/) を参照してください。
 - **`kind = "cursor"`** — ネイティブな Cursor アダプター。shunt は Cursor の ConnectRPC/protobuf AgentService を Anthropic Messages API へブリッジし、ストリーミング・推論(ストリーミング応答時)・ネイティブなツール呼び出し・インライン画像を含みます。組み込みの `cursor` プロバイダーが使用します。
 - **`kind = "gemini"`** — ネイティブな Google Code Assist `generateContent` アダプター。
 - **`kind = "antigravity"`** — HTTP 経由で Google Antigravity バックエンドに接続します。
@@ -15,6 +16,8 @@ description: 組み込みプロバイダーと、TOML テーブルで任意の A
 ## 機能を考慮したフェイルオーバーチェーン
 
 複数のアップストリームにマッピングされたモデルでも、shunt は設定された primary を必ず保持します。認証、認証情報の解決、ネットワーク I/O の前に、Messages リクエストから検出したツール、base64/URL 画像、構造化出力、明示的な reasoning effort を保持できない後続候補だけを除外します。不正または未知の形は、選択されたアダプターの通常の検証に委ねます。追加の設定キーはありません。
+
+`openai_chat` フォールバックはツールとbase64/URL画像に対応しますが、構造化出力や明示的なreasoning effortが必要な場合は除外されます。設定されたprimaryは保持され、未対応入力は通常の検証で拒否されます。
 
 | 要件 | Anthropic | Responses | Gemini / Antigravity | Cursor | Antigravity CLI |
 |------|-----------|-----------|------------------------|--------|-----------------|

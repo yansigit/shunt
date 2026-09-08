@@ -107,7 +107,9 @@ shunt add upstream https://provider.example/docs --print | claude
 
 ## 프로바이더
 
-프로바이더는 순서가 있는 `[[upstreams]]` 항목 또는 레거시 `[providers.<name>]` TOML 테이블입니다(YAML에서는 각각 해당 sequence 또는 mapping의 항목). 두 가지 어댑터 종류가 대부분의 업스트림을 커버합니다. `kind = "anthropic"`(업스트림이 Anthropic Messages를 사용하며, 필요하면 다른 키로 패스스루)와 `kind = "responses"`(업스트림이 OpenAI Responses API를 사용하며, shunt가 Anthropic Messages ⇄ Responses를 스트리밍 포함하여 변환)입니다. 세 번째 네이티브 종류인 `kind = "cursor"`는 Cursor의 ConnectRPC/protobuf AgentService를 브리지하여 Cursor 구독을 동일한 Anthropic-Messages 인터페이스로 사용할 수 있게 합니다.
+사용자 정의 Chat 백엔드는 `kind = "openai_chat"`, 명시적인 `http://` 또는 `https://` `base_url`, API 키 인증을 설정합니다. 순서 있는 업스트림에는 `auth = { mode = "api_key", env = "CHAT_API_KEY" }`를, 레거시 테이블에는 `auth = "api_key"`와 `api_key_env`를 사용합니다. URL에는 사용자 정보, 쿼리, 프래그먼트, 점 경로 세그먼트, 공백, 백슬래시를 넣을 수 없으며 `/chat/completions`는 한 번만 추가됩니다. 기존 `openai`/`codex` Responses 설정은 바뀌지 않습니다.
+
+프로바이더는 순서가 있는 `[[upstreams]]` 항목 또는 레거시 `[providers.<name>]` TOML 테이블입니다(YAML에서는 각각 해당 sequence 또는 mapping의 항목). 세 가지 변환 종류가 대부분의 업스트림을 커버합니다. `kind = "anthropic"`(업스트림이 Anthropic Messages를 사용하며, 필요하면 다른 키로 패스스루), `kind = "responses"`(업스트림이 OpenAI Responses API를 사용하며, shunt가 Anthropic Messages ⇄ Responses를 스트리밍 포함하여 변환), `kind = "openai_chat"`(업스트림이 OpenAI Chat Completions API를 사용하며, shunt가 Anthropic Messages ⇄ Chat Completions를 스트리밍 포함하여 변환 — API 키 인증만 지원, 내장 프리셋 없음, [Providers → OpenAI 호환](https://shunt.dev/providers/openai-chat/) 참고)입니다. 네 번째 네이티브 종류인 `kind = "cursor"`는 Cursor의 ConnectRPC/protobuf AgentService를 브리지하여 Cursor 구독을 동일한 Anthropic-Messages 인터페이스로 사용할 수 있게 합니다.
 
 순서가 있는 업스트림은 프로바이더 간 페일오버를 지원합니다. 선언 순서가 시도 순서이며, 모델의 `upstream_model` 맵은 참여할 항목을 선택하고 공개 id를 각 백엔드 id에 매핑합니다.
 
