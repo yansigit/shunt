@@ -124,6 +124,12 @@ fn anthropic_request(model: &str) -> String {
     .to_string()
 }
 
+fn anthropic_streaming_request(model: &str) -> String {
+    let mut value: Value = serde_json::from_str(&anthropic_request(model)).unwrap();
+    value["stream"] = json!(true);
+    value.to_string()
+}
+
 fn chat_completion_upstream() -> Value {
     json!({
         "id": "chatcmpl-fixture",
@@ -138,6 +144,59 @@ fn chat_completion_upstream() -> Value {
         "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7}
     })
 }
+
+/// Collect the gateway SSE relay into (event, data) frames for assertions.
+async fn collect_sse_events(response: reqwest::Response) -> Vec<(String, Value)> {
+    use futures_util::StreamExt;
+    let mut buffer = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        buffer.extend_from_slice(&chunk.unwrap());
+    }
+    let text = String::from_utf8(buffer).expect("SSE relay must be UTF-8");
+    let mut events = Vec::new();
+    for frame in text.split("\n\n") {
+        let frame = frame.trim();
+        if frame.is_empty() {
+            continue;
+        }
+        let mut event = "message".to_string();
+        let mut data = String::new();
+        for line in frame.lines() {
+            if let Some(rest) = line.strip_prefix("event: ") {
+                event = rest.to_string();
+            }
+            if let Some(rest) = line.strip_prefix("data: ") {
+                data.push_str(rest);
+            }
+        }
+        if data.is_empty() {
+            continue;
+        }
+        let value = serde_json::from_str(&data).unwrap_or(Value::Null);
+        events.push((event, value));
+    }
+    events
+}
+
+fn sse_body(frames: &[String]) -> ResponseTemplate {
+    ResponseTemplate::new(200)
+        .insert_header("content-type", "text/event-stream")
+        // Real upstreams terminate the final frame with a blank line; EOF on
+        // an unterminated frame is its own fail-closed case elsewhere.
+        .set_body_raw(format!("{}\n\n", frames.join("\n\n")), "text/event-stream")
+}
+
+fn chat_delta(delta: Value, finish: Option<&str>) -> String {
+    let mut choice = json!({ "index": 0, "delta": delta });
+    if let Some(finish) = finish {
+        choice["finish_reason"] = json!(finish);
+    }
+    json!({ "choices": [choice] }).to_string()
+}
+
+const CHAT_USAGE_CHUNK: &str =
+    r#"{"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":2,"total_tokens":9}}"#;
 
 #[tokio::test]
 async fn openai_chat_tracer_unary_happy_path() {
@@ -304,4 +363,156 @@ async fn openai_chat_tracer_unary_non_api_key_auth_rejected() {
     let message = error.to_string();
     assert!(message.contains("openai_chat"), "{message}");
     assert!(message.contains("api_key"), "{message}");
+}
+
+#[tokio::test]
+async fn openai_chat_tracer_streaming_relay() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+
+    let backend = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(sse_body(&[
+            chat_delta(json!({"role": "assistant"}), None),
+            chat_delta(json!({"content": "hello "}), None),
+            chat_delta(json!({"content": "world"}), Some("stop")),
+            CHAT_USAGE_CHUNK.to_string(),
+            "[DONE]".to_string(),
+        ]))
+        .expect(1)
+        .mount(&backend)
+        .await;
+
+    let gateway = start_gateway(single_provider_config(&backend.uri())).await;
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .body(anthropic_streaming_request("claude-via-chat"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let events = collect_sse_events(response).await;
+
+    let text: Vec<&str> = events
+        .iter()
+        .filter(|(event, _)| event == "content_block_delta")
+        .filter_map(|(_, data)| data["delta"]["text"].as_str())
+        .collect();
+    assert_eq!(text, vec!["hello ", "world"], "{events:?}");
+    let stops = events
+        .iter()
+        .filter(|(event, _)| event == "message_stop")
+        .count();
+    assert_eq!(stops, 1, "exactly one authoritative terminal: {events:?}");
+    assert!(
+        events.iter().any(|(event, _)| event == "message_start"),
+        "{events:?}"
+    );
+    let delta = events
+        .iter()
+        .find(|(event, _)| event == "message_delta")
+        .map(|(_, data)| data)
+        .expect("message_delta carries the terminal decision");
+    assert_eq!(delta["delta"]["stop_reason"], "end_turn", "{delta}");
+    assert_eq!(delta["usage"]["input_tokens"], 7, "{delta}");
+    assert_eq!(delta["usage"]["output_tokens"], 2, "{delta}");
+
+    let requests = backend.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    let upstream_body: Value =
+        serde_json::from_slice(&requests[0].body).expect("upstream body is JSON");
+    assert_eq!(upstream_body["stream"], true, "{upstream_body}");
+    assert_eq!(
+        upstream_body["stream_options"]["include_usage"], true,
+        "usage accounting must be forced upstream"
+    );
+}
+
+#[tokio::test]
+async fn openai_chat_tracer_streaming_eof_failclosed() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+
+    let backend = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(sse_body(&[
+            chat_delta(json!({"role": "assistant"}), None),
+            chat_delta(json!({"content": "partial"}), None),
+        ]))
+        .expect(1)
+        .mount(&backend)
+        .await;
+
+    let gateway = start_gateway(single_provider_config(&backend.uri())).await;
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .body(anthropic_streaming_request("claude-via-chat"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let events = collect_sse_events(response).await;
+
+    let errors = events
+        .iter()
+        .filter(|(event, _)| event == "error")
+        .count();
+    assert_eq!(errors, 1, "EOF without a terminal must fail closed: {events:?}");
+    assert!(
+        events.iter().all(|(event, _)| event != "message_stop"),
+        "a cut stream must never emit a success terminal: {events:?}"
+    );
+}
+
+#[tokio::test]
+async fn openai_chat_tracer_streaming_duplicate_terminal() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+
+    let backend = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(sse_body(&[
+            chat_delta(json!({"role": "assistant"}), None),
+            chat_delta(json!({"content": "done"}), Some("stop")),
+            "[DONE]".to_string(),
+            "[DONE]".to_string(),
+        ]))
+        .expect(1)
+        .mount(&backend)
+        .await;
+
+    let gateway = start_gateway(single_provider_config(&backend.uri())).await;
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .body(anthropic_streaming_request("claude-via-chat"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let events = collect_sse_events(response).await;
+
+    let errors = events
+        .iter()
+        .filter(|(event, _)| event == "error")
+        .count();
+    assert_eq!(
+        errors, 1,
+        "a duplicate [DONE] terminal must fail closed: {events:?}"
+    );
+    assert!(
+        events.iter().all(|(event, _)| event != "message_stop"),
+        "no success terminal may survive a duplicate [DONE]: {events:?}"
+    );
 }
