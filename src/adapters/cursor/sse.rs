@@ -153,6 +153,7 @@ pub struct CursorSseFramer {
     usage_cache_read_tokens: u64,
     usage_cache_write_tokens: u64,
     finalized: bool,
+    run_usage: bool,
 }
 
 impl CursorSseFramer {
@@ -172,6 +173,7 @@ impl CursorSseFramer {
             usage_cache_read_tokens: 0,
             usage_cache_write_tokens: 0,
             finalized: false,
+            run_usage: false,
         }
     }
 
@@ -181,7 +183,7 @@ impl CursorSseFramer {
         }
         self.started = true;
 
-        let data = serde_json::json!({
+        let mut data = serde_json::json!({
             "type": "message_start",
             "message": {
                 "id": &self.message_id,
@@ -192,7 +194,7 @@ impl CursorSseFramer {
                 "stop_reason": null,
                 "stop_sequence": null,
                 "usage": {
-                    "input_tokens": self.usage_input_tokens.max(1),
+                    "input_tokens": self.input_tokens(),
                     "output_tokens": 0,
                     // On the buffered paths usage is pre-seeded, so these carry the
                     // real cache counts; on the true streaming path they are 0
@@ -202,6 +204,9 @@ impl CursorSseFramer {
                 }
             }
         });
+        if self.run_usage {
+            data["message"]["usage"]["estimated"] = serde_json::json!(true);
+        }
         append_sse_event(&mut self.output, EVENT_MESSAGE_START, &data);
     }
 
@@ -313,6 +318,28 @@ impl CursorSseFramer {
         self.usage_cache_write_tokens = cache_write_tokens;
     }
 
+    /// Active Run has derived input and unavailable caches. Retired buffered
+    /// protocol behavior stays separate; zero here means unavailable if absent.
+    pub(super) fn use_run_usage(&mut self) {
+        self.run_usage = true;
+    }
+
+    fn input_tokens(&self) -> u64 {
+        if self.run_usage {
+            self.usage_input_tokens
+        } else {
+            self.usage_input_tokens.max(1)
+        }
+    }
+
+    pub(super) fn emit_run_usage(&mut self, input: u64, output: u64) {
+        self.record_usage(input, output, 0, 0);
+        self.ensure_start();
+        let data = serde_json::json!({"type":"message_delta","delta":{},
+            "usage":{"input_tokens":input,"output_tokens":output,"estimated":true}});
+        append_sse_event(&mut self.output, EVENT_MESSAGE_DELTA, &data);
+    }
+
     /// Pre-seed usage from a fully-buffered event list so the `message_start`
     /// event reports the real input-token count. Cursor only reports usage in the
     /// terminal `turn_ended`, but the buffered paths hold every event before any
@@ -391,19 +418,22 @@ impl CursorSseFramer {
         self.close_open_blocks();
 
         // message_delta
-        let data = serde_json::json!({
+        let mut data = serde_json::json!({
             "type": "message_delta",
             "delta": {
                 "stop_reason": stop_reason,
                 "stop_sequence": null
             },
             "usage": {
-                "input_tokens": self.usage_input_tokens.max(1),
+                "input_tokens": self.input_tokens(),
                 "output_tokens": self.usage_output_tokens,
                 "cache_creation_input_tokens": self.usage_cache_write_tokens,
                 "cache_read_input_tokens": self.usage_cache_read_tokens
             }
         });
+        if self.run_usage {
+            data["usage"]["estimated"] = serde_json::json!(true);
+        }
         append_sse_event(&mut self.output, EVENT_MESSAGE_DELTA, &data);
 
         // message_stop

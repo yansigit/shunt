@@ -2,6 +2,76 @@ use super::*;
 use crate::adapters::cursor::connect::encode_connect_frame;
 
 #[tokio::test]
+async fn cursor_terminal_dedupe_idle_rejects_duplicate_and_post_terminal_bytes() {
+    for tail in [
+        encode_connect_frame(b"{}", 2).to_vec(),
+        encode_connect_frame(b"", 0).to_vec(),
+        vec![0],
+    ] {
+        let (stop, _) = oneshot::channel();
+        let mut state = ReadState {
+            bytes: futures_util::stream::empty().boxed(),
+            decoder: ConnectFrameDecoder::new(),
+            pending: VecDeque::new(),
+            _guard: TurnGuard {
+                _stop: Some(stop),
+                _sender: None,
+            },
+            kv_store: RequestBlobStore::new(),
+            kv_tx: None,
+            got_text: false,
+            finished: false,
+            usage: super::super::usage::Tracker::default(),
+        };
+        let chunk = [encode_connect_frame(b"{}", 2).to_vec(), tail].concat();
+        state.ingest(&chunk).await;
+        assert!(state.finished);
+        assert_eq!(state.pending.len(), 1);
+        assert!(state.pending.pop_front().unwrap().is_err());
+    }
+    assert!(terminal_event(true, true, Ok(())).is_err());
+}
+
+#[tokio::test]
+async fn cursor_terminal_dedupe_idle_turn_ended_accepts_only_a_following_trailer() {
+    use crate::adapters::cursor::test_frames::active_wire;
+    for (tail, valid) in [
+        (vec![], true),
+        (encode_connect_frame(b"{}", 2).to_vec(), true),
+        (
+            encode_connect_frame(active_wire::delta(1), 0).to_vec(),
+            false,
+        ),
+        (vec![0], false),
+    ] {
+        let (stop, _) = oneshot::channel();
+        let mut state = ReadState {
+            bytes: futures_util::stream::empty().boxed(),
+            decoder: ConnectFrameDecoder::new(),
+            pending: VecDeque::new(),
+            _guard: TurnGuard {
+                _stop: Some(stop),
+                _sender: None,
+            },
+            kv_store: RequestBlobStore::new(),
+            kv_tx: None,
+            usage: super::super::usage::Tracker::default(),
+            got_text: false,
+            finished: false,
+        };
+        let chunk = [encode_connect_frame(active_wire::ended(), 0).to_vec(), tail].concat();
+        state.ingest(&chunk).await;
+        assert_eq!(state.pending.len(), 1);
+        let event = state.pending.pop_front().unwrap();
+        if valid {
+            assert!(matches!(event, Ok(CursorStreamEvent::End)));
+        } else {
+            assert!(event.is_err());
+        }
+    }
+}
+
+#[tokio::test]
 async fn cursor_history_identity_guard_aborts_backpressured_sender() {
     let (tx, mut rx) = mpsc::channel::<u8>(1);
     tx.send(1).await.unwrap();
@@ -44,6 +114,7 @@ async fn cursor_continuation_guard_missing_or_closed_kv_sender_errors() {
                 _sender: None,
             },
             kv_store: RequestBlobStore::new(),
+            usage: super::super::usage::Tracker::default(),
             kv_tx: closed.then_some(tx),
             got_text: false,
             finished: false,

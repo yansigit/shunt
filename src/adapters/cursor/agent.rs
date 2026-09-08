@@ -67,9 +67,7 @@ const CLI_CLIENT_VERSION: &str = "cli-2026.07.08-0c04a8a";
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 /// Generation can take a few seconds to start; allow a long first-byte budget.
 const FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(60);
-/// Cursor keeps the response side open after the assistant message when it
-/// expects a tool exec-result (which this stateless bridge never sends), so
-/// finish the turn once output goes quiet.
+/// Silence bounds resource occupancy but never proves successful completion.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(4);
 /// Upper bound on how long the read loop will wait for the paced request
 /// sender to accept one KV reply frame. The channel is bounded (capacity 8),
@@ -354,6 +352,7 @@ impl CursorAgentTurn {
             pending: VecDeque::new(),
             _guard: self.guard,
             kv_store: self.kv_store,
+            usage: super::usage::Tracker::default(),
             kv_tx: self.kv_tx,
             got_text: false,
             finished: false,
@@ -390,11 +389,8 @@ impl CursorAgentTurn {
                             state.decoder.finish(),
                         ));
                     }
-                    // Budget elapsed. After output this is a normal idle end
-                    // (the server keeps the response open waiting for a tool
-                    // exec-result we never send); before any output it is a
-                    // first-byte stall — surface that as an error, not an empty
-                    // success.
+                    // A first-byte or idle timeout without a terminal is an
+                    // explicit error, never synthesized successful completion.
                     Err(_) => {
                         state.finished = true;
                         state.pending.push_back(terminal_event(
@@ -427,7 +423,9 @@ fn terminal_event(
         Ok(()) if !timed_out => Err(CursorError::internal(
             "cursor: upstream EOF without an authoritative terminal",
         )),
-        Ok(()) => Ok(CursorStreamEvent::End),
+        Ok(()) => Err(CursorError::internal(
+            "cursor: upstream idle timeout without an authoritative terminal",
+        )),
         Err(error) => Err(CursorError::internal(format!("cursor frame: {error}"))),
     }
 }
@@ -443,6 +441,7 @@ struct ReadState {
     // hermetic unit turns that have no live request stream.
     kv_store: RequestBlobStore,
     kv_tx: Option<mpsc::Sender<Result<Bytes, std::io::Error>>>,
+    usage: super::usage::Tracker,
     got_text: bool,
     finished: bool,
 }
@@ -459,7 +458,18 @@ impl ReadState {
                 return;
             }
         };
-        for frame in frames {
+        let end_index = frames.iter().position(|frame| frame.flags & FLAG_END != 0);
+        if let Some(index) = end_index {
+            if index + 1 != frames.len() || self.decoder.finish().is_err() {
+                self.finished = true;
+                self.pending.push_back(Err(CursorError::internal(
+                    "cursor: duplicate terminal or bytes after terminal in received batch",
+                )));
+                return;
+            }
+        }
+        let frame_count = frames.len();
+        for (index, frame) in frames.into_iter().enumerate() {
             if frame.flags & FLAG_END != 0 {
                 if let Some(error) = parse_connect_error(&frame.payload) {
                     self.finished = true;
@@ -530,6 +540,41 @@ impl ReadState {
                     self.finished = true;
                     self.pending
                         .push_back(Err(CursorError::internal(error.to_string())));
+                    return;
+                }
+            }
+            match self.usage.accept(&payload) {
+                Ok(Some(event)) => self.pending.push_back(Ok(event)),
+                Ok(None) => {}
+                Err(error) => {
+                    self.finished = true;
+                    self.pending.push_back(Err(CursorError::internal(error)));
+                    return;
+                }
+            }
+            match super::usage::ended(&payload) {
+                Ok(true) => {
+                    // A Connect trailer may follow the semantic turn end in
+                    // this batch. Inspect it before success; other later bytes
+                    // are a protocol error, not another assistant turn.
+                    if index + 1 < frame_count && end_index == Some(index + 1) {
+                        continue;
+                    }
+                    if index + 1 < frame_count || self.decoder.finish().is_err() {
+                        self.finished = true;
+                        self.pending.push_back(Err(CursorError::internal(
+                            "cursor: bytes after turn-ended in received batch",
+                        )));
+                        return;
+                    }
+                    self.finished = true;
+                    self.pending.push_back(Ok(CursorStreamEvent::End));
+                    return;
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    self.finished = true;
+                    self.pending.push_back(Err(CursorError::internal(error)));
                     return;
                 }
             }
@@ -1308,11 +1353,8 @@ mod tests {
     }
 
     #[test]
-    fn terminal_event_idle_timeout_after_output_ends_cleanly() {
-        assert!(matches!(
-            super::terminal_event(true, true, Ok(())),
-            Ok(CursorStreamEvent::End)
-        ));
+    fn cursor_terminal_dedupe_idle_timeout_after_output_is_error() {
+        assert!(super::terminal_event(true, true, Ok(())).is_err());
     }
 
     #[test]

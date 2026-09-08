@@ -7,6 +7,7 @@ pub mod model;
 pub(crate) mod offload;
 pub mod request;
 pub mod sse;
+mod usage;
 mod wire;
 // Retained pending #170 follow-up: the old `api2.cursor.sh` proto/transport and
 // tool-bridge machinery are bound to the decommissioned wire format and are off
@@ -337,10 +338,20 @@ async fn aggregate_turn(
 ) -> Result<(StatusCode, axum::response::Response), AdapterError> {
     let mut events = std::pin::pin!(turn.into_event_stream());
     let mut text = String::new();
+    let mut input_tokens = 0;
+    let mut output_tokens = 0;
     let mut tool_call: Option<(String, String, String)> = None;
     while let Some(event) = events.next().await {
         match event.map_err(map_cursor_stream_error)? {
             CursorStreamEvent::TextDelta { text: delta } => text.push_str(&delta),
+            CursorStreamEvent::Usage {
+                input_tokens: input,
+                output_tokens: output,
+                ..
+            } => {
+                input_tokens = input;
+                output_tokens = output;
+            }
             CursorStreamEvent::ToolCall {
                 id,
                 name,
@@ -385,8 +396,9 @@ async fn aggregate_turn(
         "stop_reason": stop_reason,
         "stop_sequence": null,
         "usage": {
-            "input_tokens": 1,
-            "output_tokens": 1,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "estimated": true,
             "cache_creation_input_tokens": 0,
             "cache_read_input_tokens": 0
         }
@@ -400,7 +412,8 @@ fn streaming_response(
     model: String,
     keepalive: std::time::Duration,
 ) -> axum::response::Response {
-    let framer = CursorSseFramer::new(message_id, model);
+    let mut framer = CursorSseFramer::new(message_id, model);
+    framer.use_run_usage();
     let events = turn.into_event_stream();
     let output = futures_stream::unfold(
         (Box::pin(events), framer, false),
@@ -450,8 +463,18 @@ fn streaming_response(
                             (events, framer, true),
                         ));
                     }
-                    Some(Ok(CursorStreamEvent::Session { .. }))
-                    | Some(Ok(CursorStreamEvent::Usage { .. })) => {}
+                    Some(Ok(CursorStreamEvent::Usage {
+                        input_tokens,
+                        output_tokens,
+                        ..
+                    })) => {
+                        framer.emit_run_usage(input_tokens, output_tokens);
+                        return Some((
+                            Ok(Bytes::from(framer.take_output())),
+                            (events, framer, false),
+                        ));
+                    }
+                    Some(Ok(CursorStreamEvent::Session { .. })) => {}
                     Some(Err(error)) => {
                         let status =
                             StatusCode::from_u16(error.status).unwrap_or(StatusCode::BAD_GATEWAY);
@@ -1109,6 +1132,66 @@ mod tests {
         assert_eq!(body["stop_reason"], "end_turn");
         assert_eq!(body["content"][0]["type"], "text");
         assert_eq!(body["content"][0]["text"], "hello");
+    }
+
+    #[tokio::test]
+    async fn cursor_usage_relay_aggregate_uses_absolute_checkpoint_and_deltas() {
+        use super::test_frames::active_wire::{checkpoint, delta};
+        let mut frames = Vec::new();
+        for payload in [checkpoint(10000), delta(20), delta(22), checkpoint(10300)] {
+            frames.extend(connect::encode_connect_frame(payload, 0));
+        }
+        frames.extend(connect::encode_connect_frame(b"{}", 2));
+        let turn = turn_from_frames(frames).await;
+        let (_, response) = aggregate_turn(turn, "msg_usage", "composer-2.5")
+            .await
+            .unwrap();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let result: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(result["usage"]["output_tokens"], 42);
+        assert_eq!(result["usage"]["input_tokens"], 10258);
+        assert_eq!(result["usage"]["estimated"], true);
+    }
+
+    #[tokio::test]
+    async fn cursor_usage_relay_streams_before_terminal_and_absence_is_labeled() {
+        use super::test_frames::active_wire::delta;
+        use http_body_util::BodyExt;
+        let mut frames = Vec::new();
+        for value in [20, 22] {
+            frames.extend(connect::encode_connect_frame(delta(value), 0));
+        }
+        frames.extend(connect::encode_connect_frame(b"{}", 2));
+        let turn = turn_from_frames(frames).await;
+        let response = streaming_response(
+            turn,
+            "msg_usage".into(),
+            "composer-2.5".into(),
+            std::time::Duration::from_secs(60),
+        );
+        let mut body = response.into_body();
+        let first = body.frame().await.unwrap().unwrap().into_data().unwrap();
+        let first = std::str::from_utf8(&first).unwrap();
+        assert!(first.contains("\"output_tokens\":20"), "{first}");
+        assert!(first.contains("\"estimated\":true"));
+        assert!(!first.contains("message_stop"));
+        let second = body.frame().await.unwrap().unwrap().into_data().unwrap();
+        assert!(std::str::from_utf8(&second)
+            .unwrap()
+            .contains("\"output_tokens\":42"));
+        let turn = turn_from_frames(text_turn_frames("hello")).await;
+        let (_, response) = aggregate_turn(turn, "msg_empty_usage", "composer-2.5")
+            .await
+            .unwrap();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let value: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["usage"]["input_tokens"], 0);
+        assert_eq!(value["usage"]["output_tokens"], 0);
+        assert_eq!(value["usage"]["estimated"], true);
     }
 
     #[tokio::test]

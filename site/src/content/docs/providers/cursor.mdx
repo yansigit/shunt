@@ -119,6 +119,8 @@ History blobs live only in the active request: at most 192 entries, 512 KiB per 
 
 ## Verify
 
+Idle timeouts and duplicate/post-terminal bytes in an already-received batch are errors, not successful completion. Run output-token deltas are cumulative in streamed usage updates; context checkpoints replace the previous absolute occupancy rather than being added. `usage.estimated: true` labels the derived input count. Zero input/cache values (and zero output without deltas) are unavailable-data placeholders, not measured usage or billing figures.
+
 Tools require unique, nonempty names and explicit object `input_schema` values.
 Only custom MCP definitions and automatic tool choice are supported; forced
 tool choice and parallel-use guidance are rejected. Images require nonempty

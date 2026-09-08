@@ -53,6 +53,9 @@ async fn router_case(
     let missing_auth = history
         .as_ref()
         .is_some_and(|input| input["_test_no_auth"] == true);
+    let idle = history
+        .as_ref()
+        .is_some_and(|input| input["_test_idle"] == true);
     let host = "agentn.global.api5.cursor.sh";
     assert_eq!(super::agent_base_url(), super::AGENT_BASE_URL);
     let cert = rcgen::generate_simple_self_signed(vec![host.to_string()]).unwrap();
@@ -132,6 +135,12 @@ async fn router_case(
                     hydrate_history(request.into_body(), &mut send).await;
                     send.send_data(Bytes::from(body), true).unwrap();
                 });
+            } else if idle {
+                send.send_data(Bytes::from(body), false).unwrap();
+                workers.spawn(async move {
+                    let _send = send;
+                    std::future::pending::<()>().await;
+                });
             } else {
                 send.send_data(Bytes::from(body), true).unwrap();
             }
@@ -172,6 +181,9 @@ async fn router_case(
 
 #[tokio::test]
 async fn cursor_terminal_tracer_full_router_eof_and_terminal() {
+    let _observer = super::super::offload::OFFLOAD_OBSERVER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let _lock = crate::config::CONFIG_ENV_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
@@ -202,6 +214,28 @@ async fn cursor_terminal_tracer_full_router_eof_and_terminal() {
                 serde_json::from_str::<serde_json::Value>(&body).unwrap()["stop_reason"],
                 "end_turn"
             );
+        }
+    }
+}
+
+#[tokio::test]
+async fn cursor_terminal_dedupe_idle_full_router_never_synthesizes_success() {
+    let _observer = super::super::offload::OFFLOAD_OBSERVER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let _lock = crate::config::CONFIG_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    for stream in [false, true] {
+        let input = json!({"_test_idle":true,"messages":[{"role":"user","content":"fixture"}]});
+        let (status, body) = router_case(false, stream, Some(input)).await;
+        assert!(body.contains("idle timeout"), "{body}");
+        if stream {
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(body.matches("event: error").count(), 1);
+            assert!(!body.contains("message_stop"));
+        } else {
+            assert_eq!(status, StatusCode::BAD_GATEWAY);
         }
     }
 }
@@ -327,6 +361,9 @@ async fn hydrate_history(mut body: h2::RecvStream, send: &mut h2::SendStream<Byt
 
 #[tokio::test]
 async fn cursor_history_identity_full_router_bidirectional_hydration() {
+    let _observer = super::super::offload::OFFLOAD_OBSERVER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let _lock = crate::config::CONFIG_ENV_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
@@ -345,6 +382,9 @@ async fn cursor_history_identity_full_router_bidirectional_hydration() {
 
 #[tokio::test]
 async fn cursor_continuation_guard_full_router_zero_dispatch() {
+    let _observer = super::super::offload::OFFLOAD_OBSERVER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let _lock = crate::config::CONFIG_ENV_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
@@ -364,6 +404,9 @@ async fn cursor_continuation_guard_full_router_zero_dispatch() {
 
 #[tokio::test]
 async fn cursor_admission_legacy_offpath_rejects_without_dispatch_and_recovers() {
+    let _observer = super::super::offload::OFFLOAD_OBSERVER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let _lock = crate::config::CONFIG_ENV_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());

@@ -48,3 +48,21 @@ media type. URL or malformed sources are rejected, not silently omitted. Image
 decode and all validation occur before credential resolution. The old extractor
 helpers remain available for benchmarks, but no legacy bridge is reachable from
 the active dispatch path.
+
+## Terminal and usage reporting (plan 05)
+
+EOF and idle expiry without a wire terminal are errors. Duplicate Connect END
+frames or bytes after END already received in the same batch fail before any
+success terminal. Agent Run interaction field 14 also denotes turn-ended; an
+immediately following Connect trailer in the same batch is inspected first.
+There is no claim to inspect future bytes after cancellation or accepted end.
+
+Interaction field 8 token deltas accumulate output tokens, rejecting negative
+int32 and overflow. Checkpoint field 3 / token_details field 5 / used_tokens field
+1 replaces absolute context occupancy; it is never added to previous context.
+Input is derived as max(context minus output, 0). Streaming usage is emitted
+incrementally, and JSON uses the same final counters. `usage.estimated: true`
+labels this approximation. Required numeric fields use zero when unavailable;
+zero without an upstream metric is not a measured count. Cache counts are
+unavailable on the evidenced Run fields. No CLI aggregate cache values or retired
+StreamUnifiedChatWithTools field mappings are imported as Run measurements.
