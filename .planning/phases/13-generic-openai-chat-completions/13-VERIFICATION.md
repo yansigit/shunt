@@ -1,6 +1,6 @@
 ---
 phase: 13-generic-openai-chat-completions
-verified: "2026-09-08T09:34:58Z"
+verified: 2026-09-08T20:05:39Z
 status: passed
 score: 12/12 consolidated must-haves verified
 behavior_unverified: 0
@@ -63,7 +63,7 @@ covered_files:
   - tests/openai_chat_translate/assembly.rs
   - tests/openai_chat_translate/caps.rs
   - tests/retry.rs
-covered_digest: "v1:sha256:ca206f1730229b68533f3f896eab0ca01bb47e0f9063bc79a9306bec35750707"
+covered_digest: "v1:sha256:0357844c326f6316dbcc983f992733cd76e49055a9e1be1eaebc06505f34e0c8"
 decision_coverage:
   honored: 11
   total: 11
@@ -71,6 +71,29 @@ decision_coverage:
 ---
 
 # Phase 13: Generic OpenAI Chat Completions verification
+
+## Phase 14 regression re-verification (2026-09-08)
+
+Root inline verification; no independent verifier pass is claimed.
+Compared covered files to eaf0b91. Chat compiler, response machine, adapter and
+conformance fixtures are unchanged. New routing, capability, config and counting
+arms are limited to Command Code; Chat's API-key guard and estimator remain.
+Header-site test allowlist adds only the independently reviewed allowlist-built
+subscription producer, not a caller-header forwarding exemption. Docs replace
+obsolete no-preset wording with the Command Code API preset in all locales.
+All 47 active Chat conformance tests passed, including cancellation, byte caps,
+credential isolation, exact body/tool history, malformed input and terminals.
+Decision coverage remains 11/11.
+
+Every test used node /tmp/shunt-phase12-isolated-run.cjs with all-features and
+nonzero selection. Production config mtime/SHA and backup inventory remained
+unchanged. The preceding observed full workspace gate passed 2,942 tests with
+0 failures and 2 existing ignored tests; site build passed 169 pages in four
+languages. No disabled requirement tests were found in the rechecked groups.
+Fingerprint was regenerated through the bundled GSD tool after code review and
+successful execution. Historical results below are historical. Live/Computer
+acceptance remains outside this hermetic re-verification.
+
 
 **Goal:** Add a bounded Chat transport with Anthropic request/response, tool,
 image, streaming and error translation, without weakening credential or replay safety.

@@ -1,6 +1,6 @@
 ---
 phase: 11-antigravity-protocol-and-credential-hardening
-verified: 2026-09-08T02:48:00Z
+verified: 2026-09-08T20:05:39Z
 status: passed
 score: 10/10 must-haves verified
 covered_files:
@@ -57,7 +57,7 @@ covered_files:
   - tests/antigravity_tool_scope.rs
   - tests/antigravity_translate.rs
   - tests/gemini_conformance.rs
-covered_digest: "v1:sha256:c048996659d229e26f019a549feeb3f44e0a0e54c675c009ece2dd65c55067d1"
+covered_digest: "v1:sha256:55785d7b8ee81174219fff8f8668161b102ed507d17080c31976c10921fc831f"
 behavior_unverified: 0
 overrides_applied: 0
 decision_coverage:
@@ -68,6 +68,28 @@ human_verification: []
 ---
 
 # Phase 11: Antigravity Verification
+
+## Phase 14 regression re-verification (2026-09-08)
+
+Root inline verification; no independent verifier pass is claimed.
+Compared covered files to 8013f19. Antigravity implementation, catalog, replay,
+fixtures and plan contracts are unchanged. Shared credential additions are
+redacted and explicitly excluded from all three Responses outbound header paths;
+existing Antigravity exclusions remain intact. README changes add the new
+providers in all four locales; ANT requirements are unchanged. Ten active
+antigravity_native_401 unit tests passed, including same-account replay,
+account swap, refresh failure, post-send timeout and output/tool boundaries.
+Decision coverage remains 21/21.
+
+Every test used node /tmp/shunt-phase12-isolated-run.cjs with all-features and
+nonzero selection. Production config mtime/SHA and backup inventory remained
+unchanged. The preceding observed full workspace gate passed 2,942 tests with
+0 failures and 2 existing ignored tests; site build passed 169 pages in four
+languages. No disabled requirement tests were found in the rechecked groups.
+Fingerprint was regenerated through the bundled GSD tool after code review and
+successful execution. Historical results below are historical. Live/Computer
+acceptance remains outside this hermetic re-verification.
+
 
 **Goal:** Antigravity users can run faithful Cloud Code Assist turns with
 canonical-destination credential safety and account/session-consistent tools

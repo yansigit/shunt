@@ -1,12 +1,12 @@
 ---
 phase: 12-cursor-evidence-backed-hardening
-verified: 2026-09-08
+verified: 2026-09-08T20:05:39Z
 status: passed
 score: 4/4 roadmap truths verified
 behavior_unverified: 0
 overrides_applied: 0
 covered_files: [".planning/REQUIREMENTS.md",".planning/phases/12-cursor-evidence-backed-hardening/12-01-PLAN.md",".planning/phases/12-cursor-evidence-backed-hardening/12-01-SUMMARY.md",".planning/phases/12-cursor-evidence-backed-hardening/12-02-PLAN.md",".planning/phases/12-cursor-evidence-backed-hardening/12-02-SUMMARY.md",".planning/phases/12-cursor-evidence-backed-hardening/12-03-PLAN.md",".planning/phases/12-cursor-evidence-backed-hardening/12-03-SUMMARY.md",".planning/phases/12-cursor-evidence-backed-hardening/12-04-PLAN.md",".planning/phases/12-cursor-evidence-backed-hardening/12-04-SUMMARY.md",".planning/phases/12-cursor-evidence-backed-hardening/12-05-PLAN.md",".planning/phases/12-cursor-evidence-backed-hardening/12-05-SUMMARY.md",".planning/phases/12-cursor-evidence-backed-hardening/12-06-PLAN.md",".planning/phases/12-cursor-evidence-backed-hardening/12-06-SUMMARY.md",".planning/phases/12-cursor-evidence-backed-hardening/12-07-PLAN.md",".planning/phases/12-cursor-evidence-backed-hardening/12-07-SUMMARY.md",".planning/phases/12-cursor-evidence-backed-hardening/12-08-PLAN.md",".planning/phases/12-cursor-evidence-backed-hardening/12-08-SUMMARY.md","Cargo.lock","Cargo.toml","README.ja.md","README.ko.md","README.md","README.zh-CN.md","docs/cursor-request-history.md","site/src/content/docs/ja/providers/cursor.mdx","site/src/content/docs/ja/reference/configuration.md","site/src/content/docs/ko/providers/cursor.mdx","site/src/content/docs/ko/reference/configuration.md","site/src/content/docs/providers/cursor.mdx","site/src/content/docs/reference/configuration.md","site/src/content/docs/zh-cn/providers/cursor.mdx","site/src/content/docs/zh-cn/reference/configuration.md","src/adapters/cursor/admission.rs","src/adapters/cursor/agent.rs","src/adapters/cursor/aggregate.rs","src/adapters/cursor/cancellation_tests.rs","src/adapters/cursor/client.rs","src/adapters/cursor/connect.rs","src/adapters/cursor/history.rs","src/adapters/cursor/history_lifetime_tests.rs","src/adapters/cursor/history_tests.rs","src/adapters/cursor/kv.rs","src/adapters/cursor/kv_tests.rs","src/adapters/cursor/mod.rs","src/adapters/cursor/protocol_tests.rs","src/adapters/cursor/request.rs","src/adapters/cursor/request_isolation_tests.rs","src/adapters/cursor/response.rs","src/adapters/cursor/router_parity_tests.rs","src/adapters/cursor/sse.rs","src/adapters/cursor/strict.rs","src/adapters/cursor/test_frames.rs","src/adapters/cursor/usage.rs","src/adapters/cursor/wire.rs","src/config.rs","src/retry.rs","src/server.rs"]
-covered_digest: "v1:sha256:d72bcc8c1fdbb38fe309b17e32dca7a618659f1e039f48b404ebb58d7cb7cc51"
+covered_digest: "v1:sha256:01d7feb733c6efc3f63376a9bafb20f9053af55ef8b1a9ed92c60bc79b2794b9"
 deferred:
   - truth: Live Shunt Cursor provider availability
     addressed_in: Phase 16
@@ -14,6 +14,26 @@ deferred:
 ---
 
 # Phase 12 Verification
+
+## Phase 14 regression re-verification (2026-09-08)
+
+Root inline verification; no independent verifier pass is claimed.
+Compared covered files to c1a2646. Cursor source, fixtures, dependency files,
+retry and server are unchanged. Config additions are separate Chat/Command Code
+kind/auth guards and do not alter Cursor arms. CUR requirements and all phase
+plans are unchanged; README/config additions maintain four-locale coverage.
+Both cursor_cancellation_release tests passed: backpressured sender ownership
+and full-router headers/stream/aggregation cleanup. Decision coverage is 11/11.
+
+Every test used node /tmp/shunt-phase12-isolated-run.cjs with all-features and
+nonzero selection. Production config mtime/SHA and backup inventory remained
+unchanged. The preceding observed full workspace gate passed 2,942 tests with
+0 failures and 2 existing ignored tests; site build passed 169 pages in four
+languages. No disabled requirement tests were found in the rechecked groups.
+Fingerprint was regenerated through the bundled GSD tool after code review and
+successful execution. Historical results below are historical. Live/Computer
+acceptance remains outside this hermetic re-verification.
+
 
 Goal: request-local, evidence-backed Cursor behavior with stable continuation
 and strict Connect stream safety. All four roadmap truths and CUR-01–08 have
