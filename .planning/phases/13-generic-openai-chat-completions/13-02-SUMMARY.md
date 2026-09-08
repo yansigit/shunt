@@ -13,7 +13,7 @@ provides:
   - "Thinking policy: plaintext assistant thinking maps to reasoning_content; signed/redacted thinking strictly rejected"
   - "Tools: declarations, tool_choice (auto/any/by-name), parallel tool_calls, paired role-tool results with a request-local id registry and typed 400 rejections (orphan, duplicate, missing identity, non-object arguments)"
   - "Shared deterministic chat_completions_endpoint grammar (single append, trailing-slash normalization, no doubling) enforced at boot for OpenAiChat base URLs (reject query/fragment/userinfo/non-http scheme) before credential lookup"
-  - "Pure tests/openai_chat_translate.rs suite (47 tests) plus router-level conformance coverage (19 tests incl. boot rejection)"
+  - "Pure tests/openai_chat_translate.rs suite (58 tests after root review) plus router-level conformance coverage (19 tests incl. boot rejection)"
 affects: [13-03-response-expansion, 13-04-arg-byte-budget, 13-05-docs]
 
 actuals:
@@ -29,7 +29,10 @@ tech-stack:
     - "Request-local tool id registry inside translate_request: purity under concurrency is behavioral, not assumed"
 
 key-files:
-  created: []
+  created:
+    - tests/openai_chat_translate.rs
+    - src/model/openai_chat_request/endpoint.rs
+    - src/model/openai_chat_request/tools.rs
   modified:
     - src/model/openai_chat_request.rs
     - src/config.rs
@@ -175,7 +178,7 @@ All three task RED loops were recorded and validated via gsd-tools (verdict RED_
 - metadata rejected with typed 400 despite ambiguous allowlist wording (fail-closed over silent drop).
 - Text-only blocks collapse to plain strings; tool-only assistant messages emit content:null; tool_result-only user messages emit only role-tool messages — minimal Chat shape per protocol evidence.
 - Endpoint grammar lives in the model module (both consumers import it); boot loop runs the grammar check ahead of the MissingApiKeyEnv check so rejection precedes any credential lookup.
-- src/model/openai_chat_request.rs is 550 lines (slightly over the 500-line preference); not split because translation, tool pairing, and the endpoint grammar are one cohesive pure unit and splitting would separate the grammar from its single-call consumers. Accepted as a justified exception.
+- Root review split endpoint grammar and tool-declaration/choice mapping into private helper modules. The main translator remains slightly over the 500-line preference; block pairing stays together to preserve its request-local ownership.
 
 ## Deviations from Plan
 
@@ -202,3 +205,16 @@ None - no external service configuration required.
 ---
 *Phase: 13-generic-openai-chat-completions*
 *Completed: 2026-09-08*
+
+## Root Review and Final Verification
+
+The initial green suite missed eleven boundary regressions, each reproduced as an assertion failure before correction. RED commits: `b25695d`, `c30e857`, `67587c6`; fixes: `786accc`, `e2abb0c`, `2aec833`; helper extraction: `a68b1ee`.
+
+- Standard object-form auto/any tool choices now map correctly, duplicate tool results fail locally, and tool-result messages precede follow-up user text.
+- Combined text budgets are checked before allocation; reasoning fragments retain their exact bytes without inserted newlines. Thinking-only assistant history is preserved.
+- Unsupported nested fields and malformed stream values fail rather than silently disappear; empty tool IDs/names fail. Unsupported tool-result error semantics are rejected explicitly.
+- URL diagnostics no longer echo embedded userinfo. Whitespace, controls, backslashes, dot-segment repairs, missing authority, and empty userinfo are rejected instead of silently normalized.
+- Final root verification on the corrected implementation: **2,781 passed, 0 failed, 2 ignored** across the full all-features workspace suite; **58 translation tests and 19 router tests** included. Build, format check, and strict all-targets/all-features Clippy passed. Every invocation used the isolated wrapper and confirmed production config mtime/SHA and backup inventory unchanged.
+- Both blocking post-wave gates passed. The codebase-map gate remains a non-blocking stale-map advisory, not a code failure. No gate was disabled; no live-provider or Computer evaluation is claimed.
+
+The earlier verification counts above describe the executor's initial result; this section supersedes them for acceptance. Documentation remains owned by 13-05 before phase closure, and tool-argument/resource-bound expansion remains in 13-04.
