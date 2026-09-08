@@ -1,0 +1,139 @@
+{
+  "items": [
+    {
+      "requirement_id": "CCK-01",
+      "category": "concurrency",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Concurrent API-key requests retain the commandcode Chat endpoint and cannot select subscription auth.",
+      "reason": null,
+      "probe": "If interrupted or run in parallel, what is guaranteed?"
+    },
+    {
+      "requirement_id": "CCK-02",
+      "category": "concurrency",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "API-key and subscription requests running concurrently resolve distinct credential modes with no cross-product bearer leakage.",
+      "reason": null,
+      "probe": "If interrupted or run in parallel, what is guaranteed?"
+    },
+    {
+      "requirement_id": "CCK-03",
+      "category": "concurrency",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Dropping streaming or unary API-key requests closes upstream work and releases request capacity; parallel tools retain their authentic identities.",
+      "reason": null,
+      "probe": "If interrupted or run in parallel, what is guaranteed?"
+    },
+    {
+      "requirement_id": "CCS-01",
+      "category": "concurrency",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Each request holds one immutable credential snapshot; concurrent requests and cancellation do not modify credential files or fall back from an invalid explicit environment value.",
+      "reason": null,
+      "probe": "If interrupted or run in parallel, what is guaranteed?"
+    },
+    {
+      "requirement_id": "CCS-02",
+      "category": "unclassified",
+      "status": "unresolved",
+      "verification": null,
+      "resolution": null,
+      "reason": null,
+      "probe": "unclassified — review manually"
+    },
+    {
+      "requirement_id": "CCS-03",
+      "category": "concurrency",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Concurrent distinct conversations use distinct opaque sessions scoped to the selected credential; supported same-conversation turns retain the session without raw identifier leakage.",
+      "reason": null,
+      "probe": "If interrupted or run in parallel, what is guaranteed?"
+    },
+    {
+      "requirement_id": "CCS-04",
+      "category": "unclassified",
+      "status": "unresolved",
+      "verification": null,
+      "resolution": null,
+      "reason": null,
+      "probe": "unclassified — review manually"
+    },
+    {
+      "requirement_id": "CCS-05",
+      "category": "empty",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Empty, null-only, or EOF-without-supported-finish upstream bodies fail rather than synthesizing a successful response.",
+      "reason": null,
+      "probe": "What is the result for empty, single-element, or null input?"
+    },
+    {
+      "requirement_id": "CCS-05",
+      "category": "encoding",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "NDJSON framing and wire limits count bytes, split UTF-8 is decoded losslessly, invalid UTF-8 fails, and semantic accumulation is independently bounded.",
+      "reason": null,
+      "probe": "Whose definition of length/equality applies — bytes, code points, grapheme clusters, or normalized form?"
+    },
+    {
+      "requirement_id": "CCS-06",
+      "category": "unclassified",
+      "status": "unresolved",
+      "verification": null,
+      "resolution": null,
+      "reason": null,
+      "probe": "unclassified — review manually"
+    },
+    {
+      "requirement_id": "CCS-07",
+      "category": "idempotency",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Only proven pre-connect failures may retry; ambiguous post-send failures or observed output/tool activity never cause automatic generation replay.",
+      "reason": null,
+      "probe": "What happens if this runs twice on the same input?"
+    },
+    {
+      "requirement_id": "CCS-07",
+      "category": "concurrency",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "A safe pre-connect replay retains its credential and session; cancellation prevents background replay and releases upstream ownership.",
+      "reason": null,
+      "probe": "If interrupted or run in parallel, what is guaranteed?"
+    },
+    {
+      "requirement_id": "CCS-08",
+      "category": "boundary",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Each declared wire, record, tool, semantic and accumulated-response bound has below/at/above fixtures with no truncation repair.",
+      "reason": null,
+      "probe": "What happens exactly at each min/max/threshold — and one step either side?"
+    },
+    {
+      "requirement_id": "CCS-08",
+      "category": "precision",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Token usage accepts only representable nonnegative integers with checked arithmetic; fractional, negative and overflowing values fail explicitly.",
+      "reason": null,
+      "probe": "Where can precision loss, overflow, or rounding/tie-breaking occur — and what is the exact contract (e.g. half-up vs half-to-even, ceil/floor/truncate)?"
+    }
+  ],
+  "coverage": {
+    "applicable": 14,
+    "resolved": 11,
+    "unresolved": 3,
+    "byVerification": {
+      "explicit": 11,
+      "backstop": 0
+    }
+  }
+}
