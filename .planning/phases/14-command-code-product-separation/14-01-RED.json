@@ -1,0 +1,10 @@
+{
+  "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test command_code_api_conformance command_code_api_preset -- --test-threads=1",
+  "exitCode": 101,
+  "targetTest": "command_code_api_preset_tracer",
+  "targetFile": "tests/command_code_api_conformance.rs",
+  "expected": "commandcode preset resolves successfully",
+  "actual": "Assertion at tests/command_code_api_conformance.rs:12:5 failed: Some(UnknownProviderPreset { upstream: cc, preset: commandcode }); 2 tests ran, both failed, zero ignored. Production state unchanged.",
+  "output": "TAP version 13\nnot ok 1 - command_code_api_preset_sibling_preservation\nnot ok 2 - command_code_api_preset_tracer\n1..2\n# tests 2\n# pass 0\n# fail 2\n",
+  "provenance": "Manual TAP transcription of actual Rust libtest output, not raw TAP and not a second run. Both real named assertions failed after successful compilation. Recorded before production edit."
+}
