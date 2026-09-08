@@ -198,6 +198,55 @@ const CHAT_USAGE_CHUNK: &str =
     r#"{"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":2,"total_tokens":9}}"#;
 
 #[tokio::test]
+async fn openai_chat_tracer_done_does_not_wait_for_eof() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let upstream = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut request = [0; 16384];
+        socket.read(&mut request).await.unwrap();
+        let frame = format!("data: {}\n\ndata: [DONE]\n\n",
+            chat_delta(json!({"content":"ready"}), Some("stop")));
+        let response = format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n", frame.len(), frame);
+        socket.write_all(response.as_bytes()).await.unwrap();
+        // Deliberately omit the terminating HTTP chunk: [DONE] is authoritative.
+        let mut closed = [0; 1];
+        let _ = socket.read(&mut closed).await;
+    });
+    let gateway = start_gateway(single_provider_config(&format!("http://{address}"))).await;
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .body(anthropic_streaming_request("claude-via-chat"))
+        .send().await.unwrap();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(2), collect_sse_events(response)).await;
+    upstream.abort();
+    let events = result.expect("[DONE] must finish without waiting for upstream EOF");
+    assert_eq!(events.iter().filter(|(event, _)| event == "message_stop").count(), 1);
+    assert!(!events.iter().any(|(event, _)| event == "error"));
+}
+
+#[tokio::test]
+async fn openai_chat_tracer_finish_without_done_is_error() {
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let backend = MockServer::start().await;
+    Mock::given(method("POST")).and(path("/chat/completions"))
+        .respond_with(sse_body(&[chat_delta(json!({"content":"cut"}), Some("stop"))]))
+        .mount(&backend).await;
+    let gateway = start_gateway(single_provider_config(&backend.uri())).await;
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .body(anthropic_streaming_request("claude-via-chat"))
+        .send().await.unwrap();
+    let events = collect_sse_events(response).await;
+    assert_eq!(events.iter().filter(|(event, _)| event == "error").count(), 1, "{events:?}");
+    assert!(!events.iter().any(|(event, _)| event == "message_stop"), "{events:?}");
+}
+
+#[tokio::test]
 async fn openai_chat_tracer_unary_happy_path() {
     if !can_bind_loopback() {
         return;
