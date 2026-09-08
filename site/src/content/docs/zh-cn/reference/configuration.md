@@ -313,6 +313,8 @@ codex-fallback = "gpt-5.2"
 
 ## `[providers.<name>]`（旧式）
 
+Cursor 不会新增历史或取消相关的配置键。历史有容量限制且仅在请求内保存；EOF、空闲超时、畸形帧和无效参数均明确报错。取消会释放上游轮次和网关请求槽位。用量估算、精确的历史支持范围以及仅发送前连接失败可触发的回退详见 [Cursor 契约](/zh-cn/providers/cursor/)。Cursor Run 的 `retry` 表不生效，没有自动重试。
+
 每个提供方都是一个以你自选名称命名的表。内置项(`anthropic`、`openai`、`codex`、`xai`、`grok`、`cursor`、`gemini`、`antigravity`、`antigravity-cli`)可被部分覆盖 —— 配置映射深度合并。
 
 | 键 | 取值 | 含义 |

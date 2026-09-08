@@ -271,6 +271,11 @@ impl CursorSseFramer {
     }
 
     pub fn emit_thinking_delta(&mut self, text: &str) {
+        // Active Run can alternate text and reasoning; each transition owns a
+        // new block index so reconstruction has the same ordering as JSON.
+        if self.run_usage && self.text_open {
+            self.close_open_blocks();
+        }
         self.open_thinking();
         let data = ContentBlockDeltaEvent {
             event_type: "content_block_delta",

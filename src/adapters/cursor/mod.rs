@@ -1,5 +1,6 @@
 mod admission;
 pub mod agent;
+mod aggregate;
 pub mod connect;
 pub(crate) mod history;
 pub(crate) mod kv;
@@ -338,13 +339,18 @@ async fn aggregate_turn(
     model: &str,
 ) -> Result<(StatusCode, axum::response::Response), AdapterError> {
     let mut events = std::pin::pin!(turn.into_event_stream());
-    let mut text = String::new();
+    let mut content = aggregate::Content::new();
     let mut input_tokens = 0;
     let mut output_tokens = 0;
-    let mut tool_call: Option<(String, String, String)> = None;
+    let mut tool_call = false;
     while let Some(event) = events.next().await {
         match event.map_err(map_cursor_stream_error)? {
-            CursorStreamEvent::TextDelta { text: delta } => text.push_str(&delta),
+            CursorStreamEvent::TextDelta { text } => {
+                content.delta(false, &text).map_err(bad_gateway)?
+            }
+            CursorStreamEvent::ThinkingDelta { text } => {
+                content.delta(true, &text).map_err(bad_gateway)?
+            }
             CursorStreamEvent::Usage {
                 input_tokens: input,
                 output_tokens: output,
@@ -358,36 +364,17 @@ async fn aggregate_turn(
                 name,
                 input_json,
             } => {
-                tool_call = Some((id, name, input_json));
+                content.tool(&id, &name, &input_json).map_err(bad_gateway)?;
+                tool_call = true;
                 break;
             }
             CursorStreamEvent::End => break,
-            // Reasoning and session markers do not surface in the text-only
-            // non-streaming body.
+            // Session transport metadata is not model-visible content.
             _ => {}
         }
     }
-    let mut content: Vec<Value> = Vec::new();
-    if !text.is_empty() {
-        content.push(serde_json::json!({"type": "text", "text": text}));
-    }
-    let stop_reason = if let Some((id, name, input_json)) = tool_call {
-        let input: Value =
-            serde_json::from_str(&input_json).unwrap_or_else(|_| serde_json::json!({}));
-        content.push(serde_json::json!({
-            "type": "tool_use",
-            "id": id,
-            "name": name,
-            "input": input,
-        }));
-        "tool_use"
-    } else {
-        "end_turn"
-    };
-    // Anthropic messages must carry at least one content block.
-    if content.is_empty() {
-        content.push(serde_json::json!({"type": "text", "text": ""}));
-    }
+    let stop_reason = if tool_call { "tool_use" } else { "end_turn" };
+    let content = content.finish();
     let json = serde_json::json!({
         "id": message_id,
         "type": "message",
@@ -1263,7 +1250,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn aggregate_turn_ignores_reasoning_and_fills_empty_content() {
+    async fn aggregate_turn_preserves_reasoning_content() {
         let turn = turn_from_frames(reasoning_turn_frames("thinking")).await;
 
         let (_, response) = aggregate_turn(turn, "msg_test", "cursor:test")
@@ -1274,7 +1261,7 @@ mod tests {
         assert_eq!(body["stop_reason"], "end_turn");
         assert_eq!(
             body["content"][0],
-            serde_json::json!({"type": "text", "text": ""})
+            serde_json::json!({"type": "thinking", "thinking": "thinking", "signature":""})
         );
     }
 

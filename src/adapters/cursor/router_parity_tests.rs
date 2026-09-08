@@ -2,6 +2,9 @@
 //! only DNS and the client's trust roots are injected. No live credentials.
 #![allow(clippy::await_holding_lock)]
 
+#[path = "cancellation_tests.rs"]
+mod cancellation_tests;
+
 use std::{ffi::OsString, sync::Arc, time::Duration};
 
 use axum::http::{Response, StatusCode};
@@ -62,6 +65,9 @@ async fn router_case(
     let tool = history
         .as_ref()
         .is_some_and(|input| input["_test_tool"] == true);
+    let rich = history
+        .as_ref()
+        .is_some_and(|input| input["_test_rich"] == true);
     let upstream_status = history
         .as_ref()
         .and_then(|input| input["_test_status"].as_u64())
@@ -131,6 +137,23 @@ async fn router_case(
             // TextDeltaUpdate.f1, not the retired protobuf module.
             let text = [0x0a, 6, 0x0a, 4, 0x0a, 2, b'O', b'K'];
             let mut body = encode_connect_frame(text, 0).to_vec();
+            if rich {
+                body.clear();
+                for (tag, text) in [
+                    (4, "reason-one"),
+                    (1, "answer-one"),
+                    (4, "reason-two"),
+                    (1, "answer-two"),
+                ] {
+                    body.extend(encode_connect_frame(
+                        super::field_ld(1, &super::field_ld(tag, &super::field_str(1, text))),
+                        0,
+                    ));
+                }
+                use crate::adapters::cursor::test_frames::active_wire;
+                body.extend(encode_connect_frame(active_wire::delta(42), 0));
+                body.extend(encode_connect_frame(active_wire::checkpoint(100), 0));
+            }
             if tool {
                 let args = [
                     super::field_str(1, "Read"),

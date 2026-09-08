@@ -88,3 +88,24 @@ return immediately: a status may mean billable work was already accepted.
 Streaming errors and tool pauses cannot re-enter the proxy dispatch loop.
 There is still no same-provider retry loop for paced Run (TODO #170); a stable
 conversation ID is not an idempotency key. No retry machinery was added.
+
+## Cancellation and completion (plan 08)
+
+Full-router tests cancel the service future before headers and during JSON
+accumulation, and drop the response body after streamed text. The real TLS/H2
+upstream observes its request body close/reset, the active-turn count returns
+to zero, and a previously saturated single gateway slot accepts another turn.
+The paced sender guard also aborts a backpressured sender task. These are
+ownership-driven effects, not a cancellation registry or detached recovery.
+Repeated semantic text never creates a terminal; repeated text followed by EOF
+fails, while the same text followed by an authoritative END succeeds. Config
+round-trip and fresh-store tests pin unchanged keys and request-local history.
+
+The phase review also found that JSON discarded reasoning and merged text
+across reasoning boundaries. JSON now retains ordered thinking/text blocks;
+active SSE closes text before returning to thinking so block indices match.
+Tool JSON is parsed strictly, without an empty-object fallback. Aggregation
+uses the existing 64 MiB budget with conservative escaping/block accounting,
+rejecting overflow rather than buffering unlimited output. Empty reasoning
+signatures remain empty, as on SSE; no signature is synthesized. The original
+reasoning-discard characterization was deliberately changed to preservation.

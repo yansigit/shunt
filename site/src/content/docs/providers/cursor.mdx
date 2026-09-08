@@ -119,6 +119,11 @@ History blobs live only in the active request: at most 192 entries, 512 KiB per 
 
 ## Verify
 
+JSON and SSE preserve reasoning/text block order and final usage. JSON
+accumulation is bounded by a conservative 64 MiB allocation budget. Cancelling
+before headers or during either response mode closes the upstream turn and
+releases gateway capacity; repeated text never substitutes for a terminal.
+
 Cursor does not automatically retry a Run. A configured fallback can be used
 only after a proven connection failure before sending. Accepted HTTP errors,
 ambiguous post-send timeouts, partial output, and tool calls never trigger replay.

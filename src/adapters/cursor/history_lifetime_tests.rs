@@ -72,7 +72,7 @@ async fn cursor_terminal_dedupe_idle_turn_ended_accepts_only_a_following_trailer
 }
 
 #[tokio::test]
-async fn cursor_history_identity_guard_aborts_backpressured_sender() {
+async fn cursor_history_identity_cursor_cancellation_release_aborts_backpressured_sender() {
     let (tx, mut rx) = mpsc::channel::<u8>(1);
     tx.send(1).await.unwrap();
     let (started_tx, started_rx) = oneshot::channel();

@@ -461,6 +461,12 @@ The `kimi` preset reads `MOONSHOT_API_KEY`. Older examples that explicitly used 
 
 ## `[providers.<name>]` (legacy)
 
+Cursor adds no configuration keys for history or cancellation. History is
+bounded and request-local; EOF/idle, malformed framing and invalid arguments
+fail explicitly. Cancellation releases the upstream turn and gateway slot.
+Usage derivation, exact history support, and pre-send-only fallback behavior
+are specified in the [Cursor contract](/providers/cursor/).
+
 Each provider is a table under a name of your choosing. Built-ins (`anthropic`, `openai`, `codex`, `xai`, `grok`, `cursor`, `gemini`, `antigravity`, `antigravity-cli`) can be partially overridden — config maps deep-merge.
 
 | Key | Values | Meaning |
@@ -516,7 +522,7 @@ integration, durable history, or credential writeback.
 
 ### `[providers.<name>.retry]`
 
-Bounded retry for **transient** upstream failures on supported single-credential calls: the `passthrough`/`api_key` Anthropic path and the single-credential Responses path (`api_key`, `xai_oauth`/Grok, and a `chatgpt_oauth` provider with no pooled accounts). It re-issues the request (full body, before any bytes reach the client) on connection-level transport errors (connect reset/refused, timeout). Transient response statuses are not retried on these non-idempotent creation POSTs because the upstream may already have accepted a billable generation. The current Cursor adapter's streaming turn is not wrapped in this retry layer, so its normalized `retry` table is inert and a pre-response connection failure surfaces directly. No supported path retries a `4xx` response, and retry never begins after response-body streaming starts.
+Bounded retry for **transient** upstream failures on supported single-credential calls: the `passthrough`/`api_key` Anthropic path and the single-credential Responses path (`api_key`, `xai_oauth`/Grok, and a `chatgpt_oauth` provider with no pooled accounts). It re-issues the request (full body, before any bytes reach the client) on connection-level transport errors (connect reset/refused, timeout). Transient response statuses are not retried on these non-idempotent creation POSTs because the upstream may already have accepted a billable generation. Cursor's paced Run is not wrapped in this retry layer, so its normalized `retry` table is inert. Only a proven pre-send connection failure may advance a separately configured fallback chain; accepted statuses and ambiguous post-send failures never do. No supported path retries a `4xx` response, and retry never begins after response-body streaming starts.
 
 Backoff is exponential with randomized (full) jitter, capped at `max_backoff_ms`. A server-supplied `Retry-After` takes precedence (both the delta-seconds and HTTP-date forms are honored); if it asks for longer than `max_backoff_ms`, the response is surfaced immediately rather than slept past budget. Retry is **held off `count_tokens`** regardless of this setting. The `claude_oauth` / `chatgpt_oauth` / `kimi_oauth` account pools drive their own account-rotation failover and are unaffected by this table.
 

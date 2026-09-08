@@ -208,6 +208,8 @@ That said, reusing your ChatGPT/Codex or SuperGrok subscription (or Kimi, Cursor
 
 **Cursor** works the same way — log in once and route a `cursor:*` model id:
 
+JSON and SSE retain ordered reasoning/text and usage; cancellation releases the upstream turn and gateway capacity.
+
 Malformed Run framing or tool arguments fail explicitly. Run is not automatically retried; only a proven pre-send connection failure may advance a configured fallback. Accepted errors, partial output, and tool calls never trigger replay. These are isolated conformance guarantees, not live model-availability claims.
 
 Structured tool-history continuation currently requires the `composer-2.5` wire model, stable `metadata.session_id` (or `session_id` in JSON-string `metadata.user_id`), retained user context, and original paired tool IDs. Unsupported or opaque history fails before dispatch. History storage is bounded and request-local only; see the [history contract](docs/cursor-request-history.md). Invalid tools or images and unsupported tool-choice guidance return 400 before authentication; they are never silently dropped. Cursor usage now carries `estimated: true`: input is derived from context occupancy, and unavailable counters use zero placeholders. Idle expiry is an error, not success.
