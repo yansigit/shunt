@@ -190,11 +190,8 @@ fn sse_body(frames: &[String]) -> ResponseTemplate {
 }
 
 fn chat_delta(delta: Value, finish: Option<&str>) -> String {
-    let mut choice = json!({ "index": 0, "delta": delta });
-    if let Some(finish) = finish {
-        choice["finish_reason"] = json!(finish);
-    }
-    json!({ "choices": [choice] }).to_string()
+    let choice = json!({ "index": 0, "delta": delta, "finish_reason": finish });
+    json!({ "choices": [choice], "usage": null }).to_string()
 }
 
 const CHAT_USAGE_CHUNK: &str =
