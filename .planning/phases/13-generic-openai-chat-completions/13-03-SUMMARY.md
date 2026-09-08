@@ -11,7 +11,7 @@ provides:
   - "Full finish-reason map: stop->end_turn, length->max_tokens, tool_calls->tool_use; content_filter/function_call/unknown fail closed with finish_reason named; finish_reason error becomes a provider terminal that can never close as success"
   - "Usage precision: non-negative integer counters bounded to i64 range; floats, strings, negatives, and 2^63 rejected; trailing usage-only chunk relays exact counters into message_delta"
   - "Reasoning extensions: reasoning_content/reasoning aliases (null/empty absent, non-string reject, differing-alias conflict reject), signed representations (signature/reasoning_signature/redacted_reasoning/encrypted_reasoning) rejected by field name, thinking blocks emitted before text with stable block indices in both unary and streaming modes"
-  - "Provider error surfacing: embedded error objects (chunk-level, finish_reason error, trailing position) produce exactly one error terminal; metadata.request_id forwarded only under the printable-ASCII 1..=128 allowlist and echoed through the unary adapter error body"
+  - "Provider error surfacing: embedded error objects (chunk-level, choice-level, finish_reason error, trailing position) produce exactly one neutral error terminal; only bounded x-request-id/request-id response headers are forwarded, never body metadata"
   - "Choices shape validation: absent, empty, and multiple choices fail closed in the main path; exactly one usage-only trailing chunk permitted after finish_reason and any non-empty delta payload there rejects"
   - "11 router-level openai_chat_terminal conformance fixtures pinning usage positioning, reasoning order, single-terminal errors, duplicate [DONE], residual-after-[DONE], malformed JSON, missing-finish EOF, and unary 200-error request-id relay"
 affects: [13-04-arg-byte-budget, 13-05-docs]
@@ -25,7 +25,7 @@ tech-stack:
   added: []
   patterns:
     - "One semantic machine owns the terminal decision for both unary JSON and streamed SSE; transports may only close a provider-declared success"
-    - "Provider error bodies are relayed verbatim from the machine (including the allowlisted request_id) instead of being rebuilt message-only at the adapter boundary"
+    - "Provider errors use neutral gateway-owned messages; the adapter adds only a validated response-header request ID"
     - "Strict trailing-chunk grammar: after finish_reason, only an empty-choices usage chunk is legal; any non-empty delta is payload regardless of finish_reason presence"
 
 key-files:
@@ -39,8 +39,8 @@ key-files:
 
 key-decisions:
   - "Reasoning is accepted only as plaintext via reasoning_content or its lone reasoning alias; the signed/redacted family is rejected with the offending field name in the error, because an opaque blob cannot be losslessly relayed as a thinking block."
-  - "metadata.request_id is the only request-id source honored, restricted to 1..=128 printable ASCII bytes (no spaces/controls); top-level request-id and non-allowlisted metadata keys are dropped, so untrusted strings cannot smuggle framing into error bodies."
-  - "content: null is treated as absent (no text block) while an empty-string content is a real empty text block, preserving the existing empty-delta relay contract for role-only chunks."
+  - "Root correction: only x-request-id/request-id response headers are honored, restricted to 1..=128 ASCII identifier bytes; body metadata is not a header allowlist and is dropped."
+  - "Root correction: content:null produces no streaming delta, but a completed unary response with no content yields the required empty text block."
   - "finish_reason error maps to a provider terminal (error event, ProviderFailed) rather than a protocol error, so an upstream-declared failure can never be upgraded or downgraded by the transport."
   - "Trailing usage gating is positional, not content-based: exactly one usage-only chunk immediately after finish_reason; a second one, any usage before finish, or any non-empty delta there fails closed."
 
@@ -48,7 +48,7 @@ patterns-established:
   - "Fixture functions carry contiguous filter substrings (response_, openai_chat_terminal) so the plan verify filters can never select zero tests."
   - "RED gates recorded as raw libtest counts with the failing subset identified before production edits."
 
-requirements-completed: [CHAT-05, CHAT-06, CHAT-07]
+requirements-completed: [CHAT-05, CHAT-07]
 
 coverage:
   - id: R1
@@ -120,7 +120,7 @@ status: complete
 
 - The OpenAI Chat response machine now covers the full finish-reason map (stop/length/tool_calls; content_filter, function_call, and unknown fail closed naming finish_reason; error as a provider terminal), usage counters validated as non-negative integers within i64 range, empty-string content as a real empty text block, and required non-empty single-choice envelopes.
 - Reasoning extensions: reasoning_content/reasoning alias normalization (null/empty absent, non-string reject, conflict reject), signed-representation rejection by field name, and thinking blocks emitted before text with stable block indices in both unary and streaming modes.
-- Provider errors surface safely: exactly one error terminal, no synthesized success, and metadata.request_id forwarded only under the printable-ASCII 1..=128 allowlist - relayed verbatim through the unary adapter error body.
+- Provider errors surface safely: exactly one neutral error terminal, no synthesized success, and only validated `x-request-id`/`request-id` response headers are relayed. Untrusted body metadata and raw provider error text are not forwarded.
 - Strict trailing-chunk grammar: exactly one usage-only chunk after finish_reason (usage lands in message_delta), any non-empty trailing delta rejected even without a finish_reason key, usage before finish rejected.
 
 ## Task Commits
@@ -153,7 +153,7 @@ plan_head_before: 5bf613bb
 ## Decisions Made
 
 - Reject any non-empty delta in trailing position (not just content/reasoning/tool_calls), because the official usage-only chunk has empty choices - stricter and simpler than enumerating payload fields.
-- Relay the machine's error event body verbatim in the unary adapter path instead of rebuilding a message-only error, so the allowlisted request_id survives to the client and no new allowlist logic lives in the adapter.
+- Root review replaced the executor's body-metadata interpretation with the plan's response-header allowlist. The adapter owns this transport check, with explicit permitted-name and 127/128/129-byte tests.
 - Keep the 13-02 empty-delta relay contract intact: content null is absent, role-only chunks still emit no fabricated blocks.
 
 ## Deviations from Plan
@@ -161,7 +161,7 @@ plan_head_before: 5bf613bb
 None blocking. Notes:
 
 - One extra style commit (46fae55) applies cargo fmt across the touched files; no semantic changes.
-- Tool-call delta assembly remains out of scope for 13-04 per the plan; tool_calls finish mapping here only sets stop_reason: tool_use.
+- Streaming tool-call delta assembly remains deferred to 13-04. Root review implemented the required unary tool-use mapping, including bounded counts/arguments, unique IDs, valid object arguments, and thinking/text/tool ordering; 13-04 should reuse those named limits.
 - STATE.md, ROADMAP, and REQUIREMENTS were intentionally left untouched; root owns tracking reconciliation and phase/global completion marking.
 
 ## Issues Encountered
@@ -176,3 +176,42 @@ None blocking. Notes:
 ---
 *Phase: 13-generic-openai-chat-completions*
 *Completed: 2026-09-08*
+
+## Root review and final verification (supersedes executor-only evidence)
+
+The root reproduced ten assertion failures after the executor's green suite:
+discarded unary tools; absent/ambiguous message envelopes; permissive trailing
+usage shapes; a panic on post-finish `error:null`; reasoning omitted from the
+aggregate byte budget; raw embedded error text disclosure; ignored choice-level
+errors; header request IDs replaced by body metadata; null empty completion
+yielding no text block; and raw non-success error text disclosure. All were fixed
+and rerun green. Nine added pure response tests and two diagnostic unit tests
+remain; the existing request-ID fixture was strengthened to distinguish the
+header from conflicting body metadata. Neutral-error assertions replace raw
+provider-text assertions to enforce the locked redaction contract, not weaken it.
+
+The full suite additionally caught the header-producer security tripwire. The
+new Chat response-header map is now explicitly classified as an allowlist-built
+downstream diagnostic map; the tripwire remains intact. Private checked-payload,
+validation, and unary-tool helpers keep the central machine at 463 lines.
+Unary tools share named limits of 128 calls and 1 MiB argument bytes with an
+8 MiB aggregate semantic budget; 13-04 must reuse these bounds for streaming.
+
+Final root verification on the corrected code:
+
+- `cargo test --all-features --workspace --quiet`: **2,831 passed, 0 failed, 2 ignored**.
+- Chat translation: **95 passed**; Chat conformance: **30 passed**, including real
+  loopback gateway JSON and incremental SSE fixtures.
+- `cargo fmt --all --check`, strict all-target/all-feature Clippy, and build pass.
+- Project `run-shunt/smoke.sh`: all five checks passed (CLI config check, liveness,
+  model discovery, mock Anthropic proxy response, malformed-request error), on
+  gateway port 31981 and mock port 31982. This baseline smoke is not a live Chat
+  provider or Computer evaluation; Chat behavior is covered by the router suite.
+- Every verification process tree used `/tmp/shunt-phase12-isolated-run.cjs`;
+  production OpenCodex config mtime/SHA and invalid/backup inventory were unchanged.
+- GSD schema-drift and UI safety gates: block false. Codebase-map drift remains
+  advisory only (`directive:warn`, `spawn_mapper:false`); no gate was bypassed.
+
+README, docs, and maintained site translations were considered and remain in
+13-05's same-PR documentation scope; generated wiki files were not hand-edited.
+Phase 13 and the milestone remain incomplete pending their remaining plans.

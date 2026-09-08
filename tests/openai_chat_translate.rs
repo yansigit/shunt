@@ -8,6 +8,35 @@
 use serde_json::{json, Value};
 
 #[test]
+fn response_root_null_empty_completion_has_text_block() {
+    let out = unary_final(&completion_with(
+        json!({"content":null}),
+        json!("stop"),
+        json!({"prompt_tokens":0,"completion_tokens":0}),
+    ))
+    .unwrap();
+    assert_eq!(out["content"], json!([{"type":"text","text":""}]));
+}
+
+#[test]
+fn response_root_unary_tool_validation() {
+    for calls in [
+        json!(null),
+        json!({}),
+        json!([{"id":"a","type":"function","function":{"name":"f","arguments":"[]"}}]),
+        json!([{"id":"a","type":"function","function":{"name":"f","arguments":"{"}}]),
+        json!([{"id":"a","type":"function","function":{"name":"","arguments":"{}"}}]),
+    ] {
+        assert!(unary_final(&completion_with(
+            json!({"tool_calls":calls}),
+            json!("tool_calls"),
+            json!(null)
+        ))
+        .is_err());
+    }
+}
+
+#[test]
 fn response_root_unary_tools_are_not_discarded() {
     let mut machine =
         shunt::model::openai_chat_response::OpenAiChatSseMachine::new_for_upstream("m");

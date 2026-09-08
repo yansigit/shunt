@@ -10,7 +10,10 @@
 
 use serde_json::{json, Value};
 
+mod checked;
 mod unary_tools;
+mod validation;
+use validation::{extract_reasoning, provider_error_data, validate_usage};
 
 pub use crate::model::gemini::SseEvent;
 
@@ -268,141 +271,6 @@ impl OpenAiChatSseMachine {
         Ok(Vec::new())
     }
 
-    fn validate_chunk(&self, chunk: &Value) -> Result<CheckedChunk, OpenAiChatSemanticError> {
-        let chunk = chunk.as_object().ok_or_else(|| {
-            OpenAiChatSemanticError::protocol("OpenAI Chat chunk must be an object")
-        })?;
-
-        if let Some(error) = chunk.get("error") {
-            let error = error.as_object().ok_or_else(|| {
-                OpenAiChatSemanticError::protocol("OpenAI Chat provider error must be an object")
-            })?;
-            let message = error
-                .get("message")
-                .and_then(Value::as_str)
-                .unwrap_or("OpenAI Chat backend error");
-            return Ok(CheckedChunk {
-                parts: Vec::new(),
-                reasoning: None,
-                tools: Vec::new(),
-                input_tokens: None,
-                output_tokens: None,
-                finish_reason: None,
-                provider_error: Some(provider_error_data(message, error)),
-                retained_bytes: 0,
-            });
-        }
-
-        let (input_tokens, output_tokens) = validate_usage(chunk.get("usage"))?;
-
-        let mut parts = Vec::new();
-        let mut finish_reason = None;
-        let mut provider_error = None;
-        let mut retained_bytes = 0usize;
-        let choices = chunk.get("choices").ok_or_else(|| {
-            OpenAiChatSemanticError::protocol("OpenAI Chat chunk must include choices")
-        })?;
-        let choices = choices.as_array().ok_or_else(|| {
-            OpenAiChatSemanticError::protocol("OpenAI Chat choices must be an array")
-        })?;
-        if choices.len() > 1 {
-            return Err(OpenAiChatSemanticError::protocol(
-                "multiple OpenAI Chat choices have ambiguous ordering",
-            ));
-        }
-        let choice = choices.first().ok_or_else(|| {
-            OpenAiChatSemanticError::protocol("OpenAI Chat choices must not be empty")
-        })?;
-        let choice = choice.as_object().ok_or_else(|| {
-            OpenAiChatSemanticError::protocol("OpenAI Chat choice must be an object")
-        })?;
-        if let Some(error) = choice.get("error") {
-            let error = error.as_object().ok_or_else(|| {
-                OpenAiChatSemanticError::protocol("OpenAI Chat choice error must be an object")
-            })?;
-            return Ok(CheckedChunk {
-                parts: Vec::new(),
-                reasoning: None,
-                tools: Vec::new(),
-                input_tokens: None,
-                output_tokens: None,
-                finish_reason: None,
-                provider_error: Some(provider_error_data("OpenAI Chat backend error", error)),
-                retained_bytes: 0,
-            });
-        }
-        if let Some(reason) = choice.get("finish_reason").filter(|value| !value.is_null()) {
-            let reason = reason.as_str().ok_or_else(|| {
-                OpenAiChatSemanticError::protocol("OpenAI Chat finish_reason must be a string")
-            })?;
-            let mapped = match reason {
-                "stop" => Some("end_turn"),
-                "length" => Some("max_tokens"),
-                "tool_calls" => Some("tool_use"),
-                "error" => {
-                    provider_error = Some(provider_error_data(
-                        "OpenAI Chat provider reported finish_reason \"error\"",
-                        chunk,
-                    ));
-                    None
-                }
-                _ => {
-                    return Err(OpenAiChatSemanticError::protocol(
-                        "unsupported OpenAI Chat finish_reason",
-                    ))
-                }
-            };
-            finish_reason = mapped;
-        }
-        // Both output shapes share one field path check: a whole completion
-        // carries message content, a stream frame carries delta content.
-        let payload = match (choice.get("message"), choice.get("delta")) {
-            (Some(payload), None) | (None, Some(payload)) if payload.is_object() => payload,
-            _ => {
-                return Err(OpenAiChatSemanticError::protocol(
-                    "OpenAI Chat choice requires exactly one message or delta object",
-                ))
-            }
-        };
-        let reasoning = extract_reasoning(payload)?;
-        retained_bytes += reasoning.as_ref().map_or(0, String::len);
-        let tools = if choice.contains_key("message") {
-            unary_tools::translate(payload.get("tool_calls"), &mut retained_bytes)?
-        } else {
-            Vec::new()
-        };
-        let content = payload.get("content");
-        if let Some(content) = content {
-            let text = match content {
-                Value::Null => None,
-                Value::String(text) => Some(text.as_str()),
-                _ => {
-                    return Err(OpenAiChatSemanticError::protocol(
-                        "OpenAI Chat content must be a string or null",
-                    ))
-                }
-            };
-            if let Some(text) = text {
-                retained_bytes = retained_bytes.checked_add(text.len()).ok_or_else(|| {
-                    OpenAiChatSemanticError::protocol(
-                        "OpenAI Chat retained semantic state exceeds limit",
-                    )
-                })?;
-                parts.push(text.to_string());
-            }
-        }
-        Ok(CheckedChunk {
-            parts,
-            reasoning,
-            tools,
-            input_tokens,
-            output_tokens,
-            finish_reason,
-            provider_error,
-            retained_bytes,
-        })
-    }
-
     fn message_start_event(&self) -> SseEvent {
         SseEvent {
             event: "message_start".to_string(),
@@ -574,7 +442,7 @@ impl OpenAiChatSseMachine {
             "id": self.message_id,
             "type": "message",
             "role": "assistant",
-            "content": self.content,
+            "content": if self.content.is_empty() { vec![json!({"type":"text","text":""})] } else { self.content.clone() },
             "model": self.model,
             "stop_reason": self.stop_reason(),
             "stop_sequence": null,
@@ -592,73 +460,4 @@ impl OpenAiChatSseMachine {
             _ => "end_turn",
         }
     }
-}
-
-fn provider_error_data(_message: &str, _provider_error: &serde_json::Map<String, Value>) -> Value {
-    let inner = json!({"type": "api_error", "message": "OpenAI Chat backend error"});
-    json!({"type": "error", "error": inner})
-}
-
-// Normalize the reasoning_content / reasoning aliases: null or empty is
-// absent, non-string fails closed, both-present-and-differing fails closed.
-fn extract_reasoning(payload: &Value) -> Result<Option<String>, OpenAiChatSemanticError> {
-    let Some(payload) = payload.as_object() else {
-        return Ok(None);
-    };
-    for field in SIGNED_REASONING_FIELDS {
-        if payload.contains_key(field) {
-            return Err(OpenAiChatSemanticError::protocol(format!(
-                "OpenAI Chat reasoning field {field} is an opaque signed representation and is not supported"
-            )));
-        }
-    }
-    let read_alias = |key: &str| -> Result<Option<String>, OpenAiChatSemanticError> {
-        match payload.get(key) {
-            None | Some(Value::Null) => Ok(None),
-            Some(Value::String(text)) => Ok(Some(text.clone())),
-            Some(_) => Err(OpenAiChatSemanticError::protocol(format!(
-                "OpenAI Chat {key} must be a string or null"
-            ))),
-        }
-    };
-    let primary = read_alias("reasoning_content")?;
-    let alias = read_alias("reasoning")?;
-    let primary = primary.filter(|text| !text.is_empty());
-    let alias = alias.filter(|text| !text.is_empty());
-    match (primary, alias) {
-        (None, None) => Ok(None),
-        (Some(text), None) | (None, Some(text)) => Ok(Some(text)),
-        (Some(primary), Some(alias)) if primary == alias => Ok(Some(primary)),
-        (Some(_), Some(_)) => Err(OpenAiChatSemanticError::protocol(
-            "conflicting OpenAI Chat reasoning aliases reasoning_content and reasoning",
-        )),
-    }
-}
-
-fn validate_usage(
-    usage: Option<&Value>,
-) -> Result<(Option<u64>, Option<u64>), OpenAiChatSemanticError> {
-    let Some(usage) = usage.filter(|value| !value.is_null()) else {
-        return Ok((None, None));
-    };
-    let usage = usage
-        .as_object()
-        .ok_or_else(|| OpenAiChatSemanticError::protocol("OpenAI Chat usage must be an object"))?;
-    let parse = |key: &str| -> Result<Option<u64>, OpenAiChatSemanticError> {
-        match usage.get(key) {
-            None => Ok(None),
-            Some(value) => value
-                .as_u64()
-                .filter(|tokens| *tokens <= i64::MAX as u64)
-                .map(Some)
-                .ok_or_else(|| {
-                    OpenAiChatSemanticError::protocol(format!(
-                        "OpenAI Chat usage.{key} must be a non-negative integer within i64 range"
-                    ))
-                }),
-        }
-    };
-    let input = parse("prompt_tokens")?;
-    let output = parse("completion_tokens")?;
-    Ok((input, output))
 }

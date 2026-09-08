@@ -3,6 +3,8 @@
 mod sse;
 
 #[cfg(test)]
+mod diagnostic_tests;
+#[cfg(test)]
 mod timeout_tests;
 
 use std::sync::OnceLock;
@@ -103,18 +105,8 @@ fn local_openai_chat_error(message: impl Into<String>) -> AdapterError {
 
 /// Map a non-success upstream status into the gateway-owned Anthropic error
 /// shape with failover metadata attached.
-fn map_openai_chat_error(status: StatusCode, body: &str) -> AdapterError {
-    let parsed: Option<Value> = serde_json::from_str(body).ok();
-    let message = parsed
-        .as_ref()
-        .and_then(|value| {
-            value
-                .pointer("/error/message")
-                .or_else(|| value.get("message"))
-        })
-        .and_then(Value::as_str)
-        .unwrap_or(body)
-        .to_string();
+fn map_openai_chat_error(status: StatusCode, _body: &str) -> AdapterError {
+    let message = format!("OpenAI Chat backend returned HTTP {}", status.as_u16());
     let error_type = match status {
         StatusCode::TOO_MANY_REQUESTS => "rate_limit_error",
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => "authentication_error",
@@ -259,18 +251,12 @@ async fn forward(
             crate::upstream_timeout::SendError::Transport(ref transport_error)
                 if transport_error.is_connect() =>
             {
-                let message =
-                    format!("network error calling OpenAI Chat backend: {transport_error}");
-                AdapterError {
-                    message,
-                    response: Box::new(StatusCode::BAD_GATEWAY.into_response()),
-                    failure: Some(AdapterFailure::BeforeHeaders),
-                }
+                let mut error = local_openai_chat_error("failed to connect to OpenAI Chat backend");
+                error.failure = Some(AdapterFailure::BeforeHeaders);
+                error
             }
-            error => error.into_adapter_error(|transport_error| AdapterError {
-                message: format!("network error calling OpenAI Chat backend: {transport_error}"),
-                response: Box::new(StatusCode::BAD_GATEWAY.into_response()),
-                failure: None,
+            error => error.into_adapter_error(|_| {
+                local_openai_chat_error("network error calling OpenAI Chat backend")
             }),
         }
     })?;
@@ -299,9 +285,8 @@ async fn forward(
             .process_chunk_checked(&parsed)
             .map_err(|error| local_openai_chat_error(error.to_string()))?;
         if let Some(mut error) = events.into_iter().find(|event| event.event == "error") {
-            // The machine's error event already carries the allowlisted
-            // request_id when the provider supplied one; relay its exact body
-            // instead of rebuilding a message-only error.
+            // The machine supplies a neutral error body. Only transport-level
+            // allowlisted headers may add a diagnostic request ID.
             let message = error
                 .data
                 .pointer("/error/message")
