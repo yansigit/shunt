@@ -265,7 +265,7 @@ impl OpenAiChatSseMachine {
                 let choice = choice.as_object().ok_or_else(|| {
                     OpenAiChatSemanticError::protocol("OpenAI Chat choice must be an object")
                 })?;
-                if let Some(reason) = choice.get("finish_reason") {
+                if let Some(reason) = choice.get("finish_reason").filter(|value| !value.is_null()) {
                     let reason = reason.as_str().ok_or_else(|| {
                         OpenAiChatSemanticError::protocol(
                             "OpenAI Chat finish_reason must be a string",
@@ -467,7 +467,7 @@ impl OpenAiChatSseMachine {
 fn validate_usage(
     usage: Option<&Value>,
 ) -> Result<(Option<u64>, Option<u64>), OpenAiChatSemanticError> {
-    let Some(usage) = usage else {
+    let Some(usage) = usage.filter(|value| !value.is_null()) else {
         return Ok((None, None));
     };
     let usage = usage
