@@ -1,0 +1,10 @@
+{
+  "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib command_code_tracer_response -- --test-threads=1",
+  "exitCode": 101,
+  "targetTest": "adapters::command_code::router_tests::command_code_tracer_response_incremental_and_unary",
+  "targetFile": "src/adapters/command_code/router_tests.rs",
+  "expected": "streaming router turn admitted and first delta observed before upstream sends finish",
+  "actual": "Compilation succeeded; named assertion at line 154 failed: streaming subscription status 400, expected 200. 0 passed, 1 failed, 2210 filtered. Owned tasks aborted on assertion; production state unchanged.",
+  "output": "TAP version 13\nnot ok 1 - adapters::command_code::router_tests::command_code_tracer_response_incremental_and_unary\n1..1\n# tests 1\n# pass 0\n# fail 1\n",
+  "provenance": "Manual TAP transcription of actual Rust libtest assertion output; not raw TAP."
+}

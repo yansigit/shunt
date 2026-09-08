@@ -53,6 +53,11 @@ impl Drop for Task {
 }
 
 async fn turn(wire: &str, status: u16) -> (reqwest::StatusCode, Value) {
+    let (status, body) = turn_mode(wire, status, false).await;
+    (status, serde_json::from_str(&body).unwrap())
+}
+
+async fn turn_mode(wire: &str, status: u16, streaming: bool) -> (reqwest::StatusCode, String) {
     let lookups_before =
         crate::auth::command_code::LOOKUPS.load(std::sync::atomic::Ordering::SeqCst);
     let config = config("https://api.commandcode.ai");
@@ -78,6 +83,7 @@ async fn turn(wire: &str, status: u16) -> (reqwest::StatusCode, Value) {
         .build()
         .unwrap();
     let wire = wire.to_string();
+    let (observed_delta, wait_for_delta) = tokio::sync::oneshot::channel();
     let mut upstream = Task(tokio::spawn(async move {
         let (socket, _) = listener.accept().await.unwrap();
         let mut socket = TlsAcceptor::from(Arc::new(tls))
@@ -123,7 +129,17 @@ async fn turn(wire: &str, status: u16) -> (reqwest::StatusCode, Value) {
         } else {
             ""
         };
-        socket.write_all(format!("HTTP/1.1 {status} Fixture\r\ncontent-type: application/x-ndjson\r\ncontent-length: {}\r\n{location}connection: close\r\n\r\n{wire}",wire.len()).as_bytes()).await.unwrap();
+        socket.write_all(format!("HTTP/1.1 {status} Fixture\r\ncontent-type: application/x-ndjson\r\ncontent-length: {}\r\n{location}connection: close\r\n\r\n",wire.len()).as_bytes()).await.unwrap();
+        if streaming && wire.starts_with("{\"type\":\"text-delta\"") {
+            let split = wire.find('\n').unwrap() + 1;
+            socket.write_all(wire[..split].as_bytes()).await.unwrap();
+            socket.flush().await.unwrap();
+            tokio::time::timeout(Duration::from_secs(3), wait_for_delta).await
+                .expect("client must receive delta before upstream finish").unwrap();
+            socket.write_all(wire[split..].as_bytes()).await.unwrap();
+        } else {
+            socket.write_all(wire.as_bytes()).await.unwrap();
+        }
     }));
     let (router, _, _) = crate::server::build_router_with_test_client(config, client).unwrap();
     let gateway = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -132,10 +148,21 @@ async fn turn(wire: &str, status: u16) -> (reqwest::StatusCode, Value) {
         axum::serve(gateway, router).await.unwrap();
     }));
     let response = reqwest::Client::new().post(format!("http://{addr}/v1/messages"))
-        .timeout(Duration::from_secs(5)).json(&json!({"model":"zai-org/GLM-5.3","max_tokens":64,"messages":[{"role":"user","content":"fixture"}]}))
+        .timeout(Duration::from_secs(5)).json(&json!({"model":"zai-org/GLM-5.3","stream":streaming,"max_tokens":64,"messages":[{"role":"user","content":"fixture"}]}))
         .send().await.unwrap();
     let status = response.status();
-    let body = response.json().await.unwrap();
+    if streaming { assert_eq!(status, reqwest::StatusCode::OK, "streaming subscription turn must be admitted"); }
+    use futures_util::StreamExt;
+    let mut bytes = response.bytes_stream();
+    let mut body = Vec::new();
+    let mut observed_delta = Some(observed_delta);
+    while let Some(chunk) = bytes.next().await {
+        body.extend_from_slice(&chunk.unwrap());
+        if body.windows(b"content_block_delta".len()).any(|s| s == b"content_block_delta") {
+            if let Some(signal) = observed_delta.take() { let _ = signal.send(()); }
+        }
+    }
+    let body = String::from_utf8(body).unwrap();
     tokio::time::timeout(Duration::from_secs(5), &mut upstream.0)
         .await
         .unwrap()
@@ -145,6 +172,20 @@ async fn turn(wire: &str, status: u16) -> (reqwest::StatusCode, Value) {
         lookups_before + 1
     );
     (status, body)
+}
+
+#[tokio::test]
+async fn command_code_tracer_response_incremental_and_unary() {
+    let _lock = crate::config::CONFIG_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _key = EnvGuard::set(Some("synthetic-subscription-token"));
+    let wire = "{\"type\":\"text-delta\",\"text\":\"first\"}\n{\"type\":\"text-delta\",\"text\":\"second\"}\n{\"type\":\"finish\",\"finishReason\":\"stop\"}\n";
+    let (_, stream) = turn_mode(wire, 200, true).await;
+    assert_eq!(stream.matches("event: message_start\n").count(), 1);
+    assert_eq!(stream.matches("event: message_stop\n").count(), 1);
+    assert_eq!(stream.matches("event: error\n").count(), 0);
+    assert!(stream.find("first").unwrap() < stream.find("second").unwrap());
+    let (_, unary) = turn(wire, 200).await;
+    assert_eq!(unary["content"][0]["text"], "firstsecond");
 }
 
 #[tokio::test]
