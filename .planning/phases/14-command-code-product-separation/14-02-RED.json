@@ -1,0 +1,10 @@
+{
+  "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib command_code_tracer_unary -- --test-threads=1",
+  "exitCode": 101,
+  "targetTest": "adapters::command_code_router_tests::command_code_tracer_unary",
+  "targetFile": "src/adapters/command_code/router_tests.rs",
+  "expected": "subscription kind/auth deserialize successfully and full-router TLS text turn passes",
+  "actual": "Named assertion at router_tests.rs:15:5 failed: unknown variant command_code_oauth. Compilation succeeded, 1 test failed, 2202 filtered out; production state unchanged.",
+  "output": "TAP version 13\nnot ok 1 - adapters::command_code_router_tests::command_code_tracer_unary\n1..1\n# tests 1\n# pass 0\n# fail 1\n",
+  "provenance": "Manual TAP transcription of real Rust libtest assertion output, recorded before production implementation. Not raw TAP, not a parser unwrap/load crash."
+}
