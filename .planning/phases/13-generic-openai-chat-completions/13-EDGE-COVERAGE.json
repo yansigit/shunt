@@ -1,0 +1,139 @@
+{
+  "items": [
+    {
+      "requirement_id": "CHAT-01",
+      "category": "unclassified",
+      "status": "unresolved",
+      "verification": null,
+      "resolution": null,
+      "reason": null,
+      "probe": "unclassified — review manually"
+    },
+    {
+      "requirement_id": "CHAT-02",
+      "category": "concurrency",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Endpoint normalization is pure and deterministic: repeated/concurrent construction yields identical URL bytes without mutation; invalid roots fail before credential lookup.",
+      "reason": null,
+      "probe": "If interrupted or run in parallel, what is guaranteed?"
+    },
+    {
+      "requirement_id": "CHAT-03",
+      "category": "empty",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Reject null/non-object requests and invalid/empty required message representations before dispatch; preserve supported empty optional text and test single-message input explicitly.",
+      "reason": null,
+      "probe": "What is the result for empty, single-element, or null input?"
+    },
+    {
+      "requirement_id": "CHAT-03",
+      "category": "encoding",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Preserve Unicode text without normalization; enforce UTF-8 byte budgets using checked lengths; reject malformed UTF-8 at byte decoding boundaries.",
+      "reason": null,
+      "probe": "Whose definition of length/equality applies — bytes, code points, grapheme clusters, or normalized form?"
+    },
+    {
+      "requirement_id": "CHAT-03",
+      "category": "concurrency",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Translation uses request-local values; concurrent requests cannot exchange model, content or generation controls.",
+      "reason": null,
+      "probe": "If interrupted or run in parallel, what is guaranteed?"
+    },
+    {
+      "requirement_id": "CHAT-04",
+      "category": "concurrency",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Parallel calls retain distinct authentic IDs and paired results; interleaved indices preserve per-call argument order with no cross-request state.",
+      "reason": null,
+      "probe": "If interrupted or run in parallel, what is guaranteed?"
+    },
+    {
+      "requirement_id": "CHAT-05",
+      "category": "empty",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Reject null/non-object response and absent/ambiguous completion choices; explicitly test a valid empty-text completion with authoritative finish and usage.",
+      "reason": null,
+      "probe": "What is the result for empty, single-element, or null input?"
+    },
+    {
+      "requirement_id": "CHAT-05",
+      "category": "encoding",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Unary response UTF-8 and JSON types are validated; all retained text/tool/error sizes use bounded bytes, without Unicode normalization.",
+      "reason": null,
+      "probe": "Whose definition of length/equality applies — bytes, code points, grapheme clusters, or normalized form?"
+    },
+    {
+      "requirement_id": "CHAT-06",
+      "category": "empty",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Empty choices are accepted only for the documented usage-only chunk position; empty deltas do not fabricate content or completion, and null/malformed fields fail explicitly.",
+      "reason": null,
+      "probe": "What is the result for empty, single-element, or null input?"
+    },
+    {
+      "requirement_id": "CHAT-06",
+      "category": "encoding",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Every split point in multibyte UTF-8 SSE fixtures yields equivalent valid output; malformed UTF-8 fails; byte budgets include incomplete residual bytes.",
+      "reason": null,
+      "probe": "Whose definition of length/equality applies — bytes, code points, grapheme clusters, or normalized form?"
+    },
+    {
+      "requirement_id": "CHAT-07",
+      "category": "unclassified",
+      "status": "unresolved",
+      "verification": null,
+      "resolution": null,
+      "reason": null,
+      "probe": "unclassified — review manually"
+    },
+    {
+      "requirement_id": "CHAT-08",
+      "category": "concurrency",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Concurrent requests resolve only their configured provider key; no credential crosses request/provider boundaries or survives redirect refusal.",
+      "reason": null,
+      "probe": "If interrupted or run in parallel, what is guaranteed?"
+    },
+    {
+      "requirement_id": "CHAT-09",
+      "category": "boundary",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Test limit-minus-one, exact-limit and limit-plus-one for event, residual, tool count/arguments and aggregate budgets, and bounded timeout/cancellation.",
+      "reason": null,
+      "probe": "What happens exactly at each min/max/threshold — and one step either side?"
+    },
+    {
+      "requirement_id": "CHAT-09",
+      "category": "precision",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "Reject negative, fractional, nonfinite and overflowing token counters/indices; preserve valid integral counts without wraparound or lossy float casts.",
+      "reason": null,
+      "probe": "Where can precision loss, overflow, or rounding/tie-breaking occur — and what is the exact contract (e.g. half-up vs half-to-even, ceil/floor/truncate)?"
+    }
+  ],
+  "coverage": {
+    "applicable": 14,
+    "resolved": 12,
+    "unresolved": 2,
+    "byVerification": {
+      "explicit": 12,
+      "backstop": 0
+    }
+  }
+}
