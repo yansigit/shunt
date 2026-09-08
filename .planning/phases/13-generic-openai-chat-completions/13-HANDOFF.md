@@ -2,6 +2,15 @@
 
 ## Explicit subagent thinking preference (user instruction)
 
+Latest model authorization: use GLM or Omen; testing
+google-antigravity/gemini-3.8-flash is also authorized. Always explicit high.
+GLM/high researcher completed successfully and wrote 13-RESEARCH.md.
+Its nested evidence child failed provider thinking-mode validation; the parent
+completed its own source survey. Root corrected the retry recommendation to
+ConnectOnly and pinned actual adjacent HEAD 055c3ecf. Research now exists;
+next is validation strategy, remaining plan preflight hooks, pattern mapping,
+planner and independent checker. Do not repeat research merely due stale notes below.
+
 Always pass `reasoning_effort: high` on EVERY subagent launch, including retries,
 fallback models and nested delegation; do not rely on inheritance/defaults.
 Use `fork_turns: none` (or a bounded positive history count) with the override.
