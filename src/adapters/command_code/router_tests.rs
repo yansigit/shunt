@@ -2,6 +2,7 @@
 #![allow(clippy::await_holding_lock)]
 
 mod lifetime;
+mod matrix;
 mod replay;
 
 use crate::config::Config;
@@ -61,9 +62,24 @@ async fn turn(wire: &str, status: u16) -> (reqwest::StatusCode, Value) {
 }
 
 async fn turn_mode(wire: &str, status: u16, streaming: bool) -> (reqwest::StatusCode, String) {
+    let request = json!({"model":"zai-org/GLM-5.3","stream":streaming,"max_tokens":64,"messages":[{"role":"user","content":"fixture"}]});
+    let (status, body, _) = turn_request(wire, status, request, None).await;
+    (status, body)
+}
+
+async fn turn_request(
+    wire: &str,
+    status: u16,
+    request: Value,
+    limit: Option<usize>,
+) -> (reqwest::StatusCode, String, Value) {
+    let streaming = request["stream"] == true;
     let lookups_before =
         crate::auth::command_code::LOOKUPS.load(std::sync::atomic::Ordering::SeqCst);
-    let config = config("https://api.commandcode.ai");
+    let mut config = config("https://api.commandcode.ai");
+    if let Some(limit) = limit {
+        config.server.limits.max_request_bytes = limit;
+    }
     let cert = rcgen::generate_simple_self_signed(vec!["api.commandcode.ai".into()]).unwrap();
     let key = rustls::pki_types::PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der());
     let tls = rustls::ServerConfig::builder_with_provider(Arc::new(
@@ -87,6 +103,7 @@ async fn turn_mode(wire: &str, status: u16, streaming: bool) -> (reqwest::Status
         .unwrap();
     let wire = wire.to_string();
     let (observed_delta, wait_for_delta) = tokio::sync::oneshot::channel();
+    let (captured_tx, captured_rx) = tokio::sync::oneshot::channel();
     let mut upstream = Task(tokio::spawn(async move {
         let (socket, _) = listener.accept().await.unwrap();
         let mut socket = TlsAcceptor::from(Arc::new(tls))
@@ -124,6 +141,7 @@ async fn turn_mode(wire: &str, status: u16, streaming: bool) -> (reqwest::Status
                 let body: Value = serde_json::from_slice(&bytes[end + 4..end + 4 + len]).unwrap();
                 assert_eq!(body["params"]["stream"], true);
                 assert_eq!(body["params"]["model"], "zai-org/GLM-5.3");
+                captured_tx.send(body).unwrap();
                 break;
             }
         }
@@ -161,9 +179,13 @@ async fn turn_mode(wire: &str, status: u16, streaming: bool) -> (reqwest::Status
     let _serving = Task(tokio::spawn(async move {
         axum::serve(gateway, router).await.unwrap();
     }));
-    let response = reqwest::Client::new().post(format!("http://{addr}/v1/messages"))
-        .timeout(Duration::from_secs(5)).json(&json!({"model":"zai-org/GLM-5.3","stream":streaming,"max_tokens":64,"messages":[{"role":"user","content":"fixture"}]}))
-        .send().await.unwrap();
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/v1/messages"))
+        .timeout(Duration::from_secs(5))
+        .json(&request)
+        .send()
+        .await
+        .unwrap();
     let status = response.status();
     if streaming {
         assert_eq!(
@@ -197,7 +219,7 @@ async fn turn_mode(wire: &str, status: u16, streaming: bool) -> (reqwest::Status
         crate::auth::command_code::LOOKUPS.load(std::sync::atomic::Ordering::SeqCst),
         lookups_before + 1
     );
-    (status, body)
+    (status, body, captured_rx.await.unwrap())
 }
 
 #[tokio::test]

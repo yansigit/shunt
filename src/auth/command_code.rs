@@ -211,6 +211,8 @@ mod tests {
     use super::*;
     use sha2::{Digest, Sha256};
 
+    mod matrix;
+
     static FILE_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     fn lifetime_dir(label: &str) -> std::path::PathBuf {
