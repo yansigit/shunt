@@ -184,7 +184,13 @@ fn sse_body(frames: &[String]) -> ResponseTemplate {
         .insert_header("content-type", "text/event-stream")
         // Real upstreams terminate the final frame with a blank line; EOF on
         // an unterminated frame is its own fail-closed case elsewhere.
-        .set_body_raw(format!("{}\n\n", frames.join("\n\n")), "text/event-stream")
+        .set_body_raw(
+            frames
+                .iter()
+                .map(|frame| format!("data: {frame}\n\n"))
+                .collect::<String>(),
+            "text/event-stream",
+        )
 }
 
 fn chat_delta(delta: Value, finish: Option<&str>) -> String {
