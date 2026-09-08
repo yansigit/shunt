@@ -6,7 +6,7 @@ current_phase: 15
 current_phase_name: Exact OpenCode Go Evidence Gate
 current_plan: Not started
 status: planning
-stopped_at: Phase 14 complete, ready to plan Phase 15
+stopped_at: Phase 15 research complete; independent planner/checker dispatch unavailable
 last_updated: "2026-09-08T20:18:14.128Z"
 last_activity: 2026-09-08
 last_activity_desc: Phase 14 complete, transitioned to Phase 15
@@ -34,8 +34,8 @@ See: `.planning/PROJECT.md` (updated 2026-09-08 after Phase 14)
 Phase: 15 — Exact OpenCode Go Evidence Gate
 Current Plan: Not started
 Total Plans in Phase: 0
-Status: Ready to plan
-Last activity: 2026-09-08 — Phase 14 complete, transitioned to Phase 15
+Status: Research complete; planning gates pending
+Last activity: 2026-09-08 — Phase 15 approval, backups, context and GLM/high research recorded
 
 ## Performance Metrics
 
@@ -62,7 +62,6 @@ Last activity: 2026-09-08 — Phase 14 complete, transitioned to Phase 15
 | 11 | 7 | - | - |
 | 12 | 8 | - | - |
 | 13 | 5 | - | - |
-| 14 | 6 | - | - |
 | 14 | 6 | - | - |
 **Per-Plan Metrics:**
 
@@ -124,6 +123,14 @@ None yet.
 
 ### Blockers/Concerns
 
+Phase 15 host dispatch blocker: GLM/high researcher completed and wrote
+15-RESEARCH.md, but spawn/follow-up controls then disappeared from the available
+tool surface. Discovery found no equivalent subagent tool. No rate-limit failure
+was reported, and no Luna fallback was launched. Pattern mapping, independent
+planning/checking and implementation remain pending. Do not substitute a new
+user-owned app task or claim an independent check. Resume when dispatch is exposed.
+Source-only evidence admits zero tuples; strict EOF policy is already locked.
+
 The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent OpenCodex supplies schema-derived Run output-token deltas and context checkpoints; 83 hermetic tests passed in isolated state. After CLI installation, an isolated read-only Composer 2.5 probe succeeded with streamed events and result usage, including cache fields. CLI output is not raw Connect evidence: do not infer protobuf field mappings or claim Shunt live verification. Original CLI settings/credential files were backed up and remained unchanged. All eight Cursor plans and phase verification are complete. The approved bounded request-local KV architecture is implemented and tested; live gateway availability remains the Phase 16 opt-in gate.
 
 ## Deferred Items
@@ -136,13 +143,13 @@ The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent O
 ## Session Continuity
 
 Last session: 2026-09-08T20:18:14Z
-Stopped at: Phase 14 complete, ready to plan Phase 15
-Resume file: None — Phase 15 context and plan are next
+Stopped at: Phase 15 research complete; independent planner/checker dispatch unavailable
+Resume file: .planning/phases/15-exact-opencode-go-evidence-gate/15-CONTEXT.md
 
 ## Operator Next Steps
 
 - The user-approved installed GSD gate validator repair is complete and backed up at `/Users/user/gsd-gate-backup-mEVeg3`. Dotted query names validate; gate checks were rerun without disabling them. See 13-01-SUMMARY.md.
 - Phase 13 is complete: 5/5 plans, 2,875 passed, 0 failed, 2 existing ignored; CLI/curl Chat smoke and all documentation locales pass. Validation has no gaps; all 19 authored security threats have mitigations. Computer visual checks remain skipped/blocked, never passed.
 - Phase 14 is complete: 6/6 plans, 2,942 passed, zero failed, two pre-existing ignored; bounded regression, formatter, Clippy, docs build and owned CLI/curl smoke passed. All 21 authored security threats are mitigated; live/Computer acceptance is not claimed. No production mutation.
-- Continue with Phase 15 context/planning. New OpenCode Go public config/provider semantics require approval beyond the existing Phase 13–14 approval; no credential writeback is authorized.
+- Phase 15 public opt-in configuration is approved (2026-09-08), with backups first and no changes to existing provider settings or credential writeback. Fresh byte-verified owner-only backups: `/Users/user/shunt-phase15-backup-YQSxN3`. Continue Phase 15 research and planning from 15-CONTEXT.md.
 - Transition warning about `node /tmp/shunt-phase12-isolated-run.cjs` in 14-03-SUMMARY is a prose command misclassified as a repository file, not a missing implementation artifact. Graduation scan found no LEARNINGS files and skipped under its minimum-data guard.
