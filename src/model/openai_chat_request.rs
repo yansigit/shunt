@@ -18,64 +18,10 @@ use crate::adapters::AdapterError;
 /// Enforced before dispatch with a plain byte count; CHAT-03 boundary row.
 pub const MAX_TEXT_BLOCK_BYTES: usize = 8 * 1024 * 1024;
 
-/// Build the Chat Completions endpoint URL from the configured API root.
-///
-/// This is the single shared grammar for config boot validation and request
-/// construction (CHAT-02/D-02): exactly one /chat/completions path, a
-/// trailing-slash normalization, no doubling for roots that already end in
-/// /chat/completions, and hard rejection of query strings, fragments, and
-/// userinfo. Deterministic: repeated builds yield identical bytes.
-pub fn chat_completions_endpoint(base_url: &str) -> Result<String, String> {
-    if base_url
-        .chars()
-        .any(|c| c.is_whitespace() || c.is_control() || c == '\\')
-    {
-        return Err("base URL must not contain whitespace, controls, or backslashes".into());
-    }
-    let rest = base_url
-        .strip_prefix("https://")
-        .or_else(|| base_url.strip_prefix("http://"))
-        .ok_or_else(|| "base URL must use an explicit http:// or https:// authority".to_string())?;
-    if rest.split('/').skip(1).any(|segment| {
-        matches!(
-            segment.to_ascii_lowercase().as_str(),
-            "." | ".." | "%2e" | ".%2e" | "%2e." | "%2e%2e"
-        )
-    }) {
-        return Err("base URL must not contain dot path segments".into());
-    }
-    let url = reqwest::Url::parse(base_url).map_err(|_| "invalid base URL".to_string())?;
-    if !matches!(url.scheme(), "http" | "https") {
-        return Err("base URL must use http or https".into());
-    }
-    if url.query().is_some() {
-        return Err("base URL must not contain a query string".into());
-    }
-    if url.fragment().is_some() {
-        return Err("base URL must not contain a fragment".into());
-    }
-    if !url.username().is_empty() || url.password().is_some() {
-        return Err("base URL must not contain userinfo (user:pass@)".into());
-    }
-    let host = url
-        .host_str()
-        .ok_or_else(|| "base URL must include a host".to_string())?;
-    let authority = match url.port() {
-        Some(port) => format!("{host}:{port}"),
-        None => host.to_string(),
-    };
-    let path = url.path().trim_end_matches('/');
-    let base = if path.is_empty() {
-        format!("{}://{authority}", url.scheme())
-    } else {
-        format!("{}://{authority}{path}", url.scheme())
-    };
-    if base.ends_with("/chat/completions") {
-        Ok(base)
-    } else {
-        Ok(format!("{base}/chat/completions"))
-    }
-}
+mod endpoint;
+mod tools;
+pub use endpoint::chat_completions_endpoint;
+use tools::{translate_tool_choice, translate_tools};
 
 pub(crate) fn bad_request(message: impl Into<String>) -> AdapterError {
     let message = message.into();
@@ -213,79 +159,6 @@ fn translate_stop_sequences(stop_sequences: &Value) -> Result<Value, AdapterErro
         stop.push(json!(sequence));
     }
     Ok(Value::Array(stop))
-}
-
-fn translate_tools(tools: &Value) -> Result<Value, AdapterError> {
-    let tools = tools
-        .as_array()
-        .ok_or_else(|| bad_request("tools must be an array of tool declarations"))?;
-    let mut translated = Vec::with_capacity(tools.len());
-    for tool in tools {
-        let tool = tool
-            .as_object()
-            .ok_or_else(|| bad_request("each tool declaration must be an object"))?;
-        only_fields(tool, &["name", "description", "input_schema"])?;
-        let name = tool
-            .get("name")
-            .and_then(Value::as_str)
-            .ok_or_else(|| bad_request("each tool declaration must have a string name"))?;
-        let parameters = tool
-            .get("input_schema")
-            .ok_or_else(|| bad_request(format!("tool {name} must have an input_schema object")))?;
-        if !parameters.is_object() {
-            return Err(bad_request(format!(
-                "tool {name} must have an input_schema object"
-            )));
-        }
-        let mut function = Map::new();
-        if name.is_empty()
-            || tool
-                .get("description")
-                .is_some_and(|value| !value.is_string())
-        {
-            return Err(bad_request(
-                "tool name must be nonempty and description must be a string",
-            ));
-        }
-        function.insert("name".to_string(), json!(name));
-        if let Some(description) = tool.get("description") {
-            function.insert("description".to_string(), description.clone());
-        }
-        function.insert("parameters".to_string(), parameters.clone());
-        translated.push(json!({"type": "function", "function": Value::Object(function)}));
-    }
-    Ok(Value::Array(translated))
-}
-
-fn translate_tool_choice(tool_choice: &Value) -> Result<Value, AdapterError> {
-    match tool_choice {
-        Value::String(choice) if choice == "auto" => Ok(json!("auto")),
-        Value::String(choice) if choice == "any" => Ok(json!("required")),
-        Value::Object(choice) => {
-            only_fields(choice, &["type", "name"])?;
-            match choice.get("type").and_then(Value::as_str) {
-                Some("auto") if choice.len() == 1 => return Ok(json!("auto")),
-                Some("any") if choice.len() == 1 => return Ok(json!("required")),
-                _ => {}
-            }
-            if choice.get("type").and_then(Value::as_str) != Some("tool") {
-                return Err(bad_request(
-                    "tool_choice must be \"auto\", \"any\", or a tool selection object",
-                ));
-            }
-            let name = choice
-                .get("name")
-                .and_then(Value::as_str)
-                .ok_or_else(|| bad_request("tool_choice tool selection must have a name"))?;
-            if name.is_empty() {
-                return Err(bad_request("tool_choice name must not be empty"));
-            }
-            Ok(json!({"type": "function", "function": {"name": name}}))
-        }
-        _ => Err(bad_request(
-            "tool_choice must be \"auto\", \"any\", or a tool selection object",
-        )),
-    }
 }
 
 fn checked_text(text: &str) -> Result<(), AdapterError> {
