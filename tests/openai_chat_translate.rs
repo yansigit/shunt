@@ -79,7 +79,9 @@ fn root_review_nested_fields_are_not_silently_lost() {
         json!({"tools":[{"name":"f","input_schema":{},"unknown":true}],"messages":[{"role":"user","content":"hi"}]}),
         json!({"stream":"yes","messages":[{"role":"user","content":"hi"}]}),
         json!({"tool_choice":{"type":"tool","name":"f","unknown":true},"messages":[{"role":"user","content":"hi"}]}),
-    ] { assert!(translate(request).is_err()); }
+    ] {
+        assert!(translate(request).is_err());
+    }
 }
 
 #[test]

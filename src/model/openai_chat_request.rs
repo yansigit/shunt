@@ -49,13 +49,13 @@ pub fn chat_completions_endpoint(base_url: &str) -> Result<String, String> {
         return Err("base URL must use http or https".into());
     }
     if url.query().is_some() {
-        return Err(format!("base URL must not contain a query string"));
+        return Err("base URL must not contain a query string".into());
     }
     if url.fragment().is_some() {
         return Err("base URL must not contain a fragment".into());
     }
     if !url.username().is_empty() || url.password().is_some() {
-        return Err(format!("base URL must not contain userinfo (user:pass@)"));
+        return Err("base URL must not contain userinfo (user:pass@)".into());
     }
     let host = url
         .host_str()
@@ -95,6 +95,23 @@ pub(crate) fn bad_request(message: impl Into<String>) -> AdapterError {
     }
 }
 
+fn only_fields(object: &Map<String, Value>, allowed: &[&str]) -> Result<(), AdapterError> {
+    if object.keys().any(|key| !allowed.contains(&key.as_str())) {
+        return Err(bad_request("unsupported nested request field"));
+    }
+    Ok(())
+}
+
+fn append_text(target: &mut String, text: &str) -> Result<(), AdapterError> {
+    target
+        .len()
+        .checked_add(text.len())
+        .filter(|length| *length <= MAX_TEXT_BLOCK_BYTES)
+        .ok_or_else(|| bad_request("combined text content exceeds the byte budget"))?;
+    target.push_str(text);
+    Ok(())
+}
+
 /// Translate the inbound Anthropic request into an OpenAI Chat Completions body.
 ///
 /// `stream` is decided by the adapter from the inbound flag (never trusted
@@ -110,6 +127,12 @@ pub fn translate_request(
     let request = request
         .as_object()
         .ok_or_else(|| bad_request("request body must be a JSON object"))?;
+    if request
+        .get("stream")
+        .is_some_and(|value| !value.is_boolean())
+    {
+        return Err(bad_request("stream must be a boolean"));
+    }
     let mut out = Map::new();
     out.insert("model".to_string(), json!(model));
     out.insert("stream".to_string(), json!(stream));
@@ -201,6 +224,7 @@ fn translate_tools(tools: &Value) -> Result<Value, AdapterError> {
         let tool = tool
             .as_object()
             .ok_or_else(|| bad_request("each tool declaration must be an object"))?;
+        only_fields(tool, &["name", "description", "input_schema"])?;
         let name = tool
             .get("name")
             .and_then(Value::as_str)
@@ -214,6 +238,15 @@ fn translate_tools(tools: &Value) -> Result<Value, AdapterError> {
             )));
         }
         let mut function = Map::new();
+        if name.is_empty()
+            || tool
+                .get("description")
+                .is_some_and(|value| !value.is_string())
+        {
+            return Err(bad_request(
+                "tool name must be nonempty and description must be a string",
+            ));
+        }
         function.insert("name".to_string(), json!(name));
         if let Some(description) = tool.get("description") {
             function.insert("description".to_string(), description.clone());
@@ -229,6 +262,7 @@ fn translate_tool_choice(tool_choice: &Value) -> Result<Value, AdapterError> {
         Value::String(choice) if choice == "auto" => Ok(json!("auto")),
         Value::String(choice) if choice == "any" => Ok(json!("required")),
         Value::Object(choice) => {
+            only_fields(choice, &["type", "name"])?;
             match choice.get("type").and_then(Value::as_str) {
                 Some("auto") if choice.len() == 1 => return Ok(json!("auto")),
                 Some("any") if choice.len() == 1 => return Ok(json!("required")),
@@ -243,6 +277,9 @@ fn translate_tool_choice(tool_choice: &Value) -> Result<Value, AdapterError> {
                 .get("name")
                 .and_then(Value::as_str)
                 .ok_or_else(|| bad_request("tool_choice tool selection must have a name"))?;
+            if name.is_empty() {
+                return Err(bad_request("tool_choice name must not be empty"));
+            }
             Ok(json!({"type": "function", "function": {"name": name}}))
         }
         _ => Err(bad_request(
@@ -286,6 +323,7 @@ fn translate_message(
     let message = message
         .as_object()
         .ok_or_else(|| bad_request("each message must be an object"))?;
+    only_fields(message, &["role", "content"])?;
     let role = message
         .get("role")
         .and_then(Value::as_str)
@@ -325,7 +363,7 @@ fn translate_block_content(
         return Err(bad_request("message content blocks must not be empty"));
     }
     let mut text_parts: Vec<&str> = Vec::new();
-    let mut reasoning_parts: Vec<String> = Vec::new();
+    let mut reasoning = String::new();
     let mut content: Vec<Value> = Vec::new();
     let mut tool_calls: Vec<Value> = Vec::new();
     let mut tool_messages: Vec<Value> = Vec::new();
@@ -338,6 +376,14 @@ fn translate_block_content(
             .get("type")
             .and_then(Value::as_str)
             .ok_or_else(|| bad_request("content blocks must have a type"))?;
+        match block_type {
+            "text" => only_fields(block, &["type", "text"]),
+            "image" => only_fields(block, &["type", "source"]),
+            "thinking" => only_fields(block, &["type", "thinking", "signature"]),
+            "tool_use" => only_fields(block, &["type", "id", "name", "input"]),
+            "tool_result" => only_fields(block, &["type", "tool_use_id", "content", "is_error"]),
+            _ => Ok(()),
+        }?;
         match block_type {
             "text" => {
                 let text = block
@@ -373,7 +419,7 @@ fn translate_block_content(
                     .and_then(Value::as_str)
                     .ok_or_else(|| bad_request("thinking block must have string thinking"))?;
                 checked_text(thinking)?;
-                reasoning_parts.push(thinking.to_string());
+                append_text(&mut reasoning, thinking)?;
             }
             "redacted_thinking" => {
                 return Err(bad_request(
@@ -399,6 +445,9 @@ fn translate_block_content(
                     .get("name")
                     .and_then(Value::as_str)
                     .ok_or_else(|| bad_request("tool_use must have a string name"))?;
+                if id.is_empty() || name.is_empty() {
+                    return Err(bad_request("tool_use id and name must not be empty"));
+                }
                 let input = block
                     .get("input")
                     .ok_or_else(|| bad_request("tool_use input must be a JSON object"))?;
@@ -418,6 +467,14 @@ fn translate_block_content(
                 }));
             }
             "tool_result" => {
+                if block
+                    .get("is_error")
+                    .is_some_and(|value| value.as_bool() != Some(false))
+                {
+                    return Err(bad_request(
+                        "tool_result is_error cannot be represented losslessly",
+                    ));
+                }
                 if role != "user" {
                     return Err(bad_request(
                         "tool_result blocks are only supported in user messages",
@@ -444,6 +501,7 @@ fn translate_block_content(
                             let part = part.as_object().ok_or_else(|| {
                                 bad_request("tool_result content parts must be objects")
                             })?;
+                            only_fields(part, &["type", "text"])?;
                             if part.get("type").and_then(Value::as_str) != Some("text") {
                                 return Err(bad_request(
                                     "tool_result content parts support text only",
@@ -454,7 +512,7 @@ fn translate_block_content(
                                     bad_request("tool_result text content must be a string")
                                 })?;
                             checked_text(piece)?;
-                            text.push_str(piece);
+                            append_text(&mut text, piece)?;
                         }
                         text
                     }
@@ -504,11 +562,8 @@ fn translate_block_content(
         if !tool_calls.is_empty() {
             message.insert("tool_calls".to_string(), Value::Array(tool_calls));
         }
-        if !reasoning_parts.is_empty() {
-            message.insert(
-                "reasoning_content".to_string(),
-                json!(reasoning_parts.join("\n")),
-            );
+        if !reasoning.is_empty() {
+            message.insert("reasoning_content".to_string(), json!(reasoning));
         }
         translated.push(Value::Object(message));
     }
@@ -525,6 +580,11 @@ fn translate_image_block(block: &Map<String, Value>) -> Result<Value, AdapterErr
         .ok_or_else(|| bad_request("image block must have a source"))?
         .as_object()
         .ok_or_else(|| bad_request("image source must be an object"))?;
+    match source.get("type").and_then(Value::as_str) {
+        Some("url") => only_fields(source, &["type", "url"]),
+        Some("base64") => only_fields(source, &["type", "media_type", "data"]),
+        _ => Ok(()),
+    }?;
     let url = match source.get("type").and_then(Value::as_str) {
         Some("url") => source
             .get("url")
@@ -562,6 +622,7 @@ fn collect_text_blocks(blocks: &[Value]) -> Result<String, AdapterError> {
         let block = block
             .as_object()
             .ok_or_else(|| bad_request("content blocks must be objects"))?;
+        only_fields(block, &["type", "text"])?;
         if block.get("type").and_then(Value::as_str) != Some("text") {
             return Err(bad_request("system content blocks support text only"));
         }
@@ -570,7 +631,7 @@ fn collect_text_blocks(blocks: &[Value]) -> Result<String, AdapterError> {
             .and_then(Value::as_str)
             .ok_or_else(|| bad_request("text content block must have string text"))?;
         checked_text(part)?;
-        text.push_str(part);
+        append_text(&mut text, part)?;
     }
     Ok(text)
 }
