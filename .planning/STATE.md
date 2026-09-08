@@ -6,7 +6,7 @@ current_phase: 15
 current_phase_name: Exact OpenCode Go Evidence Gate
 current_plan: Not started
 status: planning
-stopped_at: Phase 15 Omen/high planner stalled; Luna/high retry awaits dispatch controls
+stopped_at: Phase 15 draft plans written; preflight requires revision and independent check
 last_updated: "2026-09-08T20:18:14.128Z"
 last_activity: 2026-09-08
 last_activity_desc: Phase 14 complete, transitioned to Phase 15
@@ -34,7 +34,7 @@ See: `.planning/PROJECT.md` (updated 2026-09-08 after Phase 14)
 Phase: 15 — Exact OpenCode Go Evidence Gate
 Current Plan: Not started
 Total Plans in Phase: 0
-Status: Research and pattern mapping complete; planning gates pending
+Status: Draft plans require revision; independent plan check pending
 Last activity: 2026-09-08 — Phase 15 approval, backups, context and GLM/high research recorded
 
 ## Performance Metrics
@@ -152,8 +152,13 @@ The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent O
 ## Session Continuity
 
 Last session: 2026-09-08T20:18:14Z
-Stopped at: Phase 15 Omen/high planner stalled; Luna/high retry awaits dispatch controls
+Stopped at: Phase 15 draft plans written; preflight requires revision and independent check
 Resume file: .planning/phases/15-exact-opencode-go-evidence-gate/15-CONTEXT.md
+
+Luna/high planning retry completed and wrote two draft plans. Root preflight
+found decision coverage 5/11 plus invalid Cargo filters and execution-order gaps;
+see 15-PLAN-PREFLIGHT.md. Independent checker dispatch was unavailable afterward.
+Do not mark planned or execute until revised plans pass independent checking.
 
 ## Operator Next Steps
 

@@ -31,10 +31,10 @@ Planner must replace these provisional groups with actual plan/task IDs.
 
 | Group | Requirement | Threat / secure behavior | Test type | Planned evidence | Status |
 |---|---|---|---|---|---|
-| Evidence ledger | OGO-01/02 | No unsupported positive claims | source + deterministic ledger validation | Four exact candidates; all required fields; no captures falsely labelled live | pending |
-| Admission tracer | OGO-02/04 | Zero credential access and dispatch | real router | Explicit Go selections fail before resolver/network in both output modes | pending |
-| Route boundaries | OGO-03/04 | No Go credential/session egress | router + config | Primary, fallback, inbound Codex, count-tokens, off-origin and wrong auth | pending |
-| Regression/docs/smoke | OGO-01..04 | Generic providers preserved | workspace + CLI | All locales, generic-provider positive controls, isolated negative CLI smoke | pending |
+| 15-02 Task 1 | OGO-01/02 | No unsupported positive claims | source + deterministic ledger validation | Four exact candidates; all required fields; no captures falsely labelled live | pending |
+| 15-01 Task 1 | OGO-02/04 | Zero credential access and dispatch | real router | Explicit Go selections fail before resolver/network in both output modes | pending |
+| 15-01 Task 2 | OGO-03/04 | No Go credential/session egress | router + config | Primary, fallback, inbound Codex, count-tokens, off-origin and wrong auth | pending |
+| 15-02 Task 2 | OGO-01..04 | Generic providers preserved | workspace + CLI | All locales, generic-provider positive controls, isolated negative CLI smoke | pending |
 
 ## Wave 0 Requirements
 
