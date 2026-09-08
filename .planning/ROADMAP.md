@@ -201,6 +201,12 @@ Plans:
 
 **Plans**: TBD
 
+- [x] 13-01-PLAN.md
+- [ ] 13-02-PLAN.md
+- [ ] 13-03-PLAN.md
+- [ ] 13-04-PLAN.md
+- [ ] 13-05-PLAN.md
+
 ### Phase 14: Command Code Product Separation
 
 **Goal**: Command Code API-key and subscription users can use their distinct products without transport, authentication, session, or terminal semantics bleeding between them.
@@ -255,7 +261,7 @@ Plans:
 | 10. Gemini Semantic Hardening | v2 | 7/7 | Complete | 2026-09-07 |
 | 11. Antigravity Protocol and Credential Hardening | v2 | 7/7 | Complete    | 2026-09-07 |
 | 12. Cursor Evidence-Backed Hardening | v2 | 8/8 | Complete    | 2026-09-07 |
-| 13. Generic OpenAI Chat Completions | v2 | 0/TBD | Not started | - |
+| 13. Generic OpenAI Chat Completions | v2 | 1/5 | In Progress|  |
 | 14. Command Code Product Separation | v2 | 0/TBD | Not started | - |
 | 15. Exact OpenCode Go Evidence Gate | v2 | 0/TBD | Not started | - |
 | 16. Cross-Provider Release Gate | v2 | 0/TBD | Not started | - |
