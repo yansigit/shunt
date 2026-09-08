@@ -1,6 +1,6 @@
 ---
 phase: 09-provider-conformance-foundation
-verified: 2026-09-08T02:48:00Z
+verified: 2026-09-08T20:00:00Z
 status: passed
 score: 8/8 must-haves verified
 covered_files:
@@ -50,7 +50,7 @@ covered_files:
   - tests/passthrough.rs
   - tests/responses_translate.rs
   - tests/retry.rs
-covered_digest: "v1:sha256:56076da2969d1313afb408963188a7b1cc37399652438900ff3aa262008746cc"
+covered_digest: "v1:sha256:c6ed97182718d93b51a62121c70c2696cfb32aee12e7840366b3a395f1f6dd0c"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
@@ -266,3 +266,30 @@ inventory stayed unchanged. This is hermetic evidence, not live provider
 availability. Computer smoke was blocked by host Terminal/localhost controls
 and is not claimed passed. Fingerprint regenerated with the bundled GSD tool
 only after this audit and successful regression execution.
+
+## Phase 14 shared-surface regression refresh
+
+Root re-verification at source commit d37fbe9, not an independent agent pass:
+the GLM/high attempt returned an incomplete sentence and no artifact. Subsequent
+agent dispatch controls were unavailable; Luna fallback was not launched.
+
+Compared all covered files to 8013f19. Phase9 plans, requirements and original
+retry/continuation/parser implementations are unchanged. Shared additions
+register Chat and Command Code adapters, add a redacted subscription credential
+variant and explicitly omit that variant from Codex WebSocket headers. New
+dispatch/counting match arms leave the old arms intact. Retry/failover test
+changes are additions, not weakened assertions. Project/requirements updates
+track later phases; locale configuration additions describe the separate new
+providers without changing the Phase9 contract.
+
+Fresh named tests each selected exactly one active test and passed:
+`auth::tests::credential_redaction_preserves_only_safe_structure`,
+`replay_commitment_tool_before_text_does_not_fallback_to_http`, and
+`continuation_recovery_preserves_tool_pair_and_opaque_state_once`.
+Commands used the isolated wrapper, all-features, the correct lib/integration
+target and --exact. Production config mtime/SHA and backup inventory unchanged.
+Decision gate remains 16/16; no disabled test or untracked debt marker found
+in the changed phase-linked test/transport files. Root also directly observed
+the preceding full workspace gate (2,942 passed, 0 failed, 2 existing ignored)
+and four-language site build (169 pages). Historical counts above are retained
+as history, not current counts. Fingerprint regenerated only after this audit.
