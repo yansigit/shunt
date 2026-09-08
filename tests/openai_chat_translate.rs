@@ -9,43 +9,80 @@ use serde_json::{json, Value};
 
 #[test]
 fn response_root_unary_tools_are_not_discarded() {
-    let mut machine = shunt::model::openai_chat_response::OpenAiChatSseMachine::new_for_upstream("m");
+    let mut machine =
+        shunt::model::openai_chat_response::OpenAiChatSseMachine::new_for_upstream("m");
     machine.process_chunk_checked(&json!({"choices":[{"message":{"reasoning_content":"think","content":"text","tool_calls":[{"id":"call_a","type":"function","function":{"name":"f","arguments":"{\"x\":1}"}}]},"finish_reason":"tool_calls"}]})).unwrap();
     machine.transport_close_checked().unwrap();
-    assert_eq!(machine.final_json_checked().unwrap()["content"], json!([
-        {"type":"thinking","thinking":"think"}, {"type":"text","text":"text"},
-        {"type":"tool_use","id":"call_a","name":"f","input":{"x":1}}
-    ]));
+    assert_eq!(
+        machine.final_json_checked().unwrap()["content"],
+        json!([
+            {"type":"thinking","thinking":"think"}, {"type":"text","text":"text"},
+            {"type":"tool_use","id":"call_a","name":"f","input":{"x":1}}
+        ])
+    );
 }
 
 #[test]
 fn response_root_message_envelope_is_required_and_unambiguous() {
-    for choice in [json!({"finish_reason":"stop"}),json!({"message":null,"finish_reason":"stop"}),json!({"message":[],"finish_reason":"stop"}),json!({"message":{},"delta":{},"finish_reason":"stop"})] {
-        let mut machine = shunt::model::openai_chat_response::OpenAiChatSseMachine::new_for_upstream("m");
-        assert!(machine.process_chunk_checked(&json!({"choices":[choice]})).is_err(), "accepted {choice}");
+    for choice in [
+        json!({"finish_reason":"stop"}),
+        json!({"message":null,"finish_reason":"stop"}),
+        json!({"message":[],"finish_reason":"stop"}),
+        json!({"message":{},"delta":{},"finish_reason":"stop"}),
+    ] {
+        let mut machine =
+            shunt::model::openai_chat_response::OpenAiChatSseMachine::new_for_upstream("m");
+        assert!(
+            machine
+                .process_chunk_checked(&json!({"choices":[choice]}))
+                .is_err(),
+            "accepted {choice}"
+        );
     }
 }
 
 #[test]
 fn response_root_trailing_usage_requires_exact_shape() {
-    for trailing in [json!({}),json!({"choices":[],"usage":null}),json!({"choices":[{}],"usage":{"prompt_tokens":1}}),json!({"choices":[],"usage":{}})] {
-        let mut machine = shunt::model::openai_chat_response::OpenAiChatSseMachine::new_streaming_for_upstream("m");
-        machine.process_chunk_checked(&json!({"choices":[{"delta":{},"finish_reason":"stop"}]})).unwrap();
-        assert!(machine.process_chunk_checked(&trailing).is_err(), "accepted {trailing}");
-        assert!(machine.transport_close_checked().is_err(), "invalid trailing chunk left success possible");
+    for trailing in [
+        json!({}),
+        json!({"choices":[],"usage":null}),
+        json!({"choices":[{}],"usage":{"prompt_tokens":1}}),
+        json!({"choices":[],"usage":{}}),
+    ] {
+        let mut machine =
+            shunt::model::openai_chat_response::OpenAiChatSseMachine::new_streaming_for_upstream(
+                "m",
+            );
+        machine
+            .process_chunk_checked(&json!({"choices":[{"delta":{},"finish_reason":"stop"}]}))
+            .unwrap();
+        assert!(
+            machine.process_chunk_checked(&trailing).is_err(),
+            "accepted {trailing}"
+        );
+        assert!(
+            machine.transport_close_checked().is_err(),
+            "invalid trailing chunk left success possible"
+        );
     }
 }
 
 #[test]
 fn response_root_malformed_postfinish_error_does_not_panic() {
-    let mut machine = shunt::model::openai_chat_response::OpenAiChatSseMachine::new_streaming_for_upstream("m");
-    machine.process_chunk_checked(&json!({"choices":[{"delta":{},"finish_reason":"stop"}]})).unwrap();
-    assert!(machine.process_chunk_checked(&json!({"error":null})).is_err());
+    let mut machine =
+        shunt::model::openai_chat_response::OpenAiChatSseMachine::new_streaming_for_upstream("m");
+    machine
+        .process_chunk_checked(&json!({"choices":[{"delta":{},"finish_reason":"stop"}]}))
+        .unwrap();
+    assert!(machine
+        .process_chunk_checked(&json!({"error":null}))
+        .is_err());
 }
 
 #[test]
 fn response_root_reasoning_is_bounded_across_chunks() {
-    let mut machine = shunt::model::openai_chat_response::OpenAiChatSseMachine::new_for_upstream("m");
+    let mut machine =
+        shunt::model::openai_chat_response::OpenAiChatSseMachine::new_for_upstream("m");
     let chunk = json!({"choices":[{"delta":{"reasoning_content":"x".repeat(4*1024*1024+1)}}]});
     machine.process_chunk_checked(&chunk).unwrap();
     assert!(machine.process_chunk_checked(&chunk).is_err());
@@ -53,16 +90,20 @@ fn response_root_reasoning_is_bounded_across_chunks() {
 
 #[test]
 fn response_root_error_diagnostics_are_provider_neutral() {
-    let mut machine = shunt::model::openai_chat_response::OpenAiChatSseMachine::new_for_upstream("m");
-    let events = machine.process_chunk_checked(&json!({"error":{"message":"secret-marker"}})).unwrap();
+    let mut machine =
+        shunt::model::openai_chat_response::OpenAiChatSseMachine::new_for_upstream("m");
+    let events = machine
+        .process_chunk_checked(&json!({"error":{"message":"secret-marker"}}))
+        .unwrap();
     assert!(!events[0].data.to_string().contains("secret-marker"));
 }
 
 #[test]
 fn response_root_choice_error_cannot_be_success() {
-    let mut machine = shunt::model::openai_chat_response::OpenAiChatSseMachine::new_for_upstream("m");
+    let mut machine =
+        shunt::model::openai_chat_response::OpenAiChatSseMachine::new_for_upstream("m");
     let events = machine.process_chunk_checked(&json!({"choices":[{"message":{"content":"hi"},"finish_reason":"stop","error":{"message":"failed"}}]})).unwrap();
-    assert_eq!(events[0].event,"error");
+    assert_eq!(events[0].event, "error");
     assert!(machine.transport_close_checked().is_err());
 }
 use shunt::model::openai_chat_request::{
@@ -1200,8 +1241,8 @@ fn response_embedded_error_object_surfaces_provider_error() {
     });
     let events = machine.process_chunk_checked(&chunk).unwrap();
     let error = events.iter().find(|event| event.event == "error").unwrap();
-    assert_eq!(error.data["error"]["message"], "backend exploded");
-    assert_eq!(error.data["error"]["request_id"], "req_42");
+    assert_eq!(error.data["error"]["message"], "OpenAI Chat backend error");
+    assert!(error.data["error"].get("request_id").is_none());
     assert!(
         machine.transport_close_checked().is_err(),
         "embedded provider error must never close as success",
@@ -1221,7 +1262,10 @@ fn response_embedded_error_request_id_allowlist() {
             .data
     };
     let forwarded = run(json!({"message": "boom", "metadata": {"request_id": "req_42"}}));
-    assert_eq!(forwarded["error"]["request_id"], "req_42", "{forwarded}");
+    assert!(
+        forwarded["error"].get("request_id").is_none(),
+        "body metadata is not a header allowlist: {forwarded}"
+    );
     let dropped = run(json!({
         "message": "boom",
         "metadata": {"internal-trace-id": "trace-abc"},

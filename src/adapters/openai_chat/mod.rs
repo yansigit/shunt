@@ -30,6 +30,27 @@ use self::sse::{Decoder as OpenAiChatSseDecoder, Item as OpenAiChatSseItem};
 
 const MAX_OPENAI_CHAT_UNARY_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
 
+// Only these response header names carry diagnostic IDs. Body metadata is
+// untrusted provider content, not an authority for forwarding headers.
+const REQUEST_ID_HEADERS: [&str; 2] = ["x-request-id", "request-id"];
+
+fn request_id_headers(upstream: &HeaderMap) -> HeaderMap {
+    let mut selected = HeaderMap::new();
+    for name in REQUEST_ID_HEADERS {
+        if let Some(value) = upstream.get(name).filter(|value| {
+            let bytes = value.as_bytes();
+            !bytes.is_empty()
+                && bytes.len() <= 128
+                && bytes
+                    .iter()
+                    .all(|b| b.is_ascii_alphanumeric() || b"-_.:".contains(b))
+        }) {
+            selected.insert(name, value.clone());
+        }
+    }
+    selected
+}
+
 /// Generation POSTs are non-idempotent and reachable in one send: never
 /// re-dispatch after the request could have reached the upstream, and never
 /// follow a redirect that could carry the bearer off the configured origin.
@@ -255,11 +276,14 @@ async fn forward(
     })?;
 
     let status = response.status();
+    let diagnostic_headers = request_id_headers(response.headers());
     if !status.is_success() {
         let body = collect_unary_response(response, MAX_OPENAI_CHAT_UNARY_RESPONSE_BYTES).await?;
         let body_text = std::str::from_utf8(&body)
             .map_err(|_| local_openai_chat_error("invalid UTF-8 in OpenAI Chat error response"))?;
-        return Err(map_openai_chat_error(status, body_text));
+        let mut error = map_openai_chat_error(status, body_text);
+        error.response.headers_mut().extend(diagnostic_headers);
+        return Err(error);
     }
 
     if is_streaming {
@@ -274,7 +298,7 @@ async fn forward(
         let events = machine
             .process_chunk_checked(&parsed)
             .map_err(|error| local_openai_chat_error(error.to_string()))?;
-        if let Some(error) = events.into_iter().find(|event| event.event == "error") {
+        if let Some(mut error) = events.into_iter().find(|event| event.event == "error") {
             // The machine's error event already carries the allowlisted
             // request_id when the provider supplied one; relay its exact body
             // instead of rebuilding a message-only error.
@@ -284,10 +308,22 @@ async fn forward(
                 .and_then(Value::as_str)
                 .unwrap_or("OpenAI Chat backend error")
                 .to_string();
+            if let Some(id) = REQUEST_ID_HEADERS
+                .iter()
+                .find_map(|name| diagnostic_headers.get(*name))
+                .and_then(|value| value.to_str().ok())
+            {
+                error.data["error"]["request_id"] = serde_json::json!(id);
+            }
             return Err(AdapterError {
                 message,
                 response: Box::new(
-                    (StatusCode::BAD_GATEWAY, axum::Json(error.data.clone())).into_response(),
+                    (
+                        StatusCode::BAD_GATEWAY,
+                        diagnostic_headers,
+                        axum::Json(error.data),
+                    )
+                        .into_response(),
                 ),
                 failure: None,
             });
@@ -299,6 +335,7 @@ async fn forward(
             .final_json_checked()
             .map_err(|error| local_openai_chat_error(error.to_string()))?;
         let mut headers = HeaderMap::new();
+        headers.extend(diagnostic_headers);
         headers.insert(
             "content-type",
             axum::http::HeaderValue::from_static("application/json"),
@@ -316,6 +353,7 @@ async fn stream_sse_response(
     route: Route,
     response: reqwest::Response,
 ) -> Result<(StatusCode, Response<Body>), AdapterError> {
+    let diagnostic_headers = request_id_headers(response.headers());
     let byte_stream = response.bytes_stream();
     let decoder = OpenAiChatSseDecoder::default();
     let machine = OpenAiChatSseMachine::new_streaming_for_upstream(&route.model);
@@ -458,7 +496,7 @@ async fn stream_sse_response(
     );
 
     let keepalive_interval = Duration::from_secs(state.config.server.sse_keepalive_seconds);
-    let response_res = Response::builder()
+    let mut response_res = Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "text/event-stream; charset=utf-8")
         .header("Cache-Control", "no-cache")
@@ -472,5 +510,6 @@ async fn stream_sse_response(
             failure: None,
         })?;
 
+    response_res.headers_mut().extend(diagnostic_headers);
     Ok((StatusCode::OK, response_res))
 }

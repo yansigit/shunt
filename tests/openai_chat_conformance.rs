@@ -1365,12 +1365,16 @@ async fn openai_chat_terminal_unary_embedded_200_error_request_id() {
     let backend = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "error": {
-                "message": "backend exploded",
-                "metadata": {"request_id": "req_42"}
-            }
-        })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("x-request-id", "req_header_42")
+                .set_body_json(json!({
+                    "error": {
+                        "message": "backend exploded",
+                        "metadata": {"request_id": "req_42"}
+                    }
+                })),
+        )
         .mount(&backend)
         .await;
     let gateway = start_gateway(single_provider_config(&backend.uri())).await;
@@ -1383,6 +1387,9 @@ async fn openai_chat_terminal_unary_embedded_200_error_request_id() {
     assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["type"], "error", "{body}");
-    assert_eq!(body["error"]["message"], "backend exploded", "{body}");
-    assert_eq!(body["error"]["request_id"], "req_42", "{body}");
+    assert_eq!(
+        body["error"]["message"], "OpenAI Chat backend error",
+        "{body}"
+    );
+    assert_eq!(body["error"]["request_id"], "req_header_42", "{body}");
 }
