@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use shunt::model::openai_chat_request::{
     chat_completions_endpoint, translate_request, MAX_TEXT_BLOCK_BYTES,
 };
+use shunt::model::openai_chat_response::OpenAiChatSseMachine;
 
 fn translate(request: Value) -> Result<Value, String> {
     translate_request(&request, "gpt-5", false).map_err(|error| error.message)
@@ -806,4 +807,493 @@ fn tool_translation_thread_isolation() {
             "per-call arguments leaked: {out}"
         );
     }
+}
+// ===================================================================
+// 13-03 response machine fixtures (CHAT-05/06/07). Pure: no transport.
+// ===================================================================
+
+fn unary_final(chunk: &Value) -> Result<Value, String> {
+    let mut machine = OpenAiChatSseMachine::new_for_upstream("gpt-5");
+    let events = machine.process_chunk_checked(chunk).map_err(|e| e.to_string())?;
+    if let Some(error) = events.iter().find(|event| event.event == "error") {
+        return Err(error.data.to_string());
+    }
+    machine.transport_close_checked().map_err(|e| e.to_string())?;
+    machine.final_json_checked().map_err(|e| e.to_string())
+}
+
+fn completion_with(message: Value, finish: Value, usage: Value) -> Value {
+    json!({
+        "id": "chatcmpl-x",
+        "object": "chat.completion",
+        "model": "gpt-5",
+        "choices": [{"index": 0, "message": message, "finish_reason": finish}],
+        "usage": usage
+    })
+}
+
+fn stream_events(chunks: &[Value]) -> Vec<(String, Value)> {
+    let mut machine = OpenAiChatSseMachine::new_streaming_for_upstream("gpt-5");
+    let mut out = Vec::new();
+    for chunk in chunks {
+        match machine.process_chunk_checked(chunk) {
+            Ok(events) => out.extend(events.into_iter().map(|e| (e.event, e.data))),
+            Err(error) => {
+                out.push(("error".to_string(), json!({"message": error.to_string()})));
+                return out;
+            }
+        }
+        if out.iter().any(|(event, _)| event == "error") {
+            return out;
+        }
+    }
+    match machine.transport_close_checked() {
+        Ok(events) => out.extend(events.into_iter().map(|e| (e.event, e.data))),
+        Err(error) => out.push(("error".to_string(), json!({"message": error.to_string()}))),
+    }
+    out
+}
+
+fn delta_chunk(delta: Value, finish: Value) -> Value {
+    json!({"choices": [{"index": 0, "delta": delta, "finish_reason": finish}], "usage": null})
+}
+
+fn error_count(events: &[(String, Value)]) -> usize {
+    events.iter().filter(|(event, _)| event == "error").count()
+}
+
+fn stop_count(events: &[(String, Value)]) -> usize {
+    events.iter().filter(|(event, _)| event == "message_stop").count()
+}
+
+#[test]
+fn response_finish_map_stop_length_tool_calls() {
+    let stop = unary_final(&completion_with(
+        json!({"role": "assistant", "content": "hi"}),
+        json!("stop"),
+        json!({"prompt_tokens": 3, "completion_tokens": 1}),
+    ))
+    .unwrap();
+    assert_eq!(stop["stop_reason"], "end_turn", "{stop}");
+    let length = unary_final(&completion_with(
+        json!({"role": "assistant", "content": "hi"}),
+        json!("length"),
+        json!({"prompt_tokens": 3, "completion_tokens": 1}),
+    ))
+    .unwrap();
+    assert_eq!(length["stop_reason"], "max_tokens", "{length}");
+    let tools = unary_final(&completion_with(
+        json!({"role": "assistant", "content": null}),
+        json!("tool_calls"),
+        json!({"prompt_tokens": 3, "completion_tokens": 1}),
+    ))
+    .unwrap();
+    assert_eq!(tools["stop_reason"], "tool_use", "{tools}");
+}
+
+#[test]
+fn response_finish_map_content_filter_fails_closed() {
+    let error = unary_final(&completion_with(
+        json!({"role": "assistant", "content": "x"}),
+        json!("content_filter"),
+        json!({"prompt_tokens": 1, "completion_tokens": 1}),
+    ))
+    .expect_err("content_filter must fail closed");
+    assert!(error.contains("finish_reason"), "{error}");
+}
+
+#[test]
+fn response_finish_map_deprecated_function_call_fails_closed() {
+    let error = unary_final(&completion_with(
+        json!({"role": "assistant", "content": "x"}),
+        json!("function_call"),
+        json!({"prompt_tokens": 1, "completion_tokens": 1}),
+    ))
+    .expect_err("deprecated function_call finish must fail closed");
+    assert!(error.contains("finish_reason"), "{error}");
+}
+
+#[test]
+fn response_finish_map_error_is_provider_error() {
+    let mut machine = OpenAiChatSseMachine::new_for_upstream("gpt-5");
+    let events = machine
+        .process_chunk_checked(&completion_with(
+            json!({"role": "assistant"}),
+            json!("error"),
+            json!(null),
+        ))
+        .unwrap();
+    let frames: Vec<(String, Value)> = events.into_iter().map(|e| (e.event, e.data)).collect();
+    assert_eq!(error_count(&frames), 1, "{frames:?}");
+    assert!(
+        machine.transport_close_checked().is_err(),
+        "a provider error must never close as success",
+    );
+}
+
+#[test]
+fn response_empty_text_completion_accepted() {
+    let out = unary_final(&completion_with(
+        json!({"role": "assistant", "content": ""}),
+        json!("stop"),
+        json!({"prompt_tokens": 4, "completion_tokens": 0}),
+    ))
+    .unwrap();
+    assert_eq!(out["content"], json!([{"type": "text", "text": ""}]));
+    assert_eq!(out["stop_reason"], "end_turn");
+    assert_eq!(out["usage"], json!({"input_tokens": 4, "output_tokens": 0}));
+}
+
+#[test]
+fn response_rejects_null_and_non_object_body() {
+    for body in [json!(null), json!([1, 2, 3]), json!("nope")] {
+        let mut machine = OpenAiChatSseMachine::new_for_upstream("gpt-5");
+        let error = machine
+            .process_chunk_checked(&body)
+            .expect_err("non-object response body must fail closed");
+        assert!(error.to_string().contains("object"), "{error}");
+    }
+}
+
+#[test]
+fn response_rejects_absent_choices() {
+    let body = json!({
+        "id": "chatcmpl-x",
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+    });
+    let error = unary_final(&body).expect_err("absent choices must fail closed");
+    assert!(error.contains("choices"), "{error}");
+}
+
+#[test]
+fn response_rejects_empty_choices_unary() {
+    let body = json!({
+        "choices": [],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+    });
+    let error = unary_final(&body).expect_err("empty choices must fail closed");
+    assert!(error.contains("choices"), "{error}");
+}
+
+#[test]
+fn response_rejects_multiple_choices() {
+    let choice = json!({"index": 0, "message": {"content": "x"}, "finish_reason": "stop"});
+    let body = json!({
+        "choices": [choice.clone(), choice],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+    });
+    let error = unary_final(&body).expect_err("multiple choices must fail closed");
+    assert!(error.contains("choices") || error.contains("ambiguous"), "{error}");
+}
+
+#[test]
+fn response_usage_precision_accepts_integral_bounds() {
+    let zero = unary_final(&completion_with(
+        json!({"role": "assistant", "content": "x"}),
+        json!("stop"),
+        json!({"prompt_tokens": 0, "completion_tokens": 0}),
+    ))
+    .unwrap();
+    assert_eq!(zero["usage"]["input_tokens"], 0);
+    let big = unary_final(&completion_with(
+        json!({"role": "assistant", "content": "x"}),
+        json!("stop"),
+        json!({"prompt_tokens": i64::MAX, "completion_tokens": i64::MAX}),
+    ))
+    .unwrap();
+    assert_eq!(big["usage"]["input_tokens"], i64::MAX);
+    assert_eq!(big["usage"]["output_tokens"], i64::MAX);
+}
+
+#[test]
+fn response_usage_precision_rejects_invalid_counters() {
+    let build = |usage: Value| {
+        completion_with(json!({"role": "assistant", "content": "x"}), json!("stop"), usage)
+    };
+    for usage in [
+        json!({"prompt_tokens": -1, "completion_tokens": 1}),
+        json!({"prompt_tokens": 1.5, "completion_tokens": 1}),
+        json!({"prompt_tokens": "5", "completion_tokens": 1}),
+        json!({"prompt_tokens": 9223372036854775808u64, "completion_tokens": 1}),
+        json!(5),
+    ] {
+        let error = unary_final(&build(usage.clone()))
+            .expect_err("invalid usage counter must fail closed");
+        assert!(error.contains("usage"), "{error} for {usage}");
+    }
+}
+
+#[test]
+fn response_reasoning_unary_thinking_before_text() {
+    let out = unary_final(&completion_with(
+        json!({"role": "assistant", "reasoning_content": "because", "content": "so"}),
+        json!("stop"),
+        json!({"prompt_tokens": 1, "completion_tokens": 2}),
+    ))
+    .unwrap();
+    assert_eq!(out["content"][0]["type"], "thinking", "{out}");
+    assert_eq!(out["content"][0]["thinking"], "because");
+    assert!(out["content"][0].get("signature").is_none(), "{out}");
+    assert_eq!(out["content"][1], json!({"type": "text", "text": "so"}));
+}
+
+#[test]
+fn response_reasoning_null_and_empty_are_absent() {
+    for reasoning in [json!(null), json!("")] {
+        let mut message = json!({"role": "assistant", "content": "so"});
+        message["reasoning_content"] = reasoning;
+        let out = unary_final(&completion_with(
+            message,
+            json!("stop"),
+            json!({"prompt_tokens": 1, "completion_tokens": 2}),
+        ))
+        .unwrap();
+        assert!(
+            out["content"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|block| block["type"] != "thinking"),
+            "{out}",
+        );
+    }
+}
+
+#[test]
+fn response_reasoning_non_string_fails_closed() {
+    for reasoning in [json!(42), json!(true), json!({}), json!([])] {
+        let mut message = json!({"role": "assistant", "content": "so"});
+        message["reasoning_content"] = reasoning;
+        let error = unary_final(&completion_with(
+            message,
+            json!("stop"),
+            json!({"prompt_tokens": 1, "completion_tokens": 1}),
+        ))
+        .expect_err("non-string reasoning_content must fail closed");
+        assert!(error.contains("reasoning"), "{error}");
+    }
+}
+
+#[test]
+fn response_reasoning_lone_alias_accepted() {
+    let out = unary_final(&completion_with(
+        json!({"role": "assistant", "reasoning": "why", "content": "so"}),
+        json!("stop"),
+        json!({"prompt_tokens": 1, "completion_tokens": 2}),
+    ))
+    .unwrap();
+    assert_eq!(out["content"][0], json!({"type": "thinking", "thinking": "why"}));
+}
+
+#[test]
+fn response_reasoning_alias_conflict_fails_closed() {
+    let error = unary_final(&completion_with(
+        json!({"role": "assistant", "reasoning_content": "a", "reasoning": "b"}),
+        json!("stop"),
+        json!({"prompt_tokens": 1, "completion_tokens": 1}),
+    ))
+    .expect_err("conflicting reasoning aliases must fail closed");
+    assert!(error.contains("reasoning"), "{error}");
+}
+
+#[test]
+fn response_reasoning_signed_representation_fails_closed() {
+    for field in ["signature", "reasoning_signature", "redacted_reasoning", "encrypted_reasoning"] {
+        let mut message = json!({"role": "assistant", "reasoning_content": "x", "content": "so"});
+        message[field] = json!("opaque-blob");
+        let error = unary_final(&completion_with(
+            message,
+            json!("stop"),
+            json!({"prompt_tokens": 1, "completion_tokens": 1}),
+        ))
+        .expect_err("signed or redacted reasoning must fail closed");
+        assert!(error.contains(field), "{error}");
+    }
+}
+
+#[test]
+fn response_embedded_error_object_surfaces_provider_error() {
+    let mut machine = OpenAiChatSseMachine::new_for_upstream("gpt-5");
+    let chunk = json!({
+        "error": {"message": "backend exploded", "metadata": {"request_id": "req_42"}},
+    });
+    let events = machine.process_chunk_checked(&chunk).unwrap();
+    let error = events.iter().find(|event| event.event == "error").unwrap();
+    assert_eq!(error.data["error"]["message"], "backend exploded");
+    assert_eq!(error.data["error"]["request_id"], "req_42");
+    assert!(
+        machine.transport_close_checked().is_err(),
+        "embedded provider error must never close as success",
+    );
+}
+
+#[test]
+fn response_embedded_error_request_id_allowlist() {
+    let run = |error: Value| {
+        let mut machine = OpenAiChatSseMachine::new_for_upstream("gpt-5");
+        machine
+            .process_chunk_checked(&json!({"error": error}))
+            .unwrap()
+            .into_iter()
+            .find(|event| event.event == "error")
+            .unwrap()
+            .data
+    };
+    let forwarded = run(json!({"message": "boom", "metadata": {"request_id": "req_42"}}));
+    assert_eq!(forwarded["error"]["request_id"], "req_42", "{forwarded}");
+    let dropped = run(json!({
+        "message": "boom",
+        "metadata": {"internal-trace-id": "trace-abc"},
+    }));
+    assert!(dropped["error"].get("request_id").is_none(), "{dropped}");
+    let dropped = run(json!({"message": "boom", "request-id": "bad id\n"}));
+    assert!(dropped["error"].get("request_id").is_none(), "{dropped}");
+    let dropped = run(json!({
+        "message": "boom",
+        "metadata": {"request_id": "x".repeat(129)},
+    }));
+    assert!(dropped["error"].get("request_id").is_none(), "{dropped}");
+}
+
+#[test]
+fn response_usage_only_trailing_chunk_accepted() {
+    let events = stream_events(&[
+        delta_chunk(json!({"content": "hi"}), json!(null)),
+        delta_chunk(json!({}), json!("stop")),
+        json!({"choices": [], "usage": {"prompt_tokens": 7, "completion_tokens": 2}}),
+    ]);
+    assert_eq!(error_count(&events), 0, "{events:?}");
+    assert_eq!(stop_count(&events), 1, "{events:?}");
+    let delta = events
+        .iter()
+        .find(|(event, _)| event == "message_delta")
+        .map(|(_, data)| data)
+        .unwrap();
+    assert_eq!(delta["usage"], json!({"input_tokens": 7, "output_tokens": 2}));
+}
+
+#[test]
+fn response_usage_only_chunk_rejected_before_finish() {
+    let events = stream_events(&[
+        json!({"choices": [], "usage": null}),
+        delta_chunk(json!({"content": "hi"}), json!("stop")),
+    ]);
+    assert_eq!(error_count(&events), 1, "{events:?}");
+    assert_eq!(stop_count(&events), 0, "{events:?}");
+}
+
+#[test]
+fn response_usage_only_chunk_with_payload_rejected() {
+    for payload in [
+        json!({"content": "late"}),
+        json!({"reasoning_content": "late"}),
+        json!({"tool_calls": []}),
+    ] {
+        let events = stream_events(&[
+            delta_chunk(json!({"content": "hi"}), json!("stop")),
+            json!({"choices": [{"index": 0, "delta": payload, "finish_reason": null}]}),
+        ]);
+        assert_eq!(error_count(&events), 1, "{events:?}");
+        assert_eq!(stop_count(&events), 0, "{events:?}");
+    }
+}
+
+#[test]
+fn response_second_usage_only_chunk_rejected() {
+    let events = stream_events(&[
+        delta_chunk(json!({"content": "hi"}), json!("stop")),
+        json!({"choices": [], "usage": {"prompt_tokens": 1, "completion_tokens": 1}}),
+        json!({"choices": [], "usage": {"prompt_tokens": 2, "completion_tokens": 2}}),
+    ]);
+    assert_eq!(error_count(&events), 1, "{events:?}");
+    assert_eq!(stop_count(&events), 0, "{events:?}");
+}
+
+#[test]
+fn response_stream_missing_finish_fails_closed() {
+    let events = stream_events(&[
+        delta_chunk(json!({"content": "partial"}), json!(null)),
+    ]);
+    assert_eq!(error_count(&events), 1, "{events:?}");
+    assert_eq!(stop_count(&events), 0, "{events:?}");
+}
+
+#[test]
+fn response_error_after_text_emits_single_terminal() {
+    let events = stream_events(&[
+        delta_chunk(json!({"content": "hel"}), json!(null)),
+        delta_chunk(json!({"content": "lo"}), json!(null)),
+        json!({"error": {"message": "midstream failure"}}),
+    ]);
+    assert_eq!(error_count(&events), 1, "{events:?}");
+    assert_eq!(stop_count(&events), 0, "{events:?}");
+    let text_index = events
+        .iter()
+        .position(|(event, _)| event == "content_block_delta")
+        .unwrap();
+    let error_index = events
+        .iter()
+        .position(|(event, _)| event == "error")
+        .unwrap();
+    assert!(
+        text_index < error_index,
+        "delivered text must precede the error: {events:?}",
+    );
+}
+
+#[test]
+fn response_after_success_no_more_chunks() {
+    let mut machine = OpenAiChatSseMachine::new_streaming_for_upstream("gpt-5");
+    machine
+        .process_chunk_checked(&delta_chunk(json!({"content": "hi"}), json!("stop")))
+        .unwrap();
+    machine.transport_close_checked().unwrap();
+    let error = machine
+        .process_chunk_checked(&delta_chunk(json!({"content": "late"}), json!(null)))
+        .expect_err("chunks after the terminal must fail closed");
+    assert!(!error.to_string().is_empty());
+}
+
+#[test]
+fn response_stream_reasoning_order_within_and_across_chunks() {
+    let events = stream_events(&[
+        delta_chunk(json!({"reasoning_content": "why"}), json!(null)),
+        delta_chunk(json!({"reasoning_content": "more", "content": "so"}), json!(null)),
+        delta_chunk(json!({}), json!("stop")),
+    ]);
+    assert_eq!(error_count(&events), 0, "{events:?}");
+    let starts: Vec<&Value> = events
+        .iter()
+        .filter(|(event, _)| event == "content_block_start")
+        .map(|(_, data)| data)
+        .collect();
+    assert_eq!(starts[0]["content_block"]["type"], "thinking", "{events:?}");
+    assert_eq!(starts[1]["content_block"]["type"], "text", "{events:?}");
+    let deltas: Vec<String> = events
+        .iter()
+        .filter(|(event, _)| event == "content_block_delta")
+        .map(|(_, data)| {
+            format!(
+                "{}/{}",
+                data["delta"]["thinking"].as_str().unwrap_or(""),
+                data["delta"]["text"].as_str().unwrap_or(""),
+            )
+        })
+        .collect();
+    assert_eq!(
+        deltas,
+        vec!["why/".to_string(), "more/".to_string(), "/so".to_string()],
+        "{events:?}",
+    );
+    assert_eq!(stop_count(&events), 1);
+}
+
+#[test]
+fn response_stream_reasoning_conflict_fails_closed() {
+    let events = stream_events(&[
+        delta_chunk(json!({"reasoning_content": "a", "reasoning": "b"}), json!(null)),
+        delta_chunk(json!({}), json!("stop")),
+    ]);
+    assert_eq!(error_count(&events), 1, "{events:?}");
+    assert_eq!(stop_count(&events), 0, "{events:?}");
 }
