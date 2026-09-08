@@ -18,3 +18,13 @@ Adjacent OpenCodex source `055c3ecf0de6c35f59195fc434d6b08525182b7f`, read-only;
 - Exact source Luna and Muse effort arrays are `low, medium, high, xhigh, max`; model-specific arrays must remain exact and dated. Model effort facts do not establish account availability.
 
 No phase-14 production implementation, live smoke pass, or phase completion is claimed by this preflight.
+
+## Fresh pre-implementation baseline
+
+The isolated wrapper confirmed unchanged production config mtime/SHA-256 and backup inventory after each run:
+
+- `cargo fmt --all --check`: passed.
+- `env 'RUSTFLAGS=-D warnings' cargo test --all-features --workspace`: passed, 2,875 tests, zero failures, two existing ignored tests, 28 result groups.
+- `env 'RUSTFLAGS=-D warnings' cargo clippy --all-targets --all-features -- -D warnings`: passed.
+
+These are baseline results before Phase 14 implementation, not Phase 14 acceptance evidence.
