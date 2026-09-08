@@ -1,5 +1,36 @@
 # Phase 13 planning handoff
 
+## Latest continuation — September 8
+
+This section supersedes older progress notes below. AI-SPEC evaluation sections
+5–7 are complete; root corrected pre-header/pre-send ambiguity, partial-stream
+error wording and isolated CI commands. EDGE-COVERAGE.json contains all14
+deterministic probe rows (12 explicit resolutions, two unclassified flagged
+assumptions). VALIDATION.md is drafted, not prematurely marked compliant.
+Commit7426c9b records these artifacts. Next is planner dispatch then independent
+checker; no PLAN files or Chat source yet. Planner contributions are preserved
+verbatim at /tmp/shunt-computer-eval-ikc2Ju/planner-contributions.md.
+UI gate frontend=false/block=false; assumption-delta detected=false;
+specless config absent means default ON; spec-section confirms both sections
+absent. API coverage matrix and threat-model task mapping remain planner work.
+
+Fresh full workspace tests passed:2194 active library tests, two ignored;
+main/integration suites pass. Format, all-target/all-feature Clippy -Dwarnings,
+and five-check rebuilt-binary smoke passed. Independent GLM source audit found
+Phase09/11 stale fingerprints but no invariant regressions; regenerated only
+after full regression evidence. Both now query passed (commit8013f19).
+
+Computer was actually attempted by primary agent. Terminal access was denied
+by Computer safety controls; in-app browser localhost31981/v1/models returned
+ERR_BLOCKED_BY_CLIENT. Do not claim hands-on Computer evaluation passed or
+bypass those restrictions. Separate shell smoke is passed and distinct.
+User explicitly requires primary agent to perform Computer actions, or a
+GPT-6 Astra subagent with explicit high effort; never delegate Computer to GLM.
+The isolated candidate process59482 was stopped; wrapper verified production
+config mtime/SHA and backup/invalid-file inventory unchanged. No live service
+was restarted/reconfigured. No subagent currently running. Launch controls
+again unavailable after audit dispatch, so planner was announced but NOT launched.
+
 ## User model and thinking instructions
 
 Use opencode-go/glm-5.3-flash or opencode-go/omen-alpha. Testing
