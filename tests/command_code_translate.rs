@@ -3,6 +3,26 @@ use shunt::adapters::command_code::efforts::{resolve, validate, MODEL_EFFORTS};
 use shunt::adapters::command_code::request::translate_request;
 use shunt::config::{AuthMode, Config, ProviderKind};
 
+#[test]
+fn command_code_translate_machine_reasoning_tools_and_cache_usage() {
+    use shunt::model::command_code_response::CommandCodeMachine;
+    let mut machine = CommandCodeMachine::new("alias");
+    let reasoning = machine.process_record_checked(&json!({"type":"reasoning-delta","text":"think"}));
+    assert!(reasoning.is_ok(), "source-derived reasoning delta must be supported");
+    machine.process_record_checked(&json!({"type":"text-delta","text":"hello"})).unwrap();
+    machine.process_record_checked(&json!({"type":"tool-call","toolCallId":"call_1","toolName":"lookup","input":{"q":"x"}})).unwrap();
+    machine.process_record_checked(&json!({"type":"finish","rawFinishReason":"tool_use","totalUsage":{"inputTokens":10,"outputTokens":4,"inputTokenDetails":{"cacheReadTokens":6,"cacheWriteTokens":2}}})).unwrap();
+    let result = machine.final_ndjson_checked().unwrap();
+    assert_eq!(result["content"], json!([
+        {"type":"thinking","thinking":"think"}, {"type":"text","text":"hello"},
+        {"type":"tool_use","id":"call_1","name":"lookup","input":{"q":"x"}}
+    ]));
+    assert_eq!(result["stop_reason"], "tool_use");
+    assert_eq!(result["usage"]["input_tokens"], 2);
+    assert_eq!(result["usage"]["cache_read_input_tokens"], 6);
+    assert_eq!(result["usage"]["cache_creation_input_tokens"], 2);
+}
+
 fn tool_history(
     messages: serde_json::Value,
 ) -> Result<serde_json::Value, shunt::adapters::AdapterError> {

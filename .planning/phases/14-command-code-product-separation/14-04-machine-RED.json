@@ -1,0 +1,10 @@
+{
+  "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test command_code_translate command_code_translate_machine -- --test-threads=1",
+  "exitCode": 101,
+  "targetTest": "command_code_translate_machine_reasoning_tools_and_cache_usage",
+  "targetFile": "tests/command_code_translate.rs",
+  "expected": "pinned reasoning/text/tool/cache-usage transcript compiles through shared checked response machine",
+  "actual": "Compilation succeeded; reasoning delta assertion failed at line 11. 0 passed, 1 failed, 11 filtered. Existing unary tracer semantics were extracted, not expanded. Production state unchanged.",
+  "output": "TAP version 13\nnot ok 1 - command_code_translate_machine_reasoning_tools_and_cache_usage\n1..1\n# tests 1\n# pass 0\n# fail 1\n",
+  "provenance": "Manual TAP transcription of actual Rust libtest assertion output, not raw TAP."
+}

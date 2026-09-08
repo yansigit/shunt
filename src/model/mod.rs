@@ -1,4 +1,5 @@
 pub mod antigravity_request;
+pub mod command_code_response;
 pub mod gemini;
 pub mod gemini_request;
 pub mod inbound_responses;

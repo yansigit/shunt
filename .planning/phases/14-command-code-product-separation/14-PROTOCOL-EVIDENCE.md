@@ -37,6 +37,15 @@ source-derived compatibility facts, not current official API guarantees or live 
   Shunt validates present fields as representable nonnegative integers with checked
   arithmetic; source's loose numeric acceptance is not adopted. The first terminal
   owns usage; a permitted companion must not overwrite or double-count totals.
+- `tests/command-code-provider.test.ts:563-579`: concrete reasoning/text/tool
+  transcript uses toolCallId/toolName/input and finish.rawFinishReason:tool_use,
+  with cacheReadTokens/cacheWriteTokens. This is a source-derived fixture, not
+  live evidence. Shunt additionally requires a final newline for strict framing.
+- `src/bridge.ts:73-84` and `src/claude/outbound.ts:86-106`: normalized inputTokens
+  includes cache reads/writes; Anthropic input_tokens excludes both. Subtract the
+  read+write sum with checked arithmetic. Shunt rejects overflow or cache totals
+  exceeding input, rather than adopting source's clamping. A 10-input/6-read/2-write
+  transcript therefore yields input_tokens:2, not 10.
 - `src/adapters/command-code.ts` parseStream/wireMessages: text-delta and
   reasoning-delta carry text; tool-call carries toolCallId/toolName/input or args;
   error carries error. Tool-call/result history is adjacent, missing results

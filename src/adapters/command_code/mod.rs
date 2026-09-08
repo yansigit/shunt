@@ -159,66 +159,14 @@ async fn forward(
     }
     let mut stream = response.bytes_stream();
     let mut decoder = ndjson::Decoder::default();
-    let mut text = String::new();
-    let mut terminal: Option<(String, String)> = None;
-    let mut companion = false;
-    let mut usage = json!({"input_tokens":0,"output_tokens":0});
+    let mut machine = crate::model::command_code_response::CommandCodeMachine::new(&route.model);
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|_| protocol("subscription body transport failed"))?;
         for record in decoder.feed(&chunk).map_err(protocol)? {
-            match record.get("type").and_then(Value::as_str) {
-                Some("text-delta") if terminal.is_none() => {
-                    let delta = record
-                        .get("text")
-                        .and_then(Value::as_str)
-                        .ok_or_else(|| protocol("invalid text delta"))?;
-                    text.push_str(delta);
-                }
-                Some(kind @ ("finish-step" | "finish")) => {
-                    let reason = record
-                        .get("rawFinishReason")
-                        .or_else(|| record.get("finishReason"))
-                        .and_then(Value::as_str)
-                        .ok_or_else(|| protocol("missing finish reason"))?;
-                    if reason != "stop" {
-                        return Err(protocol("unsupported or failed subscription finish"));
-                    }
-                    if let Some((first, prior_reason)) = &terminal {
-                        if first != "finish-step"
-                            || kind != "finish"
-                            || companion
-                            || prior_reason != reason
-                        {
-                            return Err(protocol("conflicting or duplicate subscription terminal"));
-                        }
-                        companion = true;
-                    } else {
-                        if let Some(value) =
-                            record.get("totalUsage").or_else(|| record.get("usage"))
-                        {
-                            for (wire, client) in [
-                                ("inputTokens", "input_tokens"),
-                                ("outputTokens", "output_tokens"),
-                            ] {
-                                if let Some(n) = value.get(wire) {
-                                    usage[client] = json!(n
-                                        .as_u64()
-                                        .ok_or_else(|| protocol("invalid subscription usage"))?);
-                                }
-                            }
-                        }
-                        terminal = Some((kind.into(), reason.into()));
-                    }
-                }
-                _ => return Err(protocol("invalid or unsupported subscription record")),
-            }
+            machine.process_record_checked(&record).map_err(protocol)?;
         }
     }
     decoder.finish().map_err(protocol)?;
-    if terminal.is_none() {
-        return Err(protocol("subscription EOF without terminal"));
-    }
-    let result = json!({"id":format!("msg_{}",uuid::Uuid::new_v4()),"type":"message","role":"assistant","model":route.model,
-        "content":[{"type":"text","text":text}],"stop_reason":"end_turn","stop_sequence":null,"usage":usage});
+    let result = machine.final_ndjson_checked().map_err(protocol)?;
     Ok((StatusCode::OK, axum::Json(result).into_response()))
 }
