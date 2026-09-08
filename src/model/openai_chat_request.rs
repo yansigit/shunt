@@ -18,6 +18,18 @@ use crate::adapters::AdapterError;
 /// Enforced before dispatch with a plain byte count; CHAT-03 boundary row.
 pub const MAX_TEXT_BLOCK_BYTES: usize = 8 * 1024 * 1024;
 
+/// Build the Chat Completions endpoint URL from the configured API root.
+///
+/// 13-01 behavior preserved verbatim so Task 3 tests can fail on the missing
+/// grammar (ambiguity rejection, no-double-append) rather than on compilation;
+/// the full grammar lands in the GREEN step of plan 13-02 Task 3.
+pub fn chat_completions_endpoint(base_url: &str) -> Result<String, String> {
+    Ok(format!(
+        "{}/chat/completions",
+        base_url.trim_end_matches('/')
+    ))
+}
+
 pub(crate) fn bad_request(message: impl Into<String>) -> AdapterError {
     let message = message.into();
     AdapterError {

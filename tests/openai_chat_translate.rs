@@ -6,7 +6,9 @@
 //! body must never carry a key outside the whitelist.
 
 use serde_json::{json, Value};
-use shunt::model::openai_chat_request::{translate_request, MAX_TEXT_BLOCK_BYTES};
+use shunt::model::openai_chat_request::{
+    chat_completions_endpoint, translate_request, MAX_TEXT_BLOCK_BYTES,
+};
 
 fn translate(request: Value) -> Result<Value, String> {
     translate_request(&request, "gpt-5", false).map_err(|error| error.message)
@@ -290,6 +292,64 @@ fn translate_rejects_redacted_thinking() {
         .expect_err("redacted thinking cannot be forwarded losslessly and must be rejected");
     assert!(error.contains("redacted"), "{error}");
 }
+
+#[test]
+fn endpoint_single_append() {
+    let endpoint =
+        chat_completions_endpoint("https://host.example/api/v1").expect("base path must append");
+    assert_eq!(endpoint, "https://host.example/api/v1/chat/completions");
+}
+
+#[test]
+fn endpoint_trailing_slash_normalizes() {
+    let endpoint =
+        chat_completions_endpoint("https://host.example/v1/").expect("trailing slash must normalize");
+    assert_eq!(endpoint, "https://host.example/v1/chat/completions");
+}
+
+#[test]
+fn endpoint_root_ending_with_chat_completions_is_used_as_is() {
+    let endpoint = chat_completions_endpoint("https://host.example/v1/chat/completions")
+        .expect("a root already ending in /chat/completions must not double");
+    assert_eq!(endpoint, "https://host.example/v1/chat/completions");
+}
+
+#[test]
+fn endpoint_determinism() {
+    let root = "https://host.example/api/v1";
+    let first = chat_completions_endpoint(root).unwrap();
+    let second = chat_completions_endpoint(root).unwrap();
+    assert_eq!(first.as_bytes(), second.as_bytes(), "repeated builds must be byte-identical");
+    let handles: Vec<_> = (0..4)
+        .map(|_| {
+            std::thread::spawn(move || chat_completions_endpoint(root).unwrap())
+        })
+        .collect();
+    for handle in handles {
+        assert_eq!(handle.join().unwrap().as_bytes(), first.as_bytes());
+    }
+}
+
+#[test]
+fn endpoint_boot_reject_query() {
+    let error = chat_completions_endpoint("https://host.example/v1?key=1")
+        .expect_err("a query string is ambiguous and must be rejected");
+    assert!(!error.is_empty(), "{error}");
+}
+
+#[test]
+fn endpoint_boot_reject_fragment() {
+    let error = chat_completions_endpoint("https://host.example/v1#frag")
+        .expect_err("a fragment is ambiguous and must be rejected");
+    assert!(!error.is_empty(), "{error}");
+}
+
+#[test]
+fn endpoint_boot_reject_userinfo() {
+    let error = chat_completions_endpoint("https://user:pass@host.example/v1")
+        .expect_err("userinfo is ambiguous and must be rejected before credentials");
+    assert!(!error.is_empty(), "{error}");
+}
 #[test]
 fn tool_declaration_map() {
     let request = json!({
@@ -399,8 +459,16 @@ fn tool_parallel_calls_with_paired_results() {
         ]),
         "ids must be stable and ordered: {out}"
     );
-    assert_eq!(out["messages"][2], json!({"role": "tool", "tool_call_id": "tu_1", "content": "sunny"}), "{out}");
-    assert_eq!(out["messages"][3], json!({"role": "tool", "tool_call_id": "tu_2", "content": "rainy"}), "{out}");
+    assert_eq!(
+        out["messages"][2],
+        json!({"role": "tool", "tool_call_id": "tu_1", "content": "sunny"}),
+        "{out}"
+    );
+    assert_eq!(
+        out["messages"][3],
+        json!({"role": "tool", "tool_call_id": "tu_2", "content": "rainy"}),
+        "{out}"
+    );
 }
 
 #[test]
@@ -499,8 +567,7 @@ fn tool_duplicate_use_id_reject() {
             }
         ]
     });
-    let error = translate(request)
-        .expect_err("a duplicate tool_use id must be rejected");
+    let error = translate(request).expect_err("a duplicate tool_use id must be rejected");
     assert!(error.contains("duplicate"), "{error}");
 }
 
@@ -516,8 +583,7 @@ fn tool_use_missing_identity_reject() {
             }
         ]
     });
-    let error = translate(request)
-        .expect_err("a tool_use without its id must be rejected");
+    let error = translate(request).expect_err("a tool_use without its id must be rejected");
     assert!(error.contains("id"), "{error}");
 }
 
@@ -634,6 +700,9 @@ fn tool_translation_thread_isolation() {
         assert_eq!(call["id"], expected_id, "per-call identity leaked: {out}");
         let parsed: Value =
             serde_json::from_str(call["function"]["arguments"].as_str().unwrap()).unwrap();
-        assert_eq!(parsed["city"], expected_city, "per-call arguments leaked: {out}");
+        assert_eq!(
+            parsed["city"], expected_city,
+            "per-call arguments leaked: {out}"
+        );
     }
 }
