@@ -34,21 +34,103 @@ async fn openai_chat_auth_postsend_status_never_advances_fallback() {
     assert!(can_bind_loopback());
     let key_env = format!("SHUNT_CHAT_FAILOVER_{}", rand::random::<u64>());
     std::env::set_var(&key_env, "fixture-chat-key");
-    for status in [429,502] {
+    for status in [429, 502, 200] {
         let primary = MockServer::start().await;
         let fallback = MockServer::start().await;
-        Mock::given(method("POST")).respond_with(ResponseTemplate::new(status).set_body_json(json!({"error":{"message":"failed"}}))).mount(&primary).await;
-        Mock::given(method("POST")).respond_with(ResponseTemplate::new(200).set_body_json(json!({"choices":[{"message":{"content":"fallback"},"finish_reason":"stop"}]}))).mount(&fallback).await;
-        let config = chain_config(vec![
-            upstream("chat-primary",primary.uri(),ProviderKind::OpenAiChat,UpstreamAuth::Map(AuthMap::ApiKey{env:Some(key_env.clone()),header:ApiKeyHeader::Bearer})),
-            upstream("chat-fallback",fallback.uri(),ProviderKind::OpenAiChat,UpstreamAuth::Map(AuthMap::ApiKey{env:Some(key_env.clone()),header:ApiKeyHeader::Bearer})),
-        ], &[("chat-primary","gpt-5"),("chat-fallback","gpt-5")]);
+        let template =
+            ResponseTemplate::new(status).set_body_json(json!({"error":{"message":"failed"}}));
+        let template = if status == 200 {
+            template.set_delay(std::time::Duration::from_millis(200))
+        } else {
+            template
+        };
+        Mock::given(method("POST"))
+            .respond_with(template)
+            .mount(&primary)
+            .await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(
+                json!({"choices":[{"message":{"content":"fallback"},"finish_reason":"stop"}]}),
+            ))
+            .mount(&fallback)
+            .await;
+        let mut config = chain_config(
+            vec![
+                upstream(
+                    "chat-primary",
+                    primary.uri(),
+                    ProviderKind::OpenAiChat,
+                    UpstreamAuth::Map(AuthMap::ApiKey {
+                        env: Some(key_env.clone()),
+                        header: ApiKeyHeader::Bearer,
+                    }),
+                ),
+                upstream(
+                    "chat-fallback",
+                    fallback.uri(),
+                    ProviderKind::OpenAiChat,
+                    UpstreamAuth::Map(AuthMap::ApiKey {
+                        env: Some(key_env.clone()),
+                        header: ApiKeyHeader::Bearer,
+                    }),
+                ),
+            ],
+            &[("chat-primary", "gpt-5"), ("chat-fallback", "gpt-5")],
+        );
+        config.server.timeouts.upstream_ttfb_ms = 40;
         let gateway = start_gateway(config).await;
         let response = post(&gateway).await;
-        assert_eq!(response.status().as_u16(),status);
-        assert_eq!(primary.received_requests().await.unwrap().len(),1);
-        assert_eq!(fallback.received_requests().await.unwrap().len(),0);
+        assert_eq!(
+            response.status().as_u16(),
+            if status == 200 { 504 } else { status }
+        );
+        assert_eq!(primary.received_requests().await.unwrap().len(), 1);
+        assert_eq!(fallback.received_requests().await.unwrap().len(), 0);
     }
+    std::env::remove_var(key_env);
+}
+
+#[tokio::test]
+async fn openai_chat_auth_presend_connection_refused_can_fallback() {
+    assert!(can_bind_loopback());
+    let key_env = format!("SHUNT_CHAT_CONNECT_{}", rand::random::<u64>());
+    std::env::set_var(&key_env, "fixture-chat-key");
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let refused = format!("http://{}", listener.local_addr().unwrap());
+    drop(listener);
+    let fallback = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(
+            json!({"choices":[{"message":{"content":"fallback"},"finish_reason":"stop"}]}),
+        ))
+        .mount(&fallback)
+        .await;
+    let config = chain_config(
+        vec![
+            upstream(
+                "chat-primary",
+                refused,
+                ProviderKind::OpenAiChat,
+                UpstreamAuth::Map(AuthMap::ApiKey {
+                    env: Some(key_env.clone()),
+                    header: ApiKeyHeader::Bearer,
+                }),
+            ),
+            upstream(
+                "chat-fallback",
+                fallback.uri(),
+                ProviderKind::OpenAiChat,
+                UpstreamAuth::Map(AuthMap::ApiKey {
+                    env: Some(key_env.clone()),
+                    header: ApiKeyHeader::Bearer,
+                }),
+            ),
+        ],
+        &[("chat-primary", "gpt-5"), ("chat-fallback", "gpt-5")],
+    );
+    let response = post(&start_gateway(config).await).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(fallback.received_requests().await.unwrap().len(), 1);
     std::env::remove_var(key_env);
 }
 

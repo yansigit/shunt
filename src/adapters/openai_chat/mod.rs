@@ -104,7 +104,8 @@ fn local_openai_chat_error(message: impl Into<String>) -> AdapterError {
 }
 
 /// Map a non-success upstream status into the gateway-owned Anthropic error
-/// shape with failover metadata attached.
+/// shape. A response proves the request may have reached the provider, so
+/// ConnectOnly must also prevent the OUTER failover loop from redispatching.
 fn map_openai_chat_error(status: StatusCode, _body: &str) -> AdapterError {
     let message = format!("OpenAI Chat backend returned HTTP {}", status.as_u16());
     let error_type = match status {
@@ -119,8 +120,18 @@ fn map_openai_chat_error(status: StatusCode, _body: &str) -> AdapterError {
     });
     AdapterError {
         message,
-        response: Box::new((status, axum::Json(error_body)).into_response()),
-        failure: Some(AdapterFailure::UpstreamStatus(status)),
+        response: Box::new(
+            (
+                if status.is_redirection() {
+                    StatusCode::BAD_GATEWAY
+                } else {
+                    status
+                },
+                axum::Json(error_body),
+            )
+                .into_response(),
+        ),
+        failure: None,
     }
 }
 

@@ -167,17 +167,15 @@ impl OpenAiChatSseMachine {
         }
 
         let tool_bytes = if let Some(deltas) = chunk.pointer("/choices/0/delta/tool_calls") {
-            self.tool_assembly.apply(deltas).map_err(|error| {
+            self.tool_assembly.apply(deltas).inspect_err(|_| {
                 self.terminal = TerminalState::ProtocolFailed;
-                error
             })?
         } else {
             0
         };
         let streamed_tools = if checked.finish_reason.is_some() {
-            self.tool_assembly.finish().map_err(|error| {
+            self.tool_assembly.finish().inspect_err(|_| {
                 self.terminal = TerminalState::ProtocolFailed;
-                error
             })?
         } else {
             Vec::new()

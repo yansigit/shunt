@@ -16,15 +16,26 @@ use wiremock::{
 async fn openai_chat_auth_redirect_refusal() {
     assert!(can_bind_loopback());
     let _lock = lock_openai_chat_env().await;
-    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY","fixture-openai-key");
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
     let target = MockServer::start().await;
     let backend = MockServer::start().await;
-    Mock::given(method("POST")).respond_with(ResponseTemplate::new(307).insert_header("location",format!("{}/chat/completions",target.uri()))).mount(&backend).await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(307)
+                .insert_header("location", format!("{}/chat/completions", target.uri())),
+        )
+        .mount(&backend)
+        .await;
     let gateway = start_gateway(single_provider_config(&backend.uri())).await;
-    let response = reqwest::Client::new().post(format!("{}/v1/messages",gateway.base_url)).body(anthropic_request("claude-via-chat")).send().await.unwrap();
-    assert_eq!(response.status(),StatusCode::BAD_GATEWAY);
-    assert_eq!(response.json::<Value>().await.unwrap()["type"],"error");
-    assert_eq!(backend.received_requests().await.unwrap().len(),1);
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .body(anthropic_request("claude-via-chat"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(response.json::<Value>().await.unwrap()["type"], "error");
+    assert_eq!(backend.received_requests().await.unwrap().len(), 1);
     assert!(target.received_requests().await.unwrap().is_empty());
 }
 
@@ -32,47 +43,132 @@ async fn openai_chat_auth_redirect_refusal() {
 async fn openai_chat_auth_postsend_timeout_single_attempt() {
     assert!(can_bind_loopback());
     let _lock = lock_openai_chat_env().await;
-    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY","fixture-openai-key");
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
     let backend = MockServer::start().await;
-    Mock::given(method("POST")).respond_with(ResponseTemplate::new(200).set_delay(std::time::Duration::from_millis(200)).set_body_json(chat_completion_upstream())).mount(&backend).await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(std::time::Duration::from_millis(200))
+                .set_body_json(chat_completion_upstream()),
+        )
+        .mount(&backend)
+        .await;
     let mut config = single_provider_config(&backend.uri());
     config.server.timeouts.upstream_ttfb_ms = 40;
-    config.providers.get_mut("openai-chat-test").unwrap().retry.max_retries = 3;
+    config
+        .providers
+        .get_mut("openai-chat-test")
+        .unwrap()
+        .retry
+        .max_retries = 3;
     let gateway = start_gateway(config).await;
-    let response = reqwest::Client::new().post(format!("{}/v1/messages",gateway.base_url)).body(anthropic_request("claude-via-chat")).send().await.unwrap();
-    assert_eq!(response.status(),StatusCode::GATEWAY_TIMEOUT);
-    assert_eq!(response.json::<Value>().await.unwrap()["type"],"error");
-    assert_eq!(backend.received_requests().await.unwrap().len(),1);
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .body(anthropic_request("claude-via-chat"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+    assert_eq!(response.json::<Value>().await.unwrap()["type"], "error");
+    assert_eq!(backend.received_requests().await.unwrap().len(), 1);
 }
 
 #[tokio::test]
 async fn openai_chat_assembly_interleave_at_limit_multibyte() {
     assert!(can_bind_loopback());
     let _lock = lock_openai_chat_env().await;
-    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY","fixture-openai-key");
-    let args = format!("{{\"v\":\"{}é\"}}","x".repeat(1024*1024-10));
-    assert_eq!(args.len(),1024*1024);
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let args = format!("{{\"v\":\"{}é\"}}", "x".repeat(1024 * 1024 - 10));
+    assert_eq!(args.len(), 1024 * 1024);
     let events = openai_chat_terminal_stream_events(vec![
-        chat_delta(json!({"tool_calls":[{"index":9}]}),None),
-        chat_delta(json!({"tool_calls":[{"index":2,"id":"b","function":{"name":"g","arguments":"{"}}]}),None),
-        chat_delta(json!({"tool_calls":[{"index":9,"id":"a","function":{"name":"f","arguments":args}}]}),None),
-        chat_delta(json!({"tool_calls":[{"index":2,"function":{"arguments":"}"}}]}),None),
-        chat_delta(json!({}),Some("tool_calls")),"[DONE]".into(),
-    ]).await;
-    assert!(!events.iter().any(|(name,_)| name == "error"));
-    let starts: Vec<_> = events.iter().filter(|(name,data)| name == "content_block_start" && data["content_block"]["type"] == "tool_use").collect();
-    assert_eq!(starts.len(),2);
-    assert_eq!(starts[0].1["content_block"]["id"],"a");
-    assert_eq!(starts[1].1["content_block"]["id"],"b");
-    let deltas: Vec<_> = events.iter().filter(|(_,data)| data["delta"]["type"] == "input_json_delta").collect();
-    let first: Value = serde_json::from_str(deltas[0].1["delta"]["partial_json"].as_str().unwrap()).unwrap();
-    assert_eq!(first["v"].as_str().unwrap().len(),1024*1024-8);
-    assert_eq!(events.iter().filter(|(name,_)| name == "message_stop").count(),1);
+        chat_delta(json!({"tool_calls":[{"index":9}]}), None),
+        chat_delta(
+            json!({"tool_calls":[{"index":2,"id":"b","function":{"name":"g","arguments":"{"}}]}),
+            None,
+        ),
+        chat_delta(
+            json!({"tool_calls":[{"index":9,"id":"a","function":{"name":"f","arguments":args}}]}),
+            None,
+        ),
+        chat_delta(
+            json!({"tool_calls":[{"index":2,"function":{"arguments":"}"}}]}),
+            None,
+        ),
+        chat_delta(json!({}), Some("tool_calls")),
+        "[DONE]".into(),
+    ])
+    .await;
+    assert!(!events.iter().any(|(name, _)| name == "error"));
+    let starts: Vec<_> = events
+        .iter()
+        .filter(|(name, data)| {
+            name == "content_block_start" && data["content_block"]["type"] == "tool_use"
+        })
+        .collect();
+    assert_eq!(starts.len(), 2);
+    assert_eq!(starts[0].1["content_block"]["id"], "a");
+    assert_eq!(starts[1].1["content_block"]["id"], "b");
+    let deltas: Vec<_> = events
+        .iter()
+        .filter(|(_, data)| data["delta"]["type"] == "input_json_delta")
+        .collect();
+    let first: Value =
+        serde_json::from_str(deltas[0].1["delta"]["partial_json"].as_str().unwrap()).unwrap();
+    assert_eq!(first["v"].as_str().unwrap().len(), 1024 * 1024 - 8);
+    assert_eq!(
+        events
+            .iter()
+            .filter(|(name, _)| name == "message_stop")
+            .count(),
+        1
+    );
 }
 
 struct EnvVarGuard {
     key: &'static str,
     previous: Option<std::ffi::OsString>,
+}
+
+#[tokio::test]
+async fn openai_chat_auth_concurrent_keys_survive_no_redirect() {
+    assert!(can_bind_loopback());
+    let _lock = lock_openai_chat_env().await;
+    let _a = EnvVarGuard::set("SHUNT_CHAT_REDIRECT_A", "fixture-key-a");
+    let _b = EnvVarGuard::set("SHUNT_CHAT_REDIRECT_B", "fixture-key-b");
+    let backend = MockServer::start().await;
+    let target = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(307).insert_header("location", target.uri()))
+        .mount(&backend)
+        .await;
+    let config = config_with_openai_chat_providers(
+        json!({"a":openai_chat_provider(&backend.uri(),"SHUNT_CHAT_REDIRECT_A"),"b":openai_chat_provider(&backend.uri(),"SHUNT_CHAT_REDIRECT_B")}),
+        json!([{"model":"model-a","provider":"a","upstream_model":"gpt-a"},{"model":"model-b","provider":"b","upstream_model":"gpt-b"}]),
+    );
+    let gateway = start_gateway(config).await;
+    let client = reqwest::Client::new();
+    let send = |model| {
+        client
+            .post(format!("{}/v1/messages", gateway.base_url))
+            .header("x-api-key", "caller-secret")
+            .header("authorization", "Bearer caller-secret")
+            .body(anthropic_request(model))
+            .send()
+    };
+    let (a, b) = tokio::join!(send("model-a"), send("model-b"));
+    assert_eq!(a.unwrap().status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(b.unwrap().status(), StatusCode::BAD_GATEWAY);
+    let requests = backend.received_requests().await.unwrap();
+    let mut keys: Vec<_> = requests
+        .iter()
+        .map(|r| {
+            assert!(!r.headers.contains_key("x-api-key"));
+            r.headers["authorization"].to_str().unwrap()
+        })
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(keys, vec!["Bearer fixture-key-a", "Bearer fixture-key-b"]);
+    assert!(target.received_requests().await.unwrap().is_empty());
 }
 
 impl EnvVarGuard {

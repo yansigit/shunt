@@ -1,0 +1,15 @@
+{
+  "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test openai_chat_translate assembly -- --test-threads=1",
+  "exitCode": 101,
+  "runnerOutput": "TAP version 13\n1..12\nnot ok 1 - assembly::assembly_concurrent_requests_are_isolated\nnot ok 2 - assembly::assembly_identity_conflict\nnot ok 3 - assembly::assembly_identity_deferral_and_single_boundary_parse\nnot ok 4 - assembly::assembly_interleave_preserves_first_arrival_order\nnot ok 5 - assembly::assembly_malformed_fields_fail_closed\nnot ok 6 - assembly::assembly_unnamed_or_incomplete_terminal\nnot ok 7 - assembly::bound_args_at\nnot ok 8 - assembly::bound_args_minus_one\nnot ok 9 - assembly::bound_args_plus_one\nnot ok 10 - assembly::bound_tool_count_at\nnot ok 11 - assembly::bound_tool_count_minus_one\nnot ok 12 - assembly::bound_tool_count_plus_one\n# tests 12\n# pass 0\n# fail 12\n",
+  "targetFile": "tests/openai_chat_translate/assembly.rs",
+  "recordedAfterGreen": true,
+  "provenance": "Transcribed from captured tool run session 82154 before implementation; TAP is an adapter, not native libtest output.",
+  "task": "13-04 Task 2 named bounds",
+  "targetTest": "assembly::bound_tool_count_plus_one",
+  "expectedResult": "129th call rejected",
+  "actualResult": "assertion failed: count_probe(129).is_err()",
+  "output": "running 12 tests\n---- assembly::bound_tool_count_plus_one stdout ----\nassertion failed: count_probe(129).is_err()\ntest result: FAILED. 0 passed; 12 failed; 0 ignored; 0 measured; 95 filtered out; finished in 0.01s\n# Adapted TAP from captured libtest result names:\nTAP version 13\n1..12\nnot ok 1 - assembly::assembly_concurrent_requests_are_isolated\nnot ok 2 - assembly::assembly_identity_conflict\nnot ok 3 - assembly::assembly_identity_deferral_and_single_boundary_parse\nnot ok 4 - assembly::assembly_interleave_preserves_first_arrival_order\nnot ok 5 - assembly::assembly_malformed_fields_fail_closed\nnot ok 6 - assembly::assembly_unnamed_or_incomplete_terminal\nnot ok 7 - assembly::bound_args_at\nnot ok 8 - assembly::bound_args_minus_one\nnot ok 9 - assembly::bound_args_plus_one\nnot ok 10 - assembly::bound_tool_count_at\nnot ok 11 - assembly::bound_tool_count_minus_one\nnot ok 12 - assembly::bound_tool_count_plus_one\n# tests 12\n# pass 0\n# fail 12\n",
+  "expected": "129th call rejected",
+  "actual": "assertion failed: count_probe(129).is_err()"
+}

@@ -21,6 +21,32 @@ use wiremock::{
     Mock, MockServer, ResponseTemplate,
 };
 
+#[tokio::test]
+async fn openai_chat_auth_status_is_connect_only_no_retry() {
+    assert!(can_bind_loopback());
+    let key_env = format!("SHUNT_CHAT_RETRY_{}", rand::random::<u64>());
+    std::env::set_var(&key_env, "fixture-chat-key");
+    let upstream = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(503).insert_header("retry-after", "0"))
+        .mount(&upstream)
+        .await;
+    let mut value = serde_json::to_value(Config::default()).unwrap();
+    value["providers"]["chat"] = serde_json::json!({"kind":"openai_chat","base_url":upstream.uri(),"auth":"api_key","api_key_env":key_env,"retry":{"max_retries":3,"initial_backoff_ms":1,"max_backoff_ms":2}});
+    value["server"]["default_provider"] = serde_json::json!("chat");
+    let gateway = start_gateway_with(serde_json::from_value(value).unwrap()).await;
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .json(&serde_json::json!({"model":"gpt-5","messages":[{"role":"user","content":"hi"}]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(upstream.received_requests().await.unwrap().len(), 1);
+    std::env::remove_var(key_env);
+}
+
 struct TestGateway {
     base_url: String,
     task: JoinHandle<()>,

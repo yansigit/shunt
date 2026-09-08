@@ -1,0 +1,15 @@
+{
+  "task": "13-04 Task 3 post-send failover",
+  "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test failover --test openai_chat_conformance openai_chat_auth -- --test-threads=1",
+  "exitCode": 101,
+  "targetTest": "openai_chat_auth_postsend_status_never_advances_fallback",
+  "targetFile": "tests/failover.rs",
+  "recordedAfterGreen": true,
+  "provenance": "Transcribed from captured tool run session 69729 before classification fix; TAP adapts native libtest output.",
+  "expectedResult": "429 surfaces without fallback",
+  "actualResult": "assertion failed: left 200, right 429",
+  "output": "running 1 test\ntest openai_chat_auth_postsend_status_never_advances_fallback ... FAILED\nassertion `left == right` failed\n  left: 200\n right: 429\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 22 filtered out; finished in 0.02s\n# Adapted TAP from captured libtest result names:\nTAP version 13\n1..1\nnot ok 1 - openai_chat_auth_postsend_status_never_advances_fallback\n# tests 1\n# pass 0\n# fail 1\n",
+  "runnerOutput": "TAP version 13\n1..1\nnot ok 1 - openai_chat_auth_postsend_status_never_advances_fallback\n# tests 1\n# pass 0\n# fail 1\n",
+  "expected": "429 surfaces without fallback",
+  "actual": "assertion failed: left 200, right 429"
+}
