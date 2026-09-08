@@ -3,6 +3,7 @@
 
 mod lifetime;
 mod matrix;
+mod products;
 mod replay;
 
 use crate::config::Config;
