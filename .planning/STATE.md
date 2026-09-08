@@ -4,18 +4,18 @@ milestone: v2
 milestone_name: Provider Compatibility
 current_phase: 12
 current_phase_name: Cursor Evidence-Backed Hardening
-current_plan: 6
+current_plan: 7
 status: executing
-stopped_at: Phase 12 plan 05 verified; continue plan 06 strict framing and arguments
+stopped_at: Phase 12 plan 06 verified; continue plan 07 replay safety
 last_updated: "2026-09-07T22:45:12.678Z"
 last_activity: 2026-09-07
-last_activity_desc: Plan 05 verified with full tests and smoke; strict framing and arguments next
+last_activity_desc: Plan 06 verified with full tests and smoke; replay safety next
 state_head: db2397e48b04ee1e5d0d9732fd8e2d4b08459f7d
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 26
-  completed_plans: 23
+  completed_plans: 24
   percent: 38
 total_plans_in_phase: 8
 ---
@@ -32,10 +32,10 @@ See: `.planning/PROJECT.md` (updated 2026-09-07 after Phase 11)
 ## Current Position
 
 Phase: 12 (Cursor Evidence-Backed Hardening) — EXECUTING
-Current Plan: 6
+Current Plan: 7
 Total Plans in Phase: 8
-Status: 5 of 8 plans summarized; plan 06 next
-Last activity: 2026-09-07 — Plan 05 verified: workspace tests (library 2,176 passed), clippy, translated site build and rebuilt binary smoke passed.
+Status: 6 of 8 plans summarized; plan 07 next
+Last activity: 2026-09-07 — Plan 06 verified: workspace tests (library 2,182 passed), focused strict tests, clippy, translated site build and rebuilt binary smoke passed.
 
 ## Performance Metrics
 
@@ -132,10 +132,10 @@ The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent O
 ## Session Continuity
 
 Last session: 2026-09-07T19:45:00Z
-Stopped at: Phase 12 plan 05 verified; plan 06 next
+Stopped at: Phase 12 plan 06 verified; plan 07 next
 Resume file: None
 
 ## Operator Next Steps
 
-- Execute plans 06–08 sequentially. Plans 01–05 are verified; no phase-wide completion is claimed.
+- Execute plans 07–08 sequentially. Plans 01–06 are verified; no phase-wide completion is claimed.
 - Continue the approved milestone sequentially through Phase 16, verifying each phase. Preserve credential-file behavior and request approval for new public configuration choices.

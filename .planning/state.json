@@ -51,8 +51,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Execute Phase 12 plan 06 strict framing and arguments",
-    "reason": "3 of 8 milestone phases complete; Phase 12 has 5 of 8 plans verified"
+    "label": "Execute Phase 12 plan 07 replay safety",
+    "reason": "3 of 8 milestone phases complete; Phase 12 has 6 of 8 plans verified"
   },
   "updated_at": "2026-09-07T22:45:12.698Z"
 }
