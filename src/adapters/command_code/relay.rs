@@ -14,6 +14,22 @@ use std::{convert::Infallible, pin::Pin, time::Duration};
 
 type ByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test(start_paused = true)]
+    async fn command_code_bounds_slow_drip_record_deadline() {
+        let bytes = futures_util::stream::unfold((), |_| async {
+            tokio::time::sleep(Duration::from_secs(10)).await;
+            Some((Ok(Bytes::from_static(b" ")), ()))
+        });
+        let mut relay = Relay::new(Box::pin(bytes), "alias".into(), false);
+        let result = tokio::time::timeout(Duration::from_secs(121), relay.next()).await;
+        assert!(matches!(result, Ok(Err(ref error)) if error.message == "subscription record deadline exceeded"),
+            "slow-drip records must fail by the 120-second record deadline, not merely idle timeout");
+    }
+}
+
 struct Relay {
     bytes: Option<ByteStream>,
     decoder: Decoder,

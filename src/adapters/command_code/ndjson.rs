@@ -67,6 +67,16 @@ impl Decoder {
 mod tests {
     use super::*;
     #[test]
+    fn command_code_bounds_record_crlf_at_cap() {
+        let mut bytes = vec![b' '; MAX_RECORD_BYTES - 2];
+        bytes.extend_from_slice(b"{}\r\n");
+        let mut decoder = Decoder::default();
+        let result = decoder.feed(&bytes);
+        assert!(result.is_ok(), "at-cap JSON record must accept CRLF framing");
+        assert_eq!(result.unwrap(), vec![serde_json::json!({})]);
+        assert!(decoder.finish().is_ok());
+    }
+    #[test]
     fn command_code_tracer_decoder_bounds_and_utf8() {
         for size in [MAX_RECORD_BYTES - 1, MAX_RECORD_BYTES, MAX_RECORD_BYTES + 1] {
             let mut bytes = vec![b' '; size - 2];

@@ -1,0 +1,10 @@
+{
+  "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib command_code_bounds -- --test-threads=1",
+  "exitCode": 101,
+  "targetTest": "adapters::command_code::ndjson::tests::command_code_bounds_record_crlf_at_cap",
+  "targetFile": "src/adapters/command_code/ndjson.rs",
+  "expected": "at-cap JSON accepts CRLF framing",
+  "actual": "Compilation succeeded. Both named assertions failed; 0 passed, 2 failed, 2213 filtered. Deadline fixture uses paused Tokio time, not wall-clock waiting. Production state unchanged.",
+  "output": "TAP version 13\nnot ok 1 - adapters::command_code::ndjson::tests::command_code_bounds_record_crlf_at_cap\nnot ok 2 - adapters::command_code::relay::tests::command_code_bounds_slow_drip_record_deadline\n1..2\n# tests 2\n# pass 0\n# fail 2\n",
+  "provenance": "Manual TAP transcription of actual Rust libtest assertions before behavior changes, not raw TAP."
+}
