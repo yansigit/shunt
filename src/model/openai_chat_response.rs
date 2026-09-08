@@ -559,18 +559,14 @@ fn provider_error_data(message: &str, provider_error: &serde_json::Map<String, V
 // Forward a provider request id only from error.metadata.request_id when it
 // is 1..=128 printable ASCII bytes (no spaces, no control characters), so
 // untrusted strings cannot smuggle framing or log-injection payloads.
-fn allowlisted_request_id(
-    provider_error: &serde_json::Map<String, Value>,
-) -> Option<&str> {
+fn allowlisted_request_id(provider_error: &serde_json::Map<String, Value>) -> Option<&str> {
     let request_id = provider_error
         .get("metadata")
         .and_then(|metadata| metadata.get("request_id"))
         .and_then(Value::as_str)?;
     let allowed = !request_id.is_empty()
         && request_id.len() <= 128
-        && request_id
-            .bytes()
-            .all(|byte| (0x21..=0x7E).contains(&byte));
+        && request_id.bytes().all(|byte| (0x21..=0x7E).contains(&byte));
     allowed.then_some(request_id)
 }
 

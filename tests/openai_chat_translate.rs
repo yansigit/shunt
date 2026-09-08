@@ -814,11 +814,15 @@ fn tool_translation_thread_isolation() {
 
 fn unary_final(chunk: &Value) -> Result<Value, String> {
     let mut machine = OpenAiChatSseMachine::new_for_upstream("gpt-5");
-    let events = machine.process_chunk_checked(chunk).map_err(|e| e.to_string())?;
+    let events = machine
+        .process_chunk_checked(chunk)
+        .map_err(|e| e.to_string())?;
     if let Some(error) = events.iter().find(|event| event.event == "error") {
         return Err(error.data.to_string());
     }
-    machine.transport_close_checked().map_err(|e| e.to_string())?;
+    machine
+        .transport_close_checked()
+        .map_err(|e| e.to_string())?;
     machine.final_json_checked().map_err(|e| e.to_string())
 }
 
@@ -863,7 +867,10 @@ fn error_count(events: &[(String, Value)]) -> usize {
 }
 
 fn stop_count(events: &[(String, Value)]) -> usize {
-    events.iter().filter(|(event, _)| event == "message_stop").count()
+    events
+        .iter()
+        .filter(|(event, _)| event == "message_stop")
+        .count()
 }
 
 #[test]
@@ -983,7 +990,10 @@ fn response_rejects_multiple_choices() {
         "usage": {"prompt_tokens": 1, "completion_tokens": 1},
     });
     let error = unary_final(&body).expect_err("multiple choices must fail closed");
-    assert!(error.contains("choices") || error.contains("ambiguous"), "{error}");
+    assert!(
+        error.contains("choices") || error.contains("ambiguous"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -1008,7 +1018,11 @@ fn response_usage_precision_accepts_integral_bounds() {
 #[test]
 fn response_usage_precision_rejects_invalid_counters() {
     let build = |usage: Value| {
-        completion_with(json!({"role": "assistant", "content": "x"}), json!("stop"), usage)
+        completion_with(
+            json!({"role": "assistant", "content": "x"}),
+            json!("stop"),
+            usage,
+        )
     };
     for usage in [
         json!({"prompt_tokens": -1, "completion_tokens": 1}),
@@ -1017,8 +1031,8 @@ fn response_usage_precision_rejects_invalid_counters() {
         json!({"prompt_tokens": 9223372036854775808u64, "completion_tokens": 1}),
         json!(5),
     ] {
-        let error = unary_final(&build(usage.clone()))
-            .expect_err("invalid usage counter must fail closed");
+        let error =
+            unary_final(&build(usage.clone())).expect_err("invalid usage counter must fail closed");
         assert!(error.contains("usage"), "{error} for {usage}");
     }
 }
@@ -1082,7 +1096,10 @@ fn response_reasoning_lone_alias_accepted() {
         json!({"prompt_tokens": 1, "completion_tokens": 2}),
     ))
     .unwrap();
-    assert_eq!(out["content"][0], json!({"type": "thinking", "thinking": "why"}));
+    assert_eq!(
+        out["content"][0],
+        json!({"type": "thinking", "thinking": "why"})
+    );
 }
 
 #[test]
@@ -1098,7 +1115,12 @@ fn response_reasoning_alias_conflict_fails_closed() {
 
 #[test]
 fn response_reasoning_signed_representation_fails_closed() {
-    for field in ["signature", "reasoning_signature", "redacted_reasoning", "encrypted_reasoning"] {
+    for field in [
+        "signature",
+        "reasoning_signature",
+        "redacted_reasoning",
+        "encrypted_reasoning",
+    ] {
         let mut message = json!({"role": "assistant", "reasoning_content": "x", "content": "so"});
         message[field] = json!("opaque-blob");
         let error = unary_final(&completion_with(
@@ -1169,7 +1191,10 @@ fn response_usage_only_trailing_chunk_accepted() {
         .find(|(event, _)| event == "message_delta")
         .map(|(_, data)| data)
         .unwrap();
-    assert_eq!(delta["usage"], json!({"input_tokens": 7, "output_tokens": 2}));
+    assert_eq!(
+        delta["usage"],
+        json!({"input_tokens": 7, "output_tokens": 2})
+    );
 }
 
 #[test]
@@ -1211,9 +1236,7 @@ fn response_second_usage_only_chunk_rejected() {
 
 #[test]
 fn response_stream_missing_finish_fails_closed() {
-    let events = stream_events(&[
-        delta_chunk(json!({"content": "partial"}), json!(null)),
-    ]);
+    let events = stream_events(&[delta_chunk(json!({"content": "partial"}), json!(null))]);
     assert_eq!(error_count(&events), 1, "{events:?}");
     assert_eq!(stop_count(&events), 0, "{events:?}");
 }
@@ -1258,7 +1281,10 @@ fn response_after_success_no_more_chunks() {
 fn response_stream_reasoning_order_within_and_across_chunks() {
     let events = stream_events(&[
         delta_chunk(json!({"reasoning_content": "why"}), json!(null)),
-        delta_chunk(json!({"reasoning_content": "more", "content": "so"}), json!(null)),
+        delta_chunk(
+            json!({"reasoning_content": "more", "content": "so"}),
+            json!(null),
+        ),
         delta_chunk(json!({}), json!("stop")),
     ]);
     assert_eq!(error_count(&events), 0, "{events:?}");
@@ -1291,7 +1317,10 @@ fn response_stream_reasoning_order_within_and_across_chunks() {
 #[test]
 fn response_stream_reasoning_conflict_fails_closed() {
     let events = stream_events(&[
-        delta_chunk(json!({"reasoning_content": "a", "reasoning": "b"}), json!(null)),
+        delta_chunk(
+            json!({"reasoning_content": "a", "reasoning": "b"}),
+            json!(null),
+        ),
         delta_chunk(json!({}), json!("stop")),
     ]);
     assert_eq!(error_count(&events), 1, "{events:?}");

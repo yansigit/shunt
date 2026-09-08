@@ -1110,7 +1110,10 @@ async fn openai_chat_terminal_reasoning_order_streamed() {
     let _env_lock = lock_openai_chat_env().await;
     let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
     let events = openai_chat_terminal_stream_events(vec![
-        chat_delta(json!({"role": "assistant", "reasoning_content": "why"}), None),
+        chat_delta(
+            json!({"role": "assistant", "reasoning_content": "why"}),
+            None,
+        ),
         chat_delta(json!({"reasoning_content": "more", "content": "so"}), None),
         chat_delta(json!({}), Some("stop")),
         "[DONE]".to_string(),
@@ -1175,7 +1178,10 @@ async fn openai_chat_terminal_error_after_text_single_terminal() {
         .iter()
         .position(|(event, _)| event == "content_block_delta")
         .unwrap();
-    let error_index = events.iter().position(|(event, _)| event == "error").unwrap();
+    let error_index = events
+        .iter()
+        .position(|(event, _)| event == "error")
+        .unwrap();
     assert!(text_index < error_index, "{events:?}");
 }
 
@@ -1263,10 +1269,9 @@ async fn openai_chat_terminal_missing_finish_eof_fails() {
     }
     let _env_lock = lock_openai_chat_env().await;
     let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
-    let events = openai_chat_terminal_stream_events(vec![
-        chat_delta(json!({"content": "partial"}), None),
-    ])
-    .await;
+    let events =
+        openai_chat_terminal_stream_events(vec![chat_delta(json!({"content": "partial"}), None)])
+            .await;
     assert_eq!(
         events.iter().filter(|(event, _)| event == "error").count(),
         1,
