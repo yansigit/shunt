@@ -4,6 +4,11 @@
   "milestone": "v2 — Provider Compatibility",
   "phases": [
     {
+      "number": "1",
+      "name": "8. OpenCodex Port",
+      "status": "complete"
+    },
+    {
       "number": "9",
       "name": "Provider Conformance Foundation",
       "status": "complete"
@@ -46,8 +51,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (plan phase 13)",
-    "reason": "Phase 13 of 8 — needs a plan"
+    "label": "Advance to the next step",
+    "reason": "Phase 13 of 8 · 63% · executing"
   },
-  "updated_at": "2026-09-08T01:23:02.129Z"
+  "updated_at": "2026-09-08T04:57:14.123Z"
 }

@@ -4,13 +4,13 @@ milestone: v2
 milestone_name: Provider Compatibility
 current_phase: 13
 current_phase_name: Generic OpenAI Chat Completions
-current_plan: Not started
+current_plan: 1
 status: executing
-stopped_at: Phase 13 context gathered; planning next
-last_updated: "2026-09-08T04:56:25.718Z"
+stopped_at: Phase 13 plan 01 verified; GSD post-wave validator contract blocks advancement
+last_updated: "2026-09-08T04:57:14.102Z"
 last_activity: 2026-09-07
-last_activity_desc: Phase 12 complete, transitioned to Phase 13
-state_head: 27d1e88cbd5c5a8743e9b4523ad2a6d4b5807247
+last_activity_desc: Phase 13 execution started
+state_head: 396fbb19d7f20711d1e81ac9efd67b3e376a5a28
 progress:
   total_phases: 8
   completed_phases: 5
@@ -31,11 +31,11 @@ See: `.planning/PROJECT.md` (updated 2026-09-07 after Phase 11)
 
 ## Current Position
 
-Phase: 13 (Generic OpenAI Chat Completions) — READY TO EXECUTE
-Current Plan: Not started
+Phase: 13 (Generic OpenAI Chat Completions) — EXECUTING
+Current Plan: 1
 Total Plans in Phase: 5
-Status: Ready to execute
-Last activity: 2026-09-07 — Phase 12 complete, transitioned to Phase 13
+Status: Executing Phase 13
+Last activity: 2026-09-07 — Phase 13 execution started
 
 ## Performance Metrics
 
@@ -133,10 +133,11 @@ The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent O
 ## Session Continuity
 
 Last session: 2026-09-08T01:29:51.758Z
-Stopped at: Phase 13 context gathered; planning next
-Resume file: .planning/phases/13-generic-openai-chat-completions/13-CONTEXT.md
+Stopped at: Phase 13 plan 01 verified; GSD post-wave validator contract blocks advancement
+Resume file: .planning/phases/13-generic-openai-chat-completions/13-01-SUMMARY.md
 
 ## Operator Next Steps
 
-- Verify the Phase 12 goal. Plans 01–08 are verified; no phase-wide completion is claimed yet.
+- Resolve the installed GSD post-wave gate mismatch: emitted dotted query names fail its command-name regex, and the UI gate requires halt on validation error. See 13-01-SUMMARY.md. No gate bypass or plugin modification was performed.
+- Phase 13 plan 01 code and loopback tests are verified. Continue 13-02 only after the workflow gate contract is resolved; Phase 13 remains incomplete.
 - Continue the approved milestone sequentially through Phase 16, verifying each phase. Preserve credential-file behavior and request approval for new public configuration choices.
