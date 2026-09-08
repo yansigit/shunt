@@ -17,7 +17,10 @@ fn translate(request: Value) -> Result<Value, String> {
 #[test]
 fn root_review_tool_choice_objects() {
     for (kind, expected) in [("auto", "auto"), ("any", "required")] {
-        let out = translate(json!({"tool_choice":{"type":kind},"messages":[{"role":"user","content":"hello"}]})).unwrap();
+        let out = translate(
+            json!({"tool_choice":{"type":kind},"messages":[{"role":"user","content":"hello"}]}),
+        )
+        .unwrap();
         assert_eq!(out["tool_choice"], expected);
     }
 }
@@ -48,14 +51,49 @@ fn root_review_combined_text_budget() {
 
 #[test]
 fn root_review_endpoint_diagnostics_do_not_echo_userinfo() {
-    let error = chat_completions_endpoint("https://user:secret-marker@host.example/v1").unwrap_err();
+    let error =
+        chat_completions_endpoint("https://user:secret-marker@host.example/v1").unwrap_err();
     assert!(!error.contains("secret-marker"));
 }
 
 #[test]
 fn root_review_endpoint_rejects_silent_repairs() {
-    for root in [" https://host.example/v1", "https://host.example/\nv1", "https://host.example/a/../v1", "https://host.example\\v1"] {
-        assert!(chat_completions_endpoint(root).is_err(), "accepted ambiguous root {root:?}");
+    for root in [
+        " https://host.example/v1",
+        "https://host.example/\nv1",
+        "https://host.example/a/../v1",
+        "https://host.example\\v1",
+    ] {
+        assert!(
+            chat_completions_endpoint(root).is_err(),
+            "accepted ambiguous root {root:?}"
+        );
+    }
+}
+
+#[test]
+fn root_review_nested_fields_are_not_silently_lost() {
+    for request in [
+        json!({"messages":[{"role":"user","content":"hi","unknown":true}]}),
+        json!({"messages":[{"role":"user","content":[{"type":"text","text":"hi","cache_control":{}}]}]}),
+        json!({"tools":[{"name":"f","input_schema":{},"unknown":true}],"messages":[{"role":"user","content":"hi"}]}),
+        json!({"stream":"yes","messages":[{"role":"user","content":"hi"}]}),
+        json!({"tool_choice":{"type":"tool","name":"f","unknown":true},"messages":[{"role":"user","content":"hi"}]}),
+    ] { assert!(translate(request).is_err()); }
+}
+
+#[test]
+fn root_review_reasoning_bytes_preserved() {
+    let out = translate(json!({"messages":[{"role":"assistant","content":[
+        {"type":"thinking","thinking":"one"},{"type":"thinking","thinking":"two"},{"type":"text","text":"answer"}
+    ]}]})).unwrap();
+    assert_eq!(out["messages"][0]["reasoning_content"], "onetwo");
+}
+
+#[test]
+fn root_review_empty_tool_identity_rejected() {
+    for (id, name) in [("", "f"), ("a", "")] {
+        assert!(translate(json!({"messages":[{"role":"assistant","content":[{"type":"tool_use","id":id,"name":name,"input":{}}]}]})).is_err());
     }
 }
 
