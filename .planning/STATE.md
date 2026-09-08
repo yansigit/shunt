@@ -138,6 +138,6 @@ Resume file: .planning/phases/13-generic-openai-chat-completions/13-03-PLAN.md
 
 ## Operator Next Steps
 
-- Resolve the installed GSD post-wave gate mismatch: emitted dotted query names fail its command-name regex, and the UI gate requires halt on validation error. See 13-01-SUMMARY.md. No gate bypass or plugin modification was performed.
-- Phase 13 plan 01 code and loopback tests are verified. Continue 13-02 only after the workflow gate contract is resolved; Phase 13 remains incomplete.
+- The user-approved installed GSD gate validator repair is complete and backed up at `/Users/user/gsd-gate-backup-mEVeg3`. Dotted query names validate; gate checks were rerun without disabling them. See 13-01-SUMMARY.md.
+- Phase 13 plans 01–02 are independently verified (latest workspace run: 2,781 passed, 0 failed, 2 ignored). Plan 03 response translation is executing; Phase 13 remains incomplete.
 - Continue the approved milestone sequentially through Phase 16, verifying each phase. Preserve credential-file behavior and request approval for new public configuration choices.
