@@ -1044,3 +1044,340 @@ fn openai_chat_boot_rejects_userinfo_in_base_url() {
         "{error:?}"
     );
 }
+
+// ===================================================================
+// 13-03 terminal conformance: usage-only positioning, reasoning order,
+// provider errors, and fail-closed framing (CHAT-05/06/07).
+// ===================================================================
+
+async fn openai_chat_terminal_stream_events(frames: Vec<String>) -> Vec<(String, Value)> {
+    let backend = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(sse_body(&frames))
+        .mount(&backend)
+        .await;
+    let gateway = start_gateway(single_provider_config(&backend.uri())).await;
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .body(anthropic_streaming_request("claude-via-chat"))
+        .send()
+        .await
+        .unwrap();
+    collect_sse_events(response).await
+}
+
+#[tokio::test]
+async fn openai_chat_terminal_usage_only_trailing_chunk_relays_usage() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let events = openai_chat_terminal_stream_events(vec![
+        chat_delta(json!({"content": "hi"}), None),
+        chat_delta(json!({}), Some("stop")),
+        CHAT_USAGE_CHUNK.to_string(),
+        "[DONE]".to_string(),
+    ])
+    .await;
+    assert!(
+        !events.iter().any(|(event, _)| event == "error"),
+        "{events:?}"
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|(event, _)| event == "message_stop")
+            .count(),
+        1,
+        "{events:?}"
+    );
+    let delta = events
+        .iter()
+        .find(|(event, _)| event == "message_delta")
+        .map(|(_, data)| data)
+        .unwrap();
+    assert_eq!(delta["usage"]["input_tokens"], 7, "{delta}");
+    assert_eq!(delta["usage"]["output_tokens"], 2, "{delta}");
+}
+
+#[tokio::test]
+async fn openai_chat_terminal_reasoning_order_streamed() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let events = openai_chat_terminal_stream_events(vec![
+        chat_delta(json!({"role": "assistant", "reasoning_content": "why"}), None),
+        chat_delta(json!({"reasoning_content": "more", "content": "so"}), None),
+        chat_delta(json!({}), Some("stop")),
+        "[DONE]".to_string(),
+    ])
+    .await;
+    assert!(
+        !events.iter().any(|(event, _)| event == "error"),
+        "{events:?}"
+    );
+    let starts: Vec<&Value> = events
+        .iter()
+        .filter(|(event, _)| event == "content_block_start")
+        .map(|(_, data)| data)
+        .collect();
+    assert_eq!(starts[0]["content_block"]["type"], "thinking", "{events:?}");
+    assert_eq!(starts[1]["content_block"]["type"], "text", "{events:?}");
+    let deltas: Vec<String> = events
+        .iter()
+        .filter(|(event, _)| event == "content_block_delta")
+        .map(|(_, data)| {
+            data["delta"]["thinking"]
+                .as_str()
+                .or_else(|| data["delta"]["text"].as_str())
+                .unwrap_or_default()
+                .to_string()
+        })
+        .collect();
+    assert_eq!(deltas, vec!["why", "more", "so"], "{events:?}");
+    assert_eq!(
+        events
+            .iter()
+            .filter(|(event, _)| event == "message_stop")
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn openai_chat_terminal_error_after_text_single_terminal() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let events = openai_chat_terminal_stream_events(vec![
+        chat_delta(json!({"content": "hel"}), None),
+        chat_delta(json!({"content": "lo"}), None),
+        json!({"error": {"message": "midstream failure"}}).to_string(),
+        "[DONE]".to_string(),
+    ])
+    .await;
+    assert_eq!(
+        events.iter().filter(|(event, _)| event == "error").count(),
+        1,
+        "{events:?}"
+    );
+    assert!(
+        !events.iter().any(|(event, _)| event == "message_stop"),
+        "{events:?}"
+    );
+    let text_index = events
+        .iter()
+        .position(|(event, _)| event == "content_block_delta")
+        .unwrap();
+    let error_index = events.iter().position(|(event, _)| event == "error").unwrap();
+    assert!(text_index < error_index, "{events:?}");
+}
+
+#[tokio::test]
+async fn openai_chat_terminal_usage_payload_after_finish_rejected() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    // A trailing chunk whose delta carries tool_calls without declaring a
+    // finish_reason is still payload: it must fail closed.
+    let events = openai_chat_terminal_stream_events(vec![
+        chat_delta(json!({"content": "hi"}), None),
+        chat_delta(json!({}), Some("stop")),
+        json!({"choices": [{"index": 0, "delta": {"tool_calls": []}}]}).to_string(),
+        "[DONE]".to_string(),
+    ])
+    .await;
+    assert_eq!(
+        events.iter().filter(|(event, _)| event == "error").count(),
+        1,
+        "{events:?}"
+    );
+    assert!(
+        !events.iter().any(|(event, _)| event == "message_stop"),
+        "{events:?}"
+    );
+}
+
+#[tokio::test]
+async fn openai_chat_terminal_second_usage_only_chunk_rejected() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let events = openai_chat_terminal_stream_events(vec![
+        chat_delta(json!({"content": "hi"}), None),
+        chat_delta(json!({}), Some("stop")),
+        CHAT_USAGE_CHUNK.to_string(),
+        CHAT_USAGE_CHUNK.to_string(),
+        "[DONE]".to_string(),
+    ])
+    .await;
+    assert_eq!(
+        events.iter().filter(|(event, _)| event == "error").count(),
+        1,
+        "{events:?}"
+    );
+    assert!(
+        !events.iter().any(|(event, _)| event == "message_stop"),
+        "{events:?}"
+    );
+}
+
+#[tokio::test]
+async fn openai_chat_terminal_usage_only_before_finish_rejected() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let events = openai_chat_terminal_stream_events(vec![
+        json!({"choices": [], "usage": null}).to_string(),
+        chat_delta(json!({"content": "hi"}), Some("stop")),
+        "[DONE]".to_string(),
+    ])
+    .await;
+    assert_eq!(
+        events.iter().filter(|(event, _)| event == "error").count(),
+        1,
+        "{events:?}"
+    );
+    assert!(
+        !events.iter().any(|(event, _)| event == "message_stop"),
+        "{events:?}"
+    );
+}
+
+#[tokio::test]
+async fn openai_chat_terminal_missing_finish_eof_fails() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let events = openai_chat_terminal_stream_events(vec![
+        chat_delta(json!({"content": "partial"}), None),
+    ])
+    .await;
+    assert_eq!(
+        events.iter().filter(|(event, _)| event == "error").count(),
+        1,
+        "{events:?}"
+    );
+    assert!(
+        !events.iter().any(|(event, _)| event == "message_stop"),
+        "{events:?}"
+    );
+}
+
+#[tokio::test]
+async fn openai_chat_terminal_duplicate_done_rejected() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let events = openai_chat_terminal_stream_events(vec![
+        chat_delta(json!({"content": "hi"}), Some("stop")),
+        "[DONE]".to_string(),
+        "[DONE]".to_string(),
+    ])
+    .await;
+    assert_eq!(
+        events.iter().filter(|(event, _)| event == "error").count(),
+        1,
+        "{events:?}"
+    );
+    assert!(
+        !events.iter().any(|(event, _)| event == "message_stop"),
+        "{events:?}"
+    );
+}
+
+#[tokio::test]
+async fn openai_chat_terminal_residual_after_done_rejected() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let events = openai_chat_terminal_stream_events(vec![
+        chat_delta(json!({"content": "hi"}), Some("stop")),
+        "[DONE]".to_string(),
+        chat_delta(json!({"content": "late"}), None),
+    ])
+    .await;
+    assert_eq!(
+        events.iter().filter(|(event, _)| event == "error").count(),
+        1,
+        "{events:?}"
+    );
+    assert!(
+        !events.iter().any(|(event, _)| event == "message_stop"),
+        "{events:?}"
+    );
+}
+
+#[tokio::test]
+async fn openai_chat_terminal_malformed_json_rejected() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let events = openai_chat_terminal_stream_events(vec![
+        "{not json".to_string(),
+        chat_delta(json!({"content": "hi"}), Some("stop")),
+        "[DONE]".to_string(),
+    ])
+    .await;
+    assert_eq!(
+        events.iter().filter(|(event, _)| event == "error").count(),
+        1,
+        "{events:?}"
+    );
+    assert!(
+        !events.iter().any(|(event, _)| event == "message_stop"),
+        "{events:?}"
+    );
+}
+
+#[tokio::test]
+async fn openai_chat_terminal_unary_embedded_200_error_request_id() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let backend = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "error": {
+                "message": "backend exploded",
+                "metadata": {"request_id": "req_42"}
+            }
+        })))
+        .mount(&backend)
+        .await;
+    let gateway = start_gateway(single_provider_config(&backend.uri())).await;
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .body(anthropic_request("claude-via-chat"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["type"], "error", "{body}");
+    assert_eq!(body["error"]["message"], "backend exploded", "{body}");
+    assert_eq!(body["error"]["request_id"], "req_42", "{body}");
+}
