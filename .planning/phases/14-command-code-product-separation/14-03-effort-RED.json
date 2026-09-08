@@ -1,0 +1,10 @@
+{
+  "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib command_code_translate_effort_fallback_exact_admission -- --test-threads=1",
+  "exitCode": 101,
+  "targetTest": "proxy::capability::tests::command_code_translate_effort_fallback_exact_admission",
+  "targetFile": "src/proxy/capability.rs",
+  "expected": "exact admitted model/effort tuple survives fallback capability filtering",
+  "actual": "Compilation succeeded; named assertion at line 184 failed: zai-org/GLM-5.3 Some(high) was excluded. 0 passed, 1 failed, 2209 filtered. Production state unchanged.",
+  "output": "TAP version 13\nnot ok 1 - proxy::capability::tests::command_code_translate_effort_fallback_exact_admission\n1..1\n# tests 1\n# pass 0\n# fail 1\n",
+  "provenance": "Manual TAP transcription of actual Rust libtest assertion output before implementation; not raw TAP."
+}

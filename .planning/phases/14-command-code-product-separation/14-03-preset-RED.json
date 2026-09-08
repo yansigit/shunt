@@ -1,0 +1,10 @@
+{
+  "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test command_code_translate command_code_translate_preset_subscription -- --test-threads=1",
+  "exitCode": 101,
+  "targetTest": "command_code_translate_preset_subscription",
+  "targetFile": "tests/command_code_translate.rs",
+  "expected": "command-code subscription preset resolves with sibling API-key preset unchanged",
+  "actual": "Compilation succeeded; named assertion at line 13 failed with UnknownProviderPreset command-code. 0 passed, 1 failed, 0 filtered. Production config mtime/SHA and backup inventory unchanged.",
+  "output": "TAP version 13\nnot ok 1 - command_code_translate_preset_subscription\n1..1\n# tests 1\n# pass 0\n# fail 1\n",
+  "provenance": "Manual TAP transcription of actual Rust libtest assertion output before implementation, not raw TAP or a compilation/setup failure."
+}

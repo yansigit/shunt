@@ -163,6 +163,29 @@ mod tests {
     }
 
     #[test]
+    fn command_code_translate_effort_fallback_exact_admission() {
+        for (model, effort, accepted) in [
+            ("zai-org/GLM-5.3", Some("high"), true),
+            ("zai-org/GLM-5.3", Some("low"), true),
+            ("zai-org/GLM-5.3", Some("medium"), false),
+            ("zai-org/GLM-5.3", Some("ultra"), false),
+            ("zai-org/glm-5.3", None, false),
+            ("gpt-5.6-luna", None, false),
+            ("google/gemini-3.7-flash", None, false),
+            ("deepseek/deepseek-v4-flash-vision-exp", None, false),
+            ("unknown", None, false),
+            ("deepseek/deepseek-v4-flash", None, true),
+        ] {
+            let mut candidate = route("subscription", AdapterKind::CommandCode);
+            candidate.upstream_model = model.into();
+            let mut routes = vec![route("primary", AdapterKind::Anthropic), candidate];
+            let request = effort.map_or_else(|| json!({}), |e| json!({"output_config":{"effort":e}}));
+            filter_fallbacks(&mut routes, &request, "alias");
+            assert_eq!(routes.len() == 2, accepted, "{model} {effort:?}");
+        }
+    }
+
+    #[test]
     fn extract_detects_known_requirements_without_recursive_schema_scanning() {
         let request = json!({
             "tools":[{"name":"lookup","input_schema":{"type":"object","properties":{"fake":{"type":"image"}}}}],
