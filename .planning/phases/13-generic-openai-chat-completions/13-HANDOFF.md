@@ -1,5 +1,19 @@
 # Phase 13 planning handoff
 
+## Explicit subagent thinking preference (user instruction)
+
+Always pass `reasoning_effort: high` on EVERY subagent launch, including retries,
+fallback models and nested delegation; do not rely on inheritance/defaults.
+Use `fork_turns: none` (or a bounded positive history count) with the override.
+Preferred model: opencode-go/muse-spark-1.3-contributor; fallback order:
+opencode-go/omen-alpha, opencode-go/glm-5.3-flash,
+opencode-go/deepseek-v4-flash. Never silently substitute another model.
+
+Latest attempt: chat_research launched with explicit Muse/high/fork-none, but
+failed before an artifact with provider HTTP 429 (retry limit exceeded).
+No source changes or test runs occurred. Fallback dispatch still needs to run;
+Omen was announced but has NOT actually been launched in this attempt.
+
 Phase 12 is complete: 8/8 summaries, REVIEW and VERIFICATION, requirement and
 roadmap transition committed. Latest commits: 9814a8f (HTTP error cap/deadline),
 c1a2646 (phase verification), 02108cd (Phase 13 approved context).
