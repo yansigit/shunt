@@ -1,69 +1,79 @@
 # Phase 13 planning handoff
 
-## Explicit subagent thinking preference (user instruction)
+## User model and thinking instructions
 
-Latest model authorization: use GLM or Omen; testing
-google-antigravity/gemini-3.8-flash is also authorized. Always explicit high.
-GLM/high researcher completed successfully and wrote 13-RESEARCH.md.
-Its nested evidence child failed provider thinking-mode validation; the parent
-completed its own source survey. Root corrected the retry recommendation to
-ConnectOnly and pinned actual adjacent HEAD 055c3ecf. Research now exists;
-next is validation strategy, remaining plan preflight hooks, pattern mapping,
-planner and independent checker. Do not repeat research merely due stale notes below.
+Use opencode-go/glm-5.3-flash or opencode-go/omen-alpha. Testing
+google-antigravity/gemini-3.8-flash is also authorized. EVERY launch,
+retry and nested launch must explicitly set reasoning_effort high with
+fork_turns none (or a bounded positive count). Never silently substitute models.
 
-Always pass `reasoning_effort: high` on EVERY subagent launch, including retries,
-fallback models and nested delegation; do not rely on inheritance/defaults.
-Use `fork_turns: none` (or a bounded positive history count) with the override.
-Preferred model: opencode-go/muse-spark-1.3-contributor; fallback order:
-opencode-go/omen-alpha, opencode-go/glm-5.3-flash,
-opencode-go/deepseek-v4-flash. Never silently substitute another model.
+Latest observed outcomes:
+- GLM/high: completed research, pattern mapping, framework selection,
+  implementation guidance and domain rubric.
+- Omen/high: launch rejected with provider400 thinking-mode validation,
+  despite explicit high in the launch request; no artifact.
+- Gemini/high: launch failed after HTTP429 retries; no artifact.
+These are observed attempts, not guarantees of provider availability.
 
-Latest attempt: chat_research launched with explicit Muse/high/fork-none, but
-failed before an artifact with provider HTTP 429 (retry limit exceeded).
-No source changes or test runs occurred. Fallback dispatch still needs to run;
-Omen was announced but has NOT actually been launched in this attempt.
+## Current state
 
-Phase 12 is complete: 8/8 summaries, REVIEW and VERIFICATION, requirement and
-roadmap transition committed. Latest commits: 9814a8f (HTTP error cap/deadline),
-c1a2646 (phase verification), 02108cd (Phase 13 approved context).
+Worktree /Users/user/.codex/worktrees/0466/shunt; branch
+codex/opencodex-provider-compatibility. All commands explicit workdir and
+all apply_patch paths absolute. Do not edit the main checkout at
+/Volumes/PortableSSD/Projects/shunt. Preserve user .planning/config.json and .gsd/.
 
-Phase 13 CONTEXT and DISCUSSION-LOG are committed. No research, plans or new
-Chat source exists yet. Resume GSD plan-phase 13 --auto, at researcher dispatch.
-The complete plan-phase workflow was read. Init says Pending, research and
-checker enabled, Nyquist enabled, standard granularity, auto_advance true.
-Context drift is skipped for no upstream artifacts. Dispatch isolation none.
-Active plan:pre hooks: research, pattern mapper, AI integration skill, UI skill;
-contributions API coverage, assumption delta, schema detection, ASVS1 security
-(block high); advisory codebase/context drift and blocking UI gate. Apply actual
-domain guards, do not invent frontend or database work for this Rust adapter.
+Phase12 complete 8/8 with verification. Phase13 CONTEXT, DISCUSSION-LOG,
+RESEARCH, PATTERNS exist. AI-SPEC is explicitly DRAFT: selector, guidance
+and domain sections done; evaluation sections5–7 not done. No Phase13
+PLAN files, source implementation or new tests yet.
 
-The current turn lost spawn/follow-up tools after the successful Muse-high Cursor
-review. Only wait/list/interrupt remain. Installed CLIs: agent (Cursor) and codex;
-no opencode executable. Do not replace the user's chosen subagent model silently
-or mark independent research/checker gates passed. A fresh turn may restore the
-launch controls. Use Muse high, fallback candidates per user, and fork_turns none.
-Require explicit workdir for shell and ABSOLUTE apply_patch file paths in children:
-the last reviewer wrote its report to main by mistake; it was relocated and only
-that known generated misplaced report removed. No source changed in main.
+Next: resume GSD ai-integration-phase13 at gsd-eval-planner dispatch to fill
+AI-SPEC sections5–7, then validate. Pydantic is explicitly N/A: approved
+Rust-only/no-new-dependencies scope uses serde checked validation. Do not
+install a Python framework or monitoring platform to satisfy a generic template.
+No live official Chat specification was verified by the guidance author;
+verify protocol claims against primary sources before implementation.
 
-Worktree: /Users/user/.codex/worktrees/0466/shunt, branch
-codex/opencodex-provider-compatibility. Preserve user .planning/config.json and
-.gsd/ dirt. No agents or test processes are active.
+Then return plan-phase13 --auto: draft VALIDATION, deterministic spec-less
+edge probe, API COVERAGE, remaining preflight gates, independent planner,
+independent checker with bounded revisions, then execution. Research and
+pattern mapping are complete; do not repeat them.
 
-Last verified source: 9814a8f. Full suite passed (2193 active library tests plus
-all integrations, two prior ignored benchmarks); the final additional HTTP test
-passed separately. Final clippy passed; 18 focused Cursor filter chains all
-selected nonzero tests and passed; site built 161 pages/four locales; rebuilt
-binary smoke passed five checks. Production OpenCodex untouched throughout.
-No Shunt live Cursor availability claim. CLI-only probe evidence is distinct.
+At handoff no child is running. Launch/follow-up controls disappeared again
+after successful GLM domain work; list/wait/interrupt remain. Do not poll
+empty agent waits to restore them. A fresh turn may restore launch controls.
+Do not mark evaluation/planner/checker gates passed without actual results.
 
-Stateful commands must inherit fresh OPENCODEX_HOME and non-10100 ports.
-Existing wrapper /tmp/shunt-phase12-isolated-run.cjs enforces before/after live
-config mtime/SHA and invalid/backup inventory; read it before using.
-User-required backups: /Users/user/shunt-settings-backup-fZlDSM and
-/Users/user/shunt-cursor-backup-SjUJ0y (owner-only); never print their contents.
+## Key design corrections
 
-GSD phase.complete/state helpers miscount the archived 1–8 roadmap row as one v2
-phase. Actual v2 progress is FOUR of EIGHT phases (9–12), not five. Correct the
-display through supported state handling; do not reopen completed phase 12.
-Verification fingerprint was refreshed after requirement checkbox transition.
+- RetrySafety::ConnectOnly, NOT NonIdempotentPost: latter permits ambiguous
+  post-send timeouts. Pin actual post-send/pre-header timeout no-fallback.
+- Disable redirects on Chat credential-bearing transport.
+- Tool name/identity can arrive across deltas; enforce completeness at the
+  assembly boundary, not necessarily the first delta.
+- Adjacent OpenCodex source provenance HEAD055c3ecf0de6c35f59195fc434d6b08525182b7f.
+- Pattern report is analogy, not a complete modified-files inventory:
+  planner must own module exports, capabilities, tests and all affected docs.
+- Root removed the domain author's unsupported regulatory-exemption claim;
+  external compliance applicability is unassessed, not exempt.
+
+## Safety and verification baseline
+
+Stateful commands inherit fresh OPENCODEX_HOME and a non10100 port.
+Read /tmp/shunt-phase12-isolated-run.cjs before using its wrapper.
+It checks live config mtime/SHA and invalid/backup inventory before/after.
+Never parse or test against /Users/user/.opencodex or port10100.
+User-required owner-only backups:
+- /Users/user/shunt-settings-backup-fZlDSM
+- /Users/user/shunt-cursor-backup-SjUJ0y
+Never print or commit their contents.
+
+No tests or source changes in this continuation. Phase12 baseline:
+full suite2193 active library tests plus integrations passed; final additional
+HTTP test passed separately; fmt, clippy, 18 focused Cursor filters passed;
+site161 pages/four locales built; rebuilt binary five-check smoke passed.
+No Shunt live Cursor availability claim. CLI-only evidence is distinct.
+
+GSD phase.complete/state helpers miscount archived1–8 row as a v2 phase.
+Actual milestone progress is FOUR of EIGHT phases (9–12), not five.
+Do not reopen Phase12. Preserve explicit outstanding Phase13–16 scope.
