@@ -2,5 +2,7 @@ pub mod antigravity_request;
 pub mod gemini;
 pub mod gemini_request;
 pub mod inbound_responses;
+pub mod openai_chat_request;
+pub mod openai_chat_response;
 pub mod responses;
 pub mod responses_request;

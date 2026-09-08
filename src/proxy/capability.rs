@@ -109,6 +109,9 @@ impl Requirements {
                     reasons.push("reasoning-effort");
                 }
             }
+            // No capability restrictions for the Chat slice yet; 13-02+
+            // tighten this as the request whitelist expands.
+            AdapterKind::OpenAiChat => {}
         }
         reasons
     }
