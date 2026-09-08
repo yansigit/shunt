@@ -884,3 +884,90 @@ async fn openai_chat_translate_wire_rejects_malformed_utf8() {
         "{error}"
     );
 }
+#[tokio::test]
+async fn openai_chat_translate_wire_tool_pairing() {
+    if !can_bind_loopback() {
+        return;
+    }
+    let _env_lock = lock_openai_chat_env().await;
+    let _key = EnvVarGuard::set("SHUNT_OPENAI_CHAT_CONFORMANCE_KEY", "fixture-openai-key");
+    let backend = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(chat_completion_upstream()))
+        .expect(1)
+        .mount(&backend)
+        .await;
+    let gateway = start_gateway(single_provider_config(&backend.uri())).await;
+
+    let inbound = json!({
+        "model": "claude-via-chat",
+        "max_tokens": 64,
+        "tools": [{
+            "name": "get_weather",
+            "description": "Look up weather",
+            "input_schema": {"type": "object", "properties": {"city": {"type": "string"}}}
+        }],
+        "tool_choice": "auto",
+        "messages": [
+            {"role": "user", "content": "weather?"},
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "tu_1", "name": "get_weather", "input": {"city": "Tokyo"}},
+                    {"type": "tool_use", "id": "tu_2", "name": "get_weather", "input": {"city": "Paris"}}
+                ]
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "tu_1", "content": "sunny"},
+                    {"type": "tool_result", "tool_use_id": "tu_2", "content": "rainy"}
+                ]
+            }
+        ]
+    });
+    let response = reqwest::Client::new()
+        .post(format!("{}/v1/messages", gateway.base_url))
+        .body(inbound.to_string())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let requests = backend.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    let upstream_body: Value =
+        serde_json::from_slice(&requests[0].body).expect("upstream body is JSON");
+    assert_eq!(
+        upstream_body["tools"],
+        json!([{
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Look up weather",
+                "parameters": {"type": "object", "properties": {"city": {"type": "string"}}}
+            }
+        }]),
+        "{upstream_body}"
+    );
+    assert_eq!(upstream_body["tool_choice"], "auto", "{upstream_body}");
+    let messages = upstream_body["messages"].as_array().unwrap();
+    assert_eq!(messages[1]["tool_calls"][0]["id"], "tu_1", "{upstream_body}");
+    assert_eq!(messages[1]["tool_calls"][1]["id"], "tu_2", "{upstream_body}");
+    let args: Value = serde_json::from_str(
+        messages[1]["tool_calls"][1]["function"]["arguments"].as_str().unwrap(),
+    )
+    .unwrap();
+    assert_eq!(args["city"], "Paris", "{upstream_body}");
+    assert_eq!(
+        messages[2],
+        json!({"role": "tool", "tool_call_id": "tu_1", "content": "sunny"}),
+        "{upstream_body}"
+    );
+    assert_eq!(
+        messages[3],
+        json!({"role": "tool", "tool_call_id": "tu_2", "content": "rainy"}),
+        "{upstream_body}"
+    );
+}

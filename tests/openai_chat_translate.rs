@@ -290,3 +290,350 @@ fn translate_rejects_redacted_thinking() {
         .expect_err("redacted thinking cannot be forwarded losslessly and must be rejected");
     assert!(error.contains("redacted"), "{error}");
 }
+#[test]
+fn tool_declaration_map() {
+    let request = json!({
+        "tools": [{
+            "name": "get_weather",
+            "description": "Look up weather",
+            "input_schema": {"type": "object", "properties": {"city": {"type": "string"}}}
+        }],
+        "messages": [{"role": "user", "content": "hello"}]
+    });
+    let out = translate(request).expect("tool declarations must translate");
+    assert_eq!(
+        out["tools"],
+        json!([{
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Look up weather",
+                "parameters": {"type": "object", "properties": {"city": {"type": "string"}}}
+            }
+        }]),
+        "{out}"
+    );
+}
+
+#[test]
+fn tool_choice_auto_maps() {
+    let out = translate(json!({
+        "tool_choice": "auto",
+        "messages": [{"role": "user", "content": "hello"}]
+    }))
+    .expect("tool_choice auto must translate");
+    assert_eq!(out["tool_choice"], "auto", "{out}");
+}
+
+#[test]
+fn tool_choice_any_maps_to_required() {
+    let out = translate(json!({
+        "tool_choice": "any",
+        "messages": [{"role": "user", "content": "hello"}]
+    }))
+    .expect("tool_choice any must translate");
+    assert_eq!(out["tool_choice"], "required", "{out}");
+}
+
+#[test]
+fn tool_choice_by_name_maps_to_function() {
+    let out = translate(json!({
+        "tool_choice": {"type": "tool", "name": "get_weather"},
+        "messages": [{"role": "user", "content": "hello"}]
+    }))
+    .expect("tool_choice tool must translate");
+    assert_eq!(
+        out["tool_choice"],
+        json!({"type": "function", "function": {"name": "get_weather"}}),
+        "{out}"
+    );
+}
+
+#[test]
+fn tool_choice_unknown_reject() {
+    let error = translate(json!({
+        "tool_choice": {"type": "mood", "name": "get_weather"},
+        "messages": [{"role": "user", "content": "hello"}]
+    }))
+    .expect_err("unknown tool_choice must be a typed request error");
+    assert!(error.contains("tool_choice"), "{error}");
+}
+
+#[test]
+fn tool_parallel_calls_with_paired_results() {
+    let request = json!({
+        "messages": [
+            {"role": "user", "content": "weather in two cities"},
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "tu_1", "name": "get_weather", "input": {"city": "Tokyo"}},
+                    {"type": "tool_use", "id": "tu_2", "name": "get_weather", "input": {"city": "Paris"}}
+                ]
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "tu_1", "content": "sunny"},
+                    {"type": "tool_result", "tool_use_id": "tu_2", "content": "rainy"}
+                ]
+            }
+        ]
+    });
+    let out = translate(request).expect("parallel tool calls with results must translate");
+    let assistant = &out["messages"][1];
+    assert_eq!(assistant["role"], "assistant", "{out}");
+    assert_eq!(
+        assistant["tool_calls"],
+        json!([
+            {
+                "id": "tu_1",
+                "type": "function",
+                "function": {"name": "get_weather", "arguments": "{\"city\":\"Tokyo\"}"}
+            },
+            {
+                "id": "tu_2",
+                "type": "function",
+                "function": {"name": "get_weather", "arguments": "{\"city\":\"Paris\"}"}
+            }
+        ]),
+        "ids must be stable and ordered: {out}"
+    );
+    assert_eq!(out["messages"][2], json!({"role": "tool", "tool_call_id": "tu_1", "content": "sunny"}), "{out}");
+    assert_eq!(out["messages"][3], json!({"role": "tool", "tool_call_id": "tu_2", "content": "rainy"}), "{out}");
+}
+
+#[test]
+fn tool_use_arguments_serialize_object_once() {
+    let request = json!({
+        "messages": [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "tu_1", "name": "get_weather", "input": {"city": "Tokyo", "days": 3}}
+                ]
+            }
+        ]
+    });
+    let out = translate(request).expect("tool_use must translate");
+    let arguments = out["messages"][0]["tool_calls"][0]["function"]["arguments"]
+        .as_str()
+        .expect("arguments must be a JSON string");
+    let parsed: Value = serde_json::from_str(arguments).expect("arguments must be valid JSON");
+    assert_eq!(
+        parsed,
+        json!({"city": "Tokyo", "days": 3}),
+        "argument values must round-trip regardless of key order: {arguments}"
+    );
+}
+
+#[test]
+fn tool_use_with_text_keeps_content() {
+    let request = json!({
+        "messages": [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "checking"},
+                    {"type": "tool_use", "id": "tu_1", "name": "get_weather", "input": {"city": "Tokyo"}}
+                ]
+            }
+        ]
+    });
+    let out = translate(request).expect("assistant text plus tool_use must translate");
+    assert_eq!(out["messages"][0]["content"], "checking", "{out}");
+    assert_eq!(out["messages"][0]["tool_calls"][0]["id"], "tu_1", "{out}");
+}
+
+#[test]
+fn tool_result_block_content_concatenates() {
+    let request = json!({
+        "messages": [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "tu_1", "name": "get_weather", "input": {"city": "Tokyo"}}
+                ]
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "tu_1", "content": [
+                        {"type": "text", "text": "sunny"},
+                        {"type": "text", "text": " and warm"}
+                    ]}
+                ]
+            }
+        ]
+    });
+    let out = translate(request).expect("tool_result block content must translate");
+    assert_eq!(out["messages"][1]["content"], "sunny and warm", "{out}");
+}
+
+#[test]
+fn tool_orphan_result_reject() {
+    let request = json!({
+        "messages": [
+            {"role": "user", "content": "hello"},
+            {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "tu_missing", "content": "sunny"}]
+            }
+        ]
+    });
+    let error = translate(request)
+        .expect_err("a tool_result without a preceding matching tool_use must be rejected");
+    assert!(error.contains("tool_result"), "{error}");
+}
+
+#[test]
+fn tool_duplicate_use_id_reject() {
+    let request = json!({
+        "messages": [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "tu_1", "name": "get_weather", "input": {"city": "Tokyo"}},
+                    {"type": "tool_use", "id": "tu_1", "name": "get_weather", "input": {"city": "Paris"}}
+                ]
+            }
+        ]
+    });
+    let error = translate(request)
+        .expect_err("a duplicate tool_use id must be rejected");
+    assert!(error.contains("duplicate"), "{error}");
+}
+
+#[test]
+fn tool_use_missing_identity_reject() {
+    let request = json!({
+        "messages": [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "name": "get_weather", "input": {"city": "Tokyo"}}
+                ]
+            }
+        ]
+    });
+    let error = translate(request)
+        .expect_err("a tool_use without its id must be rejected");
+    assert!(error.contains("id"), "{error}");
+}
+
+#[test]
+fn tool_use_null_input_reject() {
+    let error = translate(json!({
+        "messages": [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "tu_1", "name": "get_weather", "input": null}
+                ]
+            }
+        ]
+    }))
+    .expect_err("null tool_use input must be rejected, never coerced to an empty object");
+    assert!(error.contains("input"), "{error}");
+}
+
+#[test]
+fn tool_use_scalar_input_reject() {
+    let error = translate(json!({
+        "messages": [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "tu_1", "name": "get_weather", "input": 7}
+                ]
+            }
+        ]
+    }))
+    .expect_err("scalar tool_use input must be rejected");
+    assert!(error.contains("input"), "{error}");
+}
+
+#[test]
+fn tool_use_array_input_reject() {
+    let error = translate(json!({
+        "messages": [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "tu_1", "name": "get_weather", "input": ["Tokyo"]}
+                ]
+            }
+        ]
+    }))
+    .expect_err("array tool_use input must be rejected");
+    assert!(error.contains("input"), "{error}");
+}
+
+#[test]
+fn tool_use_string_input_reject() {
+    let error = translate(json!({
+        "messages": [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "tu_1", "name": "get_weather", "input": "{\"city\":\"Tokyo\"}"}
+                ]
+            }
+        ]
+    }))
+    .expect_err("string tool_use input is incomplete arguments and must be rejected");
+    assert!(error.contains("input"), "{error}");
+}
+
+#[test]
+fn tool_result_without_content_uses_empty_payload() {
+    let request = json!({
+        "messages": [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "tu_1", "name": "get_weather", "input": {"city": "Tokyo"}}
+                ]
+            },
+            {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "tu_1"}]
+            }
+        ]
+    });
+    let out = translate(request).expect("tool_result without content must translate");
+    assert_eq!(out["messages"][1]["content"], "", "{out}");
+}
+
+#[test]
+fn tool_translation_thread_isolation() {
+    let make = |id: &str, city: &str| {
+        json!({
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "id": id, "name": "get_weather", "input": {"city": city}}
+                    ]
+                }
+            ]
+        })
+    };
+    let handles: Vec<_> = [("tu_a", "Osaka"), ("tu_b", "Lima")]
+        .into_iter()
+        .map(|(id, city)| {
+            let request = make(id, city);
+            std::thread::spawn(move || translate(request).unwrap())
+        })
+        .collect();
+    for (index, handle) in handles.into_iter().enumerate() {
+        let expected_id = if index == 0 { "tu_a" } else { "tu_b" };
+        let expected_city = if index == 0 { "Osaka" } else { "Lima" };
+        let out = handle.join().unwrap();
+        let call = &out["messages"][0]["tool_calls"][0];
+        assert_eq!(call["id"], expected_id, "per-call identity leaked: {out}");
+        let parsed: Value =
+            serde_json::from_str(call["function"]["arguments"].as_str().unwrap()).unwrap();
+        assert_eq!(parsed["city"], expected_city, "per-call arguments leaked: {out}");
+    }
+}
