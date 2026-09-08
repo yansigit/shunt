@@ -36,7 +36,7 @@
 | source missing-finish EOF synthesis (done) | OPT-OUT | CCS-06: EOF without terminal fails, never synthesized |
 | effort ladder enforcement (exact arrays, no alias/clamp/refresh) | INTEGRATE | D-05 pinned table from command-code-efforts.ts |
 | effort alias/clamp/retry-without-effort | OPT-OUT | unknown/unsupported fails before generation; no remap |
-| vision-exp/flash effort rows | OPT-OUT | reporter-only evidence #2647, unverified; not advertised |
+| Luna, Gemini 3.7 Flash, vision-exp efforts | OPT-OUT | exact three reporter-only #2647 rows; unverified, not advertised |
 | GET /alpha/whoami validation probe | OPT-OUT | source-side validation flow; Shunt validates via destination checks only, no live account probing |
 | subscription env token source (SHUNT_COMMAND_CODE_TOKEN) | INTEGRATE | D-03 explicit env precedence, read-only |
 | CLI file fallback ~/.commandcode/auth.json (read-only) | INTEGRATE | D-03 bounded read-only fallback, no write/copy/refresh |

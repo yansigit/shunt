@@ -1,5 +1,14 @@
 # Phase 14: Command Code Product Separation — Research
 
+> Execution erratum (2026-09-08): the reporter-only #2647 effort rows are exactly
+> `deepseek/deepseek-v4-flash-vision-exp`, `gpt-5.6-luna`, and
+> `google/gemini-3.7-flash`. This is confirmed by lines 12-50 and git blame
+> e1e6ec04f4/ad8ab4f702 at the pinned revision. Earlier prose below mistakenly
+> promoted Luna and Google into the admitted set while excluding "three" other
+> rows. The corrected protocol ledger and plan 14-03 exclude all three until
+> better evidence; ten source rows remain. Historical research prose is retained
+> for provenance, not as the current admission contract.
+
 **Researched:** 2026-09-08
 **Researcher:** independent GLM subagent, explicit high thinking effort.
 **Delivery:** returned as final text after file-save tooling stalled; root persisted this report. No source edits, tests, live calls, or real credential reads were performed by the researcher.

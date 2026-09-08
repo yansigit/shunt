@@ -38,8 +38,14 @@ source-derived compatibility facts, not current official API guarantees or live 
   become non-executed error-text, orphan results become user text, result images
   follow as user image content. Source tolerates junk/SSE prefixes/unterminated EOF;
   those permissive behaviors are not adopted.
-- `src/providers/command-code-efforts.ts:3-101`: the admitted source rows below
-  exclude the three reporter-only entries. They are effort facts, not an account catalog.
+- `src/providers/command-code-efforts.ts:3-101`: the source rows below are not an
+  account catalog. **Correction:** its reporter-only comment applies to all three
+  adjacent entries at lines 39-50: deepseek/deepseek-v4-flash-vision-exp,
+  gpt-5.6-luna, and google/gemini-3.7-flash. Git blame confirms all three were
+  introduced together by e1e6ec04f4 and the explicit unverified notice by
+  ad8ab4f702. The earlier plan incorrectly treated Luna and Google as admitted.
+  All three remain excluded from subscription admission until better evidence.
+  This does not constrain subagent model selection through other providers.
 
 | Exact model ID | Exact efforts |
 |---|---|
@@ -50,8 +56,6 @@ source-derived compatibility facts, not current official API guarantees or live 
 | zai-org/GLM-5.2 | high, max |
 | zai-org/GLM-5.2-Fast | high, max |
 | zai-org/GLM-5.3 | low, high, max |
-| google/gemini-3.7-flash | low, medium, high |
-| gpt-5.6-luna | low, medium, high, xhigh, max |
 | meta/muse-spark-1.2 | low, medium, high, xhigh, max |
 | meta/muse-spark-1.2-contributor | low, medium, high, xhigh, max |
 | meta/muse-spark-1.1 | low, medium, high, xhigh, max |
@@ -112,5 +116,8 @@ claims about source permissiveness:
   or current service acceptance. Phase 16 must validate it without automatic updates.
 - Model and effort source rows do not establish this account's live availability,
   entitlements, quotas, tools, or long-context performance.
+- Reporter-only unadmitted tuples: gpt-5.6-luna claims low/medium/high/xhigh/max;
+  google/gemini-3.7-flash claims low/medium/high; deepseek/deepseek-v4-flash-vision-exp
+  claims high/max. These are explicitly unverified upstream claims, not admitted facts.
 - No live Command Code credentials or provider endpoint were read/called for this
   ledger. Successful private TLS router tests remain mock evidence, not GUI/live proof.
