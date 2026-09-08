@@ -1,5 +1,18 @@
 # Phase 13 planning handoff
 
+## Newest status — planner complete
+
+Five13-NN-PLAN.md files and COVERAGE.md now exist; VALIDATION per-task map is
+filled. Root corrected concrete planner defects; see13-PLAN-REVIEW.md.
+API coverage gate passes25 capabilities/13 integrate/12 opt-out. Independent
+checker has NOT launched because launch controls disappeared after planner
+completion. No Chat source implemented, no new tests executed in this turn.
+Next is independent plan check (GLM/high, fork none), official protocol-source
+verification, any necessary revisions, then execute13-01. Do not repeat planning
+from scratch or treat file existence as a checker pass. User approves continuing
+with shell/network despite Computer restrictions; Computer only primary or
+GPT-6 Astra/high. Existing production safety and backups remain unchanged.
+
 ## Latest continuation — September 8
 
 This section supersedes older progress notes below. AI-SPEC evaluation sections
