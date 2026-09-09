@@ -1,7 +1,7 @@
 ---
 phase: "15"
 slug: "exact-opencode-go-evidence-gate"
-status: draft
+status: executed
 nyquist_compliant: false
 wave_0_complete: false
 created: "2026-09-08"
@@ -25,15 +25,15 @@ names the parseable artifact, not unspecified Markdown prose.
 
 | Plan/task | Requirement | Evidence | Status |
 |---|---|---|---|
-| 15-01 Task 1 | OGO-02/04 | behavioral RED via `Config::load_from_str` `is_ok()` assertion (compiles today; fails on `UnknownProviderPreset`), with enum/kind assertions deferred to GREEN | pending |
-| 15-01 Task 2 | OGO-02/04 | additive `ProviderKind::OpenCodeGo` + canonical API-key preset/negative validation fixtures; Go fallback candidates removed by configured kind while generic primary remains; primary gate before credentials | pending |
-| 15-01 Task 3 | OGO-03/04 | `opencode_go_router_boundaries`: crate-local server injection, zero Go lookup/HTTP counters, separate legitimate generic lookup counts, exact native rejection preserved and pinned/unknown native Go guarded | pending |
-| 15-02 Task 1 | OGO-01/02 | four complete candidate records in the fenced ledger frame, rejected register, admitted `[]`, eight edge dispositions incl. flagged OGO-02 | pending |
-| 15-03 Task 1 | OGO-01/02/03 | English provider/README/config/nav (`site/src/lib/i18n.ts`) + engineering note `docs/opencode-go-evidence-gate.md` | pending |
-| 15-05 Task 1 | OGO-01/02/03 + REL-05 | nine locale files (ko/ja/zh-cn README + provider + configuration) with native anchors, no invented English anchors | pending |
-| 15-06 Task 1 | OGO-03/REL-05 | four actual `guides/providers.mdx` overview files (en/ko/ja/zh-cn) updated with zero-admission wording and locale links | pending |
-| 15-04 Task 1 | OGO-02/04 | real-rejection CLI smoke: canonical config, fake key, actual POST /v1/messages, Anthropic-shape gateway error, temp home cleaned; zero-egress proof separately owned by 15-01 | pending |
-| 15-04 Task 2 | OGO-02/03/04 | fmt, warm-cache `RUSTFLAGS=-Dwarnings` Clippy/workspace, site build, fingerprint audit, 15-05 rows present | pending |
+| 15-01 Task 1 | OGO-02/04 | behavioral RED via `Config::load_from_str` `is_ok()` assertion (compiles today; fails on `UnknownProviderPreset`), with enum/kind assertions deferred to GREEN | passed |
+| 15-01 Task 2 | OGO-02/04 | additive `ProviderKind::OpenCodeGo` + canonical API-key preset/negative validation fixtures; Go fallback candidates removed by configured kind while generic primary remains; primary gate before credentials | passed |
+| 15-01 Task 3 | OGO-03/04 | `opencode_go_router_boundaries`: crate-local server injection, zero Go lookup/HTTP counters, separate legitimate generic lookup counts, exact native rejection preserved and pinned/unknown native Go guarded | passed |
+| 15-02 Task 1 | OGO-01/02 | four complete candidate records in the fenced ledger frame, rejected register, admitted `[]`, eight edge dispositions incl. flagged OGO-02 | passed |
+| 15-03 Task 1 | OGO-01/02/03 | English provider/README/config/nav (`site/src/lib/i18n.ts`) + engineering note `docs/opencode-go-evidence-gate.md` | passed |
+| 15-05 Task 1 | OGO-01/02/03 + REL-05 | nine locale files (ko/ja/zh-cn README + provider + configuration) with native anchors, no invented English anchors | passed |
+| 15-06 Task 1 | OGO-03/REL-05 | four actual `guides/providers.mdx` overview files (en/ko/ja/zh-cn) updated with zero-admission wording and locale links | passed |
+| 15-04 Task 1 | OGO-02/04 | real-rejection CLI smoke: canonical config, fake key, actual POST /v1/messages, Anthropic-shape gateway error, temp home cleaned; zero-egress proof separately owned by 15-01 | passed |
+| 15-04 Task 2 | OGO-02/03/04 | fmt, warm-cache `RUSTFLAGS=-Dwarnings` Clippy/workspace, site build, fingerprint audit, 15-05 rows present | passed |
 
 ## Exact focused commands
 
@@ -70,4 +70,34 @@ wrong wire, family inference, unsupported effort, wrong terminal, or
 unverified live. OGO-02 unclassified remains a flagged manual assumption. No
 live success claim is permitted in the empty-admission implementation.
 
-**Approval:** pending executed checks.
+## Executed release evidence (2026-09-08)
+
+- Dedicated CLI smoke: 1/1 passed, real process boot plus unary and streaming
+  POST rejection (Anthropic 400); fake key, canonical URL, fresh temporary home,
+  no proxy-sentinel connection, process stopped and home removed.
+- Focused config 1/1; router boundaries 5/5; ledger 2/2; docs 19/19;
+  dedicated CLI 1/1; ordered-preset regression 1/1. Focused reruns used
+  `env RUSTFLAGS=-Dwarnings` after the wrapper to retain the warmed test cache.
+- Format check and warnings-denied Clippy: exit 0.
+- Warnings-denied full workspace: 2,972 passed, zero failed, two pre-existing
+  ignored; 33 result summaries including zero-example Rust doctests. Zero
+  doctests is not substituted for any required focused test selection.
+- Site build: 173 pages, exit 0. Twelve built provider/guide/configuration pages
+  checked for exact key, canonical URL, kind and matching locale provider link.
+  The initial link probe assumed trailing slashes; actual navigation normalizes
+  them away. Normalizing only terminal slashes made the probe match valid links.
+  Existing Vite deprecation/Pagefind stemming notices do not fail the build.
+- Documentation RED and required-token mutation/restored GREEN are recorded in
+  plans 03/05/06 summaries. Plan 03 honestly records its missing separate RED
+  commit; no history or raw evidence was fabricated.
+- Every isolated command reported production config mtime/SHA and invalid/backup
+  inventory unchanged. Settings/credential backups remain outside the repository.
+
+The crate-local Go HTTP-path counter alone cannot observe failed HTTPS attempts;
+see 15-RUNTIME-REVIEW.md. Pre-credential counters and error outcomes discriminate
+admission bypasses; DNS pinning contains attempted egress. The dedicated CLI
+smoke additionally observes no connection to its loopback proxy sentinel.
+
+**Approval:** owned executable checks passed. Nyquist and whole-phase verification
+remain separate workflow gates. OGO-02 remains a flagged manual assumption with
+zero admitted tuples; no live/captured support or Computer acceptance is claimed.
