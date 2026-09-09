@@ -69,11 +69,13 @@ Validated in Phase 15: exact OpenCode Go identity and dated evidence gate, with
 zero tuples admitted and pre-credential rejection. Automated checks and the user
 evidence-boundary review passed; future admission still needs captured/live evidence.
 
+- ✓ Cross-provider coverage/provenance, MIT notices, bounded live dispositions
+  (all skipped), four-locale docs, owned Computer review and final isolated
+  quality/security checks — Phase 16. Hermetic evidence is not live availability.
+
 ### Active
 
-- [ ] Complete Phase 16 cross-provider release checks: coverage/provenance,
-  isolated opt-in live smokes or explicit skips, documentation parity, visual
-  verification, and final repository quality/security review.
+- [ ] Complete v2 milestone audit and archival; no merge/publication authorized.
 
 ### Out of Scope
 
@@ -167,4 +169,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Revisit deferred work only with evidence from usage or failing transcripts.
 
 ---
-*Last updated: 2026-09-08 after Phase 15*
+*Last updated: 2026-09-09 after Phase 16*

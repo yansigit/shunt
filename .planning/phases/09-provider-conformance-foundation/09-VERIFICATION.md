@@ -50,7 +50,7 @@ covered_files:
   - tests/passthrough.rs
   - tests/responses_translate.rs
   - tests/retry.rs
-covered_digest: "v1:sha256:5f4fd496e46b75fe785e4e3bfcbc8c04a9a4830ca189a12c9e44d7c14e93abde"
+covered_digest: "v1:sha256:9b5d0e18085ce39414cdf369bf1e2fd7a6bf729ae9dcccf2fa9d8f0792b638b6"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
@@ -67,6 +67,18 @@ human_verification: []
 ---
 
 # Phase 9: Provider Conformance Foundation Verification Report
+
+## Phase 16 regression reconciliation
+
+Root reviewed Phase 16's diff against 44721a6: no runtime, manifest or wiki
+changes. Covered changes are documentation/notice corrections, completion
+bookkeeping and the byte-identical Go fixture relocation. No prior contract
+or assertion was weakened. Current isolated final regression passed 2,979
+tests, zero failures, two existing ignored; format, warnings-denied Clippy,
+site and focused gates passed (16-FINAL-GATES.json). Independent GLM/high
+review passed evidence/provenance/security and fixture identity. Production
+fingerprints remained unchanged. This is hermetic, not live-provider evidence.
+Bundled verification.fingerprint recomputed the covered digest afterward.
 
 ## Phase 15 re-verification (2026-09-09)
 

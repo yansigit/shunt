@@ -72,10 +72,22 @@ covered_files:
   - tests/check_cli.rs
   - tests/opencode_go_docs.rs
   - tests/opencode_go_evidence.rs
-covered_digest: "v1:sha256:0c9953d7d88cfb6f945f2959d1b2604810b9ddf8155cc90613f9b03bbcd4f999"
+covered_digest: "v1:sha256:220a0eb1ca677d2472ccd26f60495fe8795e980574e58362b0e9bc7b2c426afa"
 ---
 
 # Phase 15: Exact OpenCode Go Evidence Gate — Verification
+
+## Phase 16 regression reconciliation
+
+Root reviewed Phase 16's diff against 44721a6: no runtime, manifest or wiki
+changes. Covered changes are documentation/notice corrections, completion
+bookkeeping and the byte-identical Go fixture relocation. No prior contract
+or assertion was weakened. Current isolated final regression passed 2,979
+tests, zero failures, two existing ignored; format, warnings-denied Clippy,
+site and focused gates passed (16-FINAL-GATES.json). Independent GLM/high
+review passed evidence/provenance/security and fixture identity. Production
+fingerprints remained unchanged. This is hermetic, not live-provider evidence.
+Bundled verification.fingerprint recomputed the covered digest afterward.
 
 ## Verdict
 

@@ -82,10 +82,22 @@ covered_files:
   - tests/command_code_conformance.rs
   - tests/command_code_translate.rs
   - tests/command_code_translate/response.rs
-covered_digest: v1:sha256:81397d7a7afaf31ed3fca3dfd6363781fc2419356647d2e5fdb2b674e735c956
+covered_digest: "v1:sha256:219465e1589689ae9153835ed906d6912d6291ae7d9e87709aa75e294cc80644"
 ---
 
 # Phase 14: Command Code Product Separation verification
+
+## Phase 16 regression reconciliation
+
+Root reviewed Phase 16's diff against 44721a6: no runtime, manifest or wiki
+changes. Covered changes are documentation/notice corrections, completion
+bookkeeping and the byte-identical Go fixture relocation. No prior contract
+or assertion was weakened. Current isolated final regression passed 2,979
+tests, zero failures, two existing ignored; format, warnings-denied Clippy,
+site and focused gates passed (16-FINAL-GATES.json). Independent GLM/high
+review passed evidence/provenance/security and fixture identity. Production
+fingerprints remained unchanged. This is hermetic, not live-provider evidence.
+Bundled verification.fingerprint recomputed the covered digest afterward.
 
 ## Phase 15 re-verification (2026-09-09)
 

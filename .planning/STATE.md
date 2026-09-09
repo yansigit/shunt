@@ -3,20 +3,19 @@ gsd_state_version: "1.0"
 milestone: v2
 milestone_name: Provider Compatibility
 current_phase: 16
-current_phase_name: Cross-Provider Release Gate
-current_plan: 16-05 final verification; 16-01 through 16-04 complete
-status: executing
-stopped_at: Phase 16 final review and regression after durable fixture relocation; live smoke 0/8
-last_updated: "2026-09-09T05:54:45Z"
+current_plan: Not started
+status: completed
+stopped_at: Phase 16 complete — all phases complete
+last_updated: "2026-09-09T06:18:58.880Z"
 last_activity: 2026-09-09
-last_activity_desc: Phase 16 plans 01 through 04 complete; final Computer evaluation passed
-state_head: d42ce164524f716057125504e45dd1fd052ee841
+last_activity_desc: Phase 16 complete
+state_head: 892985df435740b7a0d1172daba51984f3cb673a
 progress:
   total_phases: 8
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 48
-  completed_plans: 47
-  percent: 98
+  completed_plans: 48
+  percent: 100
 total_plans_in_phase: 5
 ---
 
@@ -24,24 +23,24 @@ total_plans_in_phase: 5
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-09-08 after Phase 15)
+See: `.planning/PROJECT.md` (updated 2026-09-09 after Phase 16)
 
 **Core value:** Protocol-faithful, streaming-safe client behavior in a bounded, lean gateway.
-**Current focus:** Phase 16 — Cross-Provider Release Gate
+**Current focus:** v2 milestone audit; all eight phases verified
 
 ## Current Position
 
-Phase: 16 (Cross-Provider Release Gate) — EXECUTING
-Current Plan: 16-05 final verification; 16-01 through 16-04 complete
+Phase: 16
+Current Plan: Not started
 Total Plans in Phase: 5
-Status: Executing; final review
-Last activity: 2026-09-09 — Zero-attempt smoke dispositions complete; site and Computer gates passed; final independent review pending
+Status: All phases complete
+Last activity: 2026-09-09 — Phase 16 complete
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 68
+- Total plans completed: 73
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -64,6 +63,7 @@ Last activity: 2026-09-09 — Zero-attempt smoke dispositions complete; site and
 | 13 | 5 | - | - |
 | 14 | 6 | - | - |
 | 15 | 6 | - | - |
+| 16 | 5 | - | - |
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
@@ -141,37 +141,17 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-09T03:43:32Z
-Stopped at: Phase 15 complete, ready to plan Phase 16
+Last session: 2026-09-09
+Stopped at: Phase 16 complete; milestone audit next
 Resume file: None
 
 ## Operator Next Steps
 
-- Latest autonomous preflight: independent Luna/high audit re-verified Phases
-  9/11/12/13/14 after Phase 15 shared changes. All Phases 9–15 now have fresh
-  passing verification. Root reran isolated full workspace tests at eb60174
-  (2,972 passed, zero failed, two existing ignored), fmt and warnings-denied
-  Clippy; production fingerprints stayed unchanged. No code changed.
-- Phase 16 smart-discuss must resolve the separately opt-in live-smoke scope
-  before writing final CONTEXT.md. Recommend one bounded request per distinct
-  provider/auth path (maximum eight), existing authorized credentials only,
-  no retries, isolated homes/ports and synthetic prompt, <=128 output tokens,
-  <=60 seconds each; skip any path whose cost/reasoning bounds or credentials
-  cannot be established. Cap planned paid usage at US$1 total. No calls yet.
-  Source credentials remain immutable; no production proxy/home is used.
-
-- Phase 15: 6/6 plans, 13/13 truths, 11/11 decisions; user replied "sure pass"
-  during verify-work for the consolidated evidence-boundary review. UAT 1/1 passed.
-  This is not release approval or a Go/live/visual support claim.
-- Existing automated evidence: 2,972 passed, zero failures, two pre-existing ignored;
-  fmt, warnings-denied Clippy, bounded regression, 173-page site build, 12 built-page
-  checks, isolated unary/streaming CLI smoke passed. Production state unchanged.
-- Phase 16 Cross-Provider Release Gate has not been planned or implemented. Start
-  its context/planning, retain the two cosmetic UI-review warnings and unperformed
-  visual check as release inputs; preserve no-writeback and production isolation.
-- Owner-only byte-verified settings/credential backups remain at
-  /Users/user/shunt-phase15-backup-YQSxN3. Do not inspect secrets or touch production.
-- Transition warning about "node /tmp/shunt-phase12-isolated-run.cjs" in the CLI
-  summary is a command misclassified as a repository artifact, not missing code.
-  Graduation scan found no LEARNINGS files and skipped under its minimum-data guard.
-- Preserve unrelated .planning/config.json, .planning/state.json, .gsd/ and milestone lock.
+- All 48 v2 plans and eight phases verified. Run milestone integration/requirements
+  audit, then completion and cleanup under the autonomous workflow.
+- Current evidence: 2,979 pass, zero fail, two existing ignored; format and
+  warnings-denied Clippy pass; 173-page build, 12-page/260-link audit and actual
+  Computer evaluation pass. Independent GLM/high review passed.
+- Live generations all skipped, 0/8, US$0 planned. Zero Go admissions remain.
+- Preserve owner-only backup /Users/user/shunt-phase15-backup-YQSxN3 and unrelated
+  .planning/config.json, .planning/state.json and .gsd/. No merge or publication.

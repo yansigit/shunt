@@ -57,7 +57,7 @@ covered_files:
   - tests/antigravity_tool_scope.rs
   - tests/antigravity_translate.rs
   - tests/gemini_conformance.rs
-covered_digest: "v1:sha256:bd0c45a5f8e880441fc658b42fdf92cedb5a6b9df2a156ce223a5c6e4425b313"
+covered_digest: "v1:sha256:81b62c5242fbceb245f14fd95b631b1b6a32fd713f41da4c7f598295286601a4"
 behavior_unverified: 0
 overrides_applied: 0
 decision_coverage:
@@ -68,6 +68,18 @@ human_verification: []
 ---
 
 # Phase 11: Antigravity Verification
+
+## Phase 16 regression reconciliation
+
+Root reviewed Phase 16's diff against 44721a6: no runtime, manifest or wiki
+changes. Covered changes are documentation/notice corrections, completion
+bookkeeping and the byte-identical Go fixture relocation. No prior contract
+or assertion was weakened. Current isolated final regression passed 2,979
+tests, zero failures, two existing ignored; format, warnings-denied Clippy,
+site and focused gates passed (16-FINAL-GATES.json). Independent GLM/high
+review passed evidence/provenance/security and fixture identity. Production
+fingerprints remained unchanged. This is hermetic, not live-provider evidence.
+Bundled verification.fingerprint recomputed the covered digest afterward.
 
 ## Phase 15 re-verification (2026-09-09)
 

@@ -2,6 +2,7 @@
 phase: phase-15-exact-opencode-go-evidence-gate
 plan: 01
 subsystem: routing
+requirements-completed: [OGO-03, OGO-04]
 tags: [opencode-go, admission, config, fail-closed]
 requires: []
 provides:

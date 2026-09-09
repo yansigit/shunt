@@ -63,7 +63,7 @@ covered_files:
   - tests/openai_chat_translate/assembly.rs
   - tests/openai_chat_translate/caps.rs
   - tests/retry.rs
-covered_digest: "v1:sha256:1b795db620286e19b72fe2f26d3ac2701869cd73e8ac1c8a03aa0ffe546747ed"
+covered_digest: "v1:sha256:7eaa1669b9932791ae8743d0482aa6ef5ebb855e417600f45a85c219c973439d"
 decision_coverage:
   honored: 11
   total: 11
@@ -71,6 +71,18 @@ decision_coverage:
 ---
 
 # Phase 13: Generic OpenAI Chat Completions verification
+
+## Phase 16 regression reconciliation
+
+Root reviewed Phase 16's diff against 44721a6: no runtime, manifest or wiki
+changes. Covered changes are documentation/notice corrections, completion
+bookkeeping and the byte-identical Go fixture relocation. No prior contract
+or assertion was weakened. Current isolated final regression passed 2,979
+tests, zero failures, two existing ignored; format, warnings-denied Clippy,
+site and focused gates passed (16-FINAL-GATES.json). Independent GLM/high
+review passed evidence/provenance/security and fixture identity. Production
+fingerprints remained unchanged. This is hermetic, not live-provider evidence.
+Bundled verification.fingerprint recomputed the covered digest afterward.
 
 ## Phase 15 re-verification (2026-09-09)
 

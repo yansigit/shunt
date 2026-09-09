@@ -6,7 +6,7 @@ score: 4/4 roadmap truths verified
 behavior_unverified: 0
 overrides_applied: 0
 covered_files: [".planning/REQUIREMENTS.md",".planning/phases/12-cursor-evidence-backed-hardening/12-01-PLAN.md",".planning/phases/12-cursor-evidence-backed-hardening/12-01-SUMMARY.md",".planning/phases/12-cursor-evidence-backed-hardening/12-02-PLAN.md",".planning/phases/12-cursor-evidence-backed-hardening/12-02-SUMMARY.md",".planning/phases/12-cursor-evidence-backed-hardening/12-03-PLAN.md",".planning/phases/12-cursor-evidence-backed-hardening/12-03-SUMMARY.md",".planning/phases/12-cursor-evidence-backed-hardening/12-04-PLAN.md",".planning/phases/12-cursor-evidence-backed-hardening/12-04-SUMMARY.md",".planning/phases/12-cursor-evidence-backed-hardening/12-05-PLAN.md",".planning/phases/12-cursor-evidence-backed-hardening/12-05-SUMMARY.md",".planning/phases/12-cursor-evidence-backed-hardening/12-06-PLAN.md",".planning/phases/12-cursor-evidence-backed-hardening/12-06-SUMMARY.md",".planning/phases/12-cursor-evidence-backed-hardening/12-07-PLAN.md",".planning/phases/12-cursor-evidence-backed-hardening/12-07-SUMMARY.md",".planning/phases/12-cursor-evidence-backed-hardening/12-08-PLAN.md",".planning/phases/12-cursor-evidence-backed-hardening/12-08-SUMMARY.md","Cargo.lock","Cargo.toml","README.ja.md","README.ko.md","README.md","README.zh-CN.md","docs/cursor-request-history.md","site/src/content/docs/ja/providers/cursor.mdx","site/src/content/docs/ja/reference/configuration.md","site/src/content/docs/ko/providers/cursor.mdx","site/src/content/docs/ko/reference/configuration.md","site/src/content/docs/providers/cursor.mdx","site/src/content/docs/reference/configuration.md","site/src/content/docs/zh-cn/providers/cursor.mdx","site/src/content/docs/zh-cn/reference/configuration.md","src/adapters/cursor/admission.rs","src/adapters/cursor/agent.rs","src/adapters/cursor/aggregate.rs","src/adapters/cursor/cancellation_tests.rs","src/adapters/cursor/client.rs","src/adapters/cursor/connect.rs","src/adapters/cursor/history.rs","src/adapters/cursor/history_lifetime_tests.rs","src/adapters/cursor/history_tests.rs","src/adapters/cursor/kv.rs","src/adapters/cursor/kv_tests.rs","src/adapters/cursor/mod.rs","src/adapters/cursor/protocol_tests.rs","src/adapters/cursor/request.rs","src/adapters/cursor/request_isolation_tests.rs","src/adapters/cursor/response.rs","src/adapters/cursor/router_parity_tests.rs","src/adapters/cursor/sse.rs","src/adapters/cursor/strict.rs","src/adapters/cursor/test_frames.rs","src/adapters/cursor/usage.rs","src/adapters/cursor/wire.rs","src/config.rs","src/retry.rs","src/server.rs"]
-covered_digest: "v1:sha256:48c8f77917d586ff9b31cecf85921b0bcdb1bfa35435a315256b9ae54b84821e"
+covered_digest: "v1:sha256:05aebe90c0ac0f2f1e5daf34109b7b908fd16531eca05411c448233c6fc15edc"
 deferred:
   - truth: Live Shunt Cursor provider availability
     addressed_in: Phase 16
@@ -14,6 +14,18 @@ deferred:
 ---
 
 # Phase 12 Verification
+
+## Phase 16 regression reconciliation
+
+Root reviewed Phase 16's diff against 44721a6: no runtime, manifest or wiki
+changes. Covered changes are documentation/notice corrections, completion
+bookkeeping and the byte-identical Go fixture relocation. No prior contract
+or assertion was weakened. Current isolated final regression passed 2,979
+tests, zero failures, two existing ignored; format, warnings-denied Clippy,
+site and focused gates passed (16-FINAL-GATES.json). Independent GLM/high
+review passed evidence/provenance/security and fixture identity. Production
+fingerprints remained unchanged. This is hermetic, not live-provider evidence.
+Bundled verification.fingerprint recomputed the covered digest afterward.
 
 ## Phase 15 re-verification (2026-09-09)
 
