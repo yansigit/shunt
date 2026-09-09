@@ -21,7 +21,7 @@ description: すべての shunt.toml キー — server、providers、routes、mo
 | `default_provider` | `anthropic` | マッチするルートがないモデルのプロバイダー |
 | `shutdown_timeout_seconds` | `30` | 最初の SIGTERM/SIGINT 後、実行中の HTTP/SSE/WebSocket をドレインしてから残りをキャンセルするまでの秒数。`1`–`3600` が必須で、変更後は再起動が必要です |
 | `max_concurrent_requests` | `1024` | レスポンスボディの完了まで実行中として数えるインバウンドリクエストの最大数。超過したリクエストはキューに入れず、即座に `503` と `Retry-After: 1` で拒否します。`0` で制限を無効化でき、`/` と `/health` は対象外です。このキーを変更した後は再起動が必要です |
-| `sse_keepalive_seconds` | `30` | SSE `ping` が注入されるまでのアイドル秒数。`0` で無効化（[詳細](/ja/guides/shared-gateway/#sse-keepalive-pings)） |
+| `sse_keepalive_seconds` | `30` | SSE `ping` が注入されるまでのアイドル秒数。`0` で無効化（[詳細](/ja/guides/shared-gateway/#sse-キープアライブ-ping)） |
 
 ## HTTP チューニングテーブル
 
@@ -185,11 +185,15 @@ headers = { "x-api-key" = "..." }
 
 ## `[server.codex_endpoint]`（オプション）
 
-このテーブルは、Codex CLI が shunt を `base_url` として使うためのインバウンド OpenAI Responses パススルーを有効にします。唯一の厳密一致 `[models.upstream_model]` または `[[routes]]` だけが、互換性のある `kind = "responses"` プロバイダーを選択して固定プロバイダーを上書きできます。プレフィックスのみ、非厳密、未一致のモデルは固定された `[server.codex_endpoint].provider` へフォールバックし、曖昧、変換/非 Responses、モデル書き換えの宣言はディスパッチ前に拒否されます。本文は変更せず、出力開始後のプロバイダー移行はありません。
+このテーブルは Codex CLI 用の HTTP/SSE と WebSocket エンドポイントを有効にします。まずエンドポイント固有の厳密ルートを確認し、なければ既存のグローバル厳密ルート、最後に固定 provider を使います。グローバルルートではネイティブ Responses の透過転送と厳密な Anthropic 変換を維持します。出力開始後に provider を切り替えません。
 
 同じオプトインで `GET /models` と `GET /backend-api/codex/models` も登録され、通常のモデル検出認証ゲートの後に有効な Codex フォールバック `{"models":[]}` を返します。共有の `GET /v1/models` でも、`client_version` クエリがある場合は Anthropic 風のヘッダーより優先して Codex の空形式を選択します。`client_version` がなければ、既存の Anthropic 検出レスポンスは変わりません。shunt は不完全な Codex `ModelInfo` 行を生成しません。
 
 `provider = "codex"` は既定の `chatgpt_oauth` プロバイダーを選びます。`collaboration = false` が既定値で、`true` にすると厳密一致の Anthropic ルートが宣言済み V2 collaboration ツールと平文 agent task を橋渡しします。ネイティブ Responses ルートは不透明なままです。暗号文だけの task と provider 継続状態は引き続き送信前に失敗し、shunt は復号・キャッシュ・永続化・課金リカバリー呼び出しを行いません。
+
+任意の `[[server.codex_endpoint.routes]]` は、`model` の大文字小文字を区別する完全なバイト一致を既存のグローバル解決より先に適用します。一致しない場合は `[1m]` 正規化を含む既存の厳密解決、その後に固定 `provider` を使います。
+
+各 endpoint route は必須の `model`（公開 id）、必須の `provider`（認証情報を持つ Responses provider）、任意の `upstream_model`（既定値は `model`）を持ちます。空値、重複 id、認証情報のない認証方式、非 Responses provider は拒否します。既存のグローバル Anthropic 変換と collaboration は維持しますが、upstream M16 Chat/Anthropic モジュールは変換コアのみで endpoint route の対象ではありません。
 
 ## `[server.usage]`（オプション）
 
@@ -197,7 +201,9 @@ headers = { "x-api-key" = "..." }
 
 現在このテーブルにキーはなく、存在だけで有効になります。[`[server.auth]`](#serverauthオプション) が必須です。呼び出し元をクライアントトークンで識別するため、`[server.auth]` なしで `[server.usage]` を設定すると起動に失敗し、プールのテレメトリーを未認証で提供することはありません。
 
-`GET /usage` は `/v1/messages` と同じクライアントトークン（設定されたヘッダー、`x-api-key`、または `Authorization: Bearer`）で認証し、ウィンドウごとの残り余裕、リセット時刻、`ok`／`degraded`／`exhausted` のステータスを返します。アカウント名、件数、priority、`disabled`、しきい値、アカウント単位の数値は返しません。ウィンドウが `null` になるのは、無効化されていないアカウントがそのウィンドウを一度も報告していない場合だけです。Codex の `x-codex-*` レスポンスヘッダーは 5 時間と共有週次ウィンドウを埋めます。Codex 自体には Fable スコープ（`7d_oi`）のシグナルはありませんが、混在したプロバイダープールでは別のプロバイダーが集約 Fable 値を提供できます。正の `usage_refresh_seconds` を設定すると、オプションの `wham/usage` ポーラーも imported かつ更新可能な `chatgpt_oauth` アカウントのそのウィンドウを埋めます。ポーリングはデフォルトで無効です。
+`GET /usage` は `/v1/messages` と同じクライアントトークン（設定されたヘッダー、`x-api-key`、または `Authorization: Bearer`）で認証し、ウィンドウごとの残り余裕（そのウィンドウを報告した無効化されていないアカウントの `mean(1 - utilization)`、つまりプール全体の容量のうちまだ使われていない割合 — 使い切ったアカウント 9 つと新しいアカウント 1 つなら `0.1` — プール全体の集約値であり、次のリクエストが受け付けられるかの予測ではありません）、それらのアカウントが報告した最も早いリセット時刻、`ok`／`degraded`／`exhausted` のステータスを返します。アカウント名、件数、priority、`disabled`、しきい値、アカウント単位の数値は返しません。ウィンドウが `null` になるのは、無効化されていないアカウントがそのウィンドウを一度も報告していない場合だけです。Codex の `x-codex-*` レスポンスヘッダーは 5 時間と共有週次ウィンドウを埋めます。Codex 自体には Fable スコープ（`7d_oi`）のシグナルはありませんが、混在したプロバイダープールでは別のプロバイダーが集約 Fable 値を提供できます。正の `usage_refresh_seconds` を設定すると、オプションの `wham/usage` ポーラーも imported かつ更新可能な `chatgpt_oauth` アカウントのそのウィンドウを埋めます。ポーリングはデフォルトで無効です。
+
+レスポンスはプール全体の集計を `pool` に持ち、`providers` にはプールされるプロバイダーごとの同じサニタイズ済み集計を、設定されたプロバイダー名（`[providers.<name>]` の `<name>`、または `[[upstreams]]` エントリの `name` であり、アカウントの身元ではありません）をキーとして持ちます。モデルをそのキーに対応付けるのはクライアントの役割です。[`GET /routes`](/ja/reference/endpoints/) は `[[routes]]` に明示されたモデルだけを扱い、`[[models]].upstream_model`、`[[route_prefixes]]`、`server.default_provider` の対応付けを公開するエンドポイントはなく、`GET /v1/models` のエントリにはプロバイダーのフィールドがありません。混在プールでは `pool` がすべてのプロバイダーのアカウントを 1 つの平均にまとめて報告するため、特定のプロバイダーにルーティングするクライアントは、そのプロバイダーの余裕とステータスを `providers.<name>` から読み取ってください。プールされない認証モードのプロバイダーは省略され、Fable スコープのシグナルを持たないプロバイダーの `fable` ウィンドウは、`pool` が値を報告していても `null` です。完全な形は[エンドポイントリファレンス](/ja/reference/endpoints/)を参照してください。
 
 ## `[server.pool]`（オプション）
 
@@ -220,7 +226,7 @@ headers = { "x-api-key" = "..." }
 
 各ウィンドウ `X` について、有効なソフトしきい値は次の順で解決されます: アカウントの `threshold_X` → アカウントの `threshold` → `default_threshold_X` → `default_threshold` → `hard_threshold`。これは `hard_threshold` を上限としてクランプされます。すべてのしきい値は `[0.0, 1.0]` の使用率の割合であり、範囲外の値は起動時にエラーになります。しきい値とバーンレートのノブは両方のプールファミリーを制御します: Anthropic プールは `anthropic-ratelimit-unified-*` ヘッダーから、Codex/ChatGPT プールは `x-codex-*` の 5 時間／週次ウィンドウから制御されます（Codex には Fable スコープの `7d_oi` ウィンドウがないため、そこでは `default_threshold_fable` は無効です）。`usage_refresh_seconds` は `claude_oauth` アカウントだけでなく、非公式の `wham/usage` エンドポイント経由で Codex/ChatGPT バックエンドの `chatgpt_oauth` アカウントもポーリングします。
 
-正の `usage_refresh_seconds` は追加でバックグラウンドポーラーを起動し、各ファミリーの usage API と突き合わせてアカウントプールのクォータ状態を補正します: `claude_oauth` アカウントは公式の Anthropic OAuth usage API と、Codex/ChatGPT バックエンドの `chatgpt_oauth` アカウントは非公式の `wham/usage` エンドポイントと突き合わせます。未設定または `0` で無効（デフォルト）です。ポーリングされるのはどちらのファミリーも imported（更新可能）なアカウントのみで、長期の `claude setup-token` や、どちらのファミリーであれ `token_env` アカウントは、usage エンドポイントが更新不可トークンを拒否するためスキップされます。Claude のポーラーは報告されたウィンドウの使用率、ウィンドウ固有のリセット時刻、使用率の観測時刻を更新します。ウィンドウ別および集約 status の鮮度と、status の観測時にキャプチャしたリセット境界だけがヘッダー由来のままで、shunt の外での同一アカウントの消費まで含む権威ある使用量と突き合わせても status の寿命は延長しません。Codex のポーラーは使用率と使用率の観測時刻を更新し、リセットと status メタデータはヘッダー由来のままです。報告されたウィンドウでは、未来のヘッダーリセットを保持し、経過した保存済みリセットだけを新しい使用率を書き込む前にクリアします。wham の `reset_at` は実際のリセットメタデータとして採用しません。非公開スキーマは lenient かつ fail-soft に解析され、間隔は起動時に固定され、設定のリロードではポーラーの起動・停止・再調整は行われません。
+正の `usage_refresh_seconds` は追加でバックグラウンドポーラーを起動し、各ファミリーの usage API と突き合わせてアカウントプールのクォータ状態を補正します: `claude_oauth` アカウントは公式の Anthropic OAuth usage API と、Codex/ChatGPT バックエンドの `chatgpt_oauth` アカウントは非公式の `wham/usage` エンドポイントと突き合わせます。未設定または `0` で無効（デフォルト）です。ポーリングされるのはどちらのファミリーも imported（更新可能）なアカウントのみで、長期の `claude setup-token` や、どちらのファミリーであれ `token_env` アカウントは、usage エンドポイントが更新不可トークンを拒否するためスキップされます。Claude のポーラーは報告されたウィンドウの使用率、ウィンドウ固有のリセット時刻、使用率の観測時刻を更新します。ウィンドウ別および集約 status の鮮度と、status の観測時にキャプチャしたリセット境界だけがヘッダー由来のままで、shunt の外での同一アカウントの消費まで含む権威ある使用量と突き合わせても status の寿命は延長しません。Codex のポーラーは使用率と使用率の観測時刻を更新し、リセットメタデータはレスポンス由来（`x-codex-*` ヘッダーと WebSocket の `codex.rate_limits` イベント）、status メタデータはヘッダー由来のままです。報告されたウィンドウでは、未来の保存済みリセットを保持し、経過した保存済みリセットだけを新しい使用率を書き込む前にクリアします。wham の `reset_at` は実際のリセットメタデータとして採用しません。非公開スキーマは lenient かつ fail-soft に解析され、間隔は起動時に固定され、設定のリロードではポーラーの起動・停止・再調整は行われません。
 
 `state_path` はプールのクォータ状態（すべてのプロバイダーのアカウントについて、ウィンドウごとの使用率と各ウィンドウ固有のリセット時刻、使用率と status の独立した観測時刻およびキャプチャ済み status のリセット境界）をディスクに保存します。設定しない場合、再起動は空のプールから始まり、各アカウントは再起動後の最初のレスポンスまで未観測に見えるため、burn-rate 回避が無効になり、トラフィックでプールが再充填されるまで `GET /usage` は空を返します。このファイルは権威あるソースではなくベストエフォートのキャッシュです — クォータはいずれにせよアップストリームのレスポンスから再導出されるため、ファイルが欠落・陳腐化・破損していてもコールドスタートになるだけで、起動失敗にはなりません。書き込みは非公開の temp ファイル（Unix では `0600`）を対象にアトミックにリネームする方式で、クォータが変化したときだけバックグラウンドタイマーで行われます。書き込みに失敗した場合は次の tick で再試行します。クールダウンは保存されず（再起動で失効）、復元されたウィンドウのうちすでにリセットを過ぎたものは、復元時の import 中に最初の選択または snapshot より前に破棄されます。使用率は自身の観測時刻による上限と、そのウィンドウのリセットの早い方で失効し、上限だけが過ぎた場合はそのウィンドウの未来のリセットが残ります。status は自身の観測時刻による上限と観測時にキャプチャした status リセット境界の早い方で失効し、キャプチャした境界も status とともに消去されます。バージョン2のファイルは明示的な移行経路でバージョン3に書き直され、バージョン3のリセットなし status はリセットのみの更新後もリセットなしのままです。パスは起動時に固定され、設定のリロードでは永続化の開始・停止・パス変更は行われません。
 
@@ -301,7 +307,7 @@ codex-fallback = "gpt-5.2"
 
 origin に関係なく、保持された各スロットはそのスロットが実際に保持している値でもチェックされます。`authorization` と `x-api-key` は、そのスロット自身の値が shunt 自身が発行した JWT と**形が一致する**場合 — 3 セグメント構造で、ペイロードの `aud` クレームが `"shunt"` であるか、`iss` クレームがこのゲートウェイのアイデンティティと一致するか、`shunt_token_use` クレームが `"gateway-session"`（shunt だけが発行する専用マーカー）である場合 — または設定済みの `[server.auth]` クライアントトークンと一致する場合にのみクリアされます。この JWT チェックは意図的に「今このトークンが認証されるか」ではなく「形が一致するか」で判定します: 期限切れのトークン、別の `public_url` を持つ兄弟インスタンスが発行したトークン、`jwt_secret` のローテーション後に検証できなくなったトークンも、依然として shunt 自身の認証情報であるため引き続きクリアされます。このマーカーは形状チェックに追加された分岐であり、必須条件ではありません: マーカー導入前に発行されたトークンも `aud`/`iss` で引き続き一致し、`verify` 自体もマーカーを要求しないため、古いバージョンの shunt が発行したトークンは TTL 内であれば引き続き認証されます。`apiKeyHelper` は両方のスロットを同じ値で埋めるため、どちらの認証情報も一方または両方のスロットに入り得ます。もう一方のスロットがゲートウェイ JWT や静的なクライアントトークンを保持していても、本物のアップストリーム認証情報を保持しているスロットはそのまま転送されます。クリアされるのはゲート用認証情報を保持しているスロットだけです。`[server.auth] header` には `authorization` 自体を含め任意のヘッダー名を指定でき、そう設定した場合クライアントはプレフィックスなしの `Authorization: <token>` で認証します。そのためこのスロットは `Bearer` ペイロードだけでなく値全体としてもチェックされ、そうしたトークンがアップストリームへ転送されることはありません。 この設定には注意点があります: 推論リクエストでは shunt がルーティング前に設定されたヘッダーを無条件に除去するため、そのスロットは上流へ何も運びません — ゲートトークンだけでなく、呼び出し元自身の認証情報も落ちます。`header` を既定の専用 `x-shunt-token` のままにすればこの衝突を避けられます。
 
-プロキシされた成功レスポンスと最終失敗には、`x-gateway-upstream`（選択したアップストリーム名）、`x-gateway-model`（クライアントが要求した id）、`x-gateway-upstream-model`（マッピング後のバックエンド id）が必ず含まれます。`count_tokens` はチェーンの最初の要素だけを使い、フェイルオーバーしません。`[server.codex_endpoint]` は設定された単一アップストリームに固定され、このチェーンには参加しません。
+プロキシされた成功レスポンスと最終失敗には、`x-gateway-upstream`（選択したアップストリーム名）、`x-gateway-model`（クライアントが要求した id）、`x-gateway-upstream-model`（マッピング後のバックエンド id）が必ず含まれます。`count_tokens` はチェーンの最初の要素だけを使い、フェイルオーバーしません。`[server.codex_endpoint]` は `[[server.codex_endpoint.routes]]` のエントリがないモデルについては設定された単一アップストリームに固定され、いずれにせよこのチェーンには参加しません。
 
 ### 既存設定の移行
 
@@ -329,7 +335,7 @@ Cursor の履歴やキャンセル用の設定キーは追加されません。�
 | `api_key_env` | 環境変数名 | `auth = "api_key"` のとき、キーを読み取る場所。この値自体も `${VAR}` / `${file:...}` で書けます([Secret 参照](#secret-参照)を参照)。 |
 | `api_key_header` | `bearer`（デフォルト） \| `x_api_key` | 注入されたキーを送るヘッダー。 |
 | `effort` | `low` … `max` | オプションのデフォルト reasoning エフォート（`responses` プロバイダー）。`kind = "antigravity"` にも適用され、サフィックスのない `gemini-*` の `upstream_model` にカタログの effort サフィックスとして付与されます。 |
-| `count_tokens` | `tiktoken`（デフォルト） \| `estimate` | `responses` および `cursor` provider: ローカルの tiktoken カウント vs. `501 not_supported` フォールバック（[詳細](/ja/guides/effort-and-context/#token-counting-count_tokens)）。 |
+| `count_tokens` | `tiktoken`（デフォルト） \| `estimate` | `responses` および `cursor` provider: ローカルの tiktoken カウント vs. `501 not_supported` フォールバック（[詳細](/ja/guides/effort-and-context/#トークンカウントcount_tokens)）。 |
 | `tool_search` | 未設定（「auto」、デフォルト） \| `true` \| `false` | gpt-5.4+ モデルかつフレーバーが xAI/Grok でない場合に、Claude Code のツール検索へネイティブなクライアント実行 `tool_search` プロトコルを使う。未設定時は、すでに動作確認済みのホスト — ChatGPT/Codex バックエンドと `api.openai.com` — でのみネイティブがデフォルトになり、LiteLLM・vLLM・OpenRouter・自前ホストのプロキシなど他のすべての OpenAI 互換エンドポイントはテキストベースのシムのまま。検証済みのカスタムエンドポイントをネイティブへオプトインするには `true`、常にシムを強制するには `false` を設定する。[Codex → ツール検索](/ja/guides/codex/#ネイティブプロトコル) を参照。 |
 
 名前だけのエントリーは、`shunt login claude --name <name> --mode oauth|import|setup-token` で作成した `~/.shunt/accounts/claude/<name>.json` を読み取ります。対話型 CLI はこの 3 つの mode を提示し、リフレッシュ可能な OAuth を推奨します。`--long-lived` は `--mode setup-token` の deprecated alias です。`SHUNT_CLAUDE_ACCOUNTS_DIR` でストアディレクトリを上書きできます。リフレッシュ可能な OAuth/import ファイルは provider が refresh token をローテーションすると同じ場所に更新されるため、ファイルごとに稼働中の owner は 1 つだけにしてください。複数の shunt プロセスで共有したり、独立してコピーしたりしないでください。プロセスごとに個別にプロビジョニングするか、適切な場合は静的な setup token を使ってください。

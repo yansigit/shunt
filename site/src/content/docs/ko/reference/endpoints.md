@@ -11,7 +11,7 @@ description: shunt가 Claude Code LLM 게이트웨이로서 제공하는 엔드�
 | `GET` | `/v1/models` | [모델 디스커버리](/ko/guides/model-discovery/) — `[[models]]` 항목을 반환 |
 | `GET` | `/routes` | shunt 네이티브 라우트 디스커버리 — 구성된 `[[routes]]` 테이블을 그대로 반환(model → provider/upstream_model/effort 매핑, claude 프리픽스 디스커버리 별칭 포함); 더 좁은 Anthropic 프로토콜 디스커버리 응답(`id`, `display_name`, 업스트림 모델 메타데이터)을 제공하는 `/v1/models`와 구별됨 |
 | `POST` | `/v1/messages` | 추론 — 요청의 `model` id에 따라 라우팅 |
-| `POST` | `/v1/messages/count_tokens` | [토큰 카운팅](/ko/guides/effort-and-context/#token-counting-count_tokens) |
+| `POST` | `/v1/messages/count_tokens` | [토큰 카운팅](/ko/guides/effort-and-context/#토큰-카운팅-count_tokens) |
 | `GET` | `/managed/settings` | 게이트웨이 JWT별 Claude Code managed settings; `ETag`, `If-None-Match`, `304 Not Modified` 지원 |
 | `GET` | `/v1/organizations/spend_limits` | 저장된 지출 제한을 방향성 커서 페이지네이션으로 조회 |
 | `POST` | `/v1/organizations/spend_limits` | 하나의 `(scope, period)`에 대한 지출 제한을 생성하거나 교체 |
@@ -40,7 +40,7 @@ description: shunt가 Claude Code LLM 게이트웨이로서 제공하는 엔드�
 | `GET` | `/backend-api/codex/models` | Codex CLI 모델 카탈로그 폴백 — ChatGPT 형태 기본 경로 |
 | `POST` | `/backend-api/codex/analytics-events/events` | Codex CLI 분석 sink — 수락 후 폐기하고 정제된 이벤트 이름 카운터만 기록 |
 | `POST` | `/codex/analytics-events/events` | Codex CLI 분석 sink — 루트형 `chatgpt_base_url` 형식 |
-| `GET` | `/usage` | 클라이언트용 정제된 풀 사용량 — 공유 계정 풀의 창별 잔여 여유와 리셋을 반환하며 계정 신원이나 용량은 반환하지 않음 |
+| `GET` | `/usage` | 클라이언트용 정제된 풀 사용량 — 공유 계정 풀의 창별 잔여 여유와 리셋, 그리고 풀링되는 프로바이더별 동일 집계를 반환하며 계정 신원이나 용량은 반환하지 않음 |
 
 `/admin*` 라우트는 [`[server.admin]`](/ko/reference/configuration/#serveradmin-선택)이 구성된 경우에만 존재합니다; 그 테이블이 없으면 하나도 등록되지 않습니다. 관리자 자격 증명은 구성된 헤더 또는 `x-api-key`로 받으며, `read_keys` 자격 증명은 위의 모든 GET을 통과하지만 모든 변경 작업에서는 `403`으로, `POST /admin/login`에서는 `401`로 거부됩니다.
 
@@ -50,10 +50,10 @@ spend-limit 라우트는 부팅 시 [`[server.spend]`](/ko/reference/configurati
 
 인바운드 Codex Responses, 모델 카탈로그, 분석 라우트는 [`[server.codex_endpoint]`](/ko/reference/configuration/)가 구성된 경우에만 존재합니다. Responses 라우트는 raw OpenAI Responses HTTP/SSE와 인증된 WebSocket 업그레이드를 제공합니다. Codex 전용 모델 경로 두 개는 `{"models":[]}`를 반환하고, 공유 `/v1/models`는 `client_version` 쿼리가 있을 때만 그 형태를 반환하며 그 외에는 Anthropic 계약을 유지합니다. 모든 카탈로그 변형은 일반 모델 탐색 인증 게이트를 사용합니다. 두 분석 라우트는 같은 인바운드 인증 정책을 적용하고, 클라이언트 payload를 전달하거나 보관하지 않으며, 인증 후에는 잘못된 JSON이나 초과 크기 본문에도 `200 {}`를 반환합니다. 정제된 이벤트 이름만 `shunt.codex_client_events`에 기록되며, 메트릭 sink가 없으면 순수 폐기 sink로 동작합니다.
 
-`/usage` 라우트는 [`[server.usage]`](/ko/reference/configuration/#serverusage-선택)가 구성된 경우에만 존재하며, [`[server.auth]`](/ko/guides/shared-gateway/)도 필요합니다. `GET /v1/messages`와 같은 클라이언트 토큰으로 인증하고 공유 계정 풀의 창별 잔여 여유, 리셋 시각, `ok`/`degraded`/`exhausted` 상태를 반환합니다. 계정 신원, 수, priority, `disabled`, 임계값, 계정별 수치는 공개하지 않습니다. 비활성 계정이 아닌 계정 중 해당 창을 보고한 계정이 하나도 없을 때만 `null`입니다. Codex 응답의 `x-codex-*` 헤더와 선택적인 `wham/usage` 폴링은 관측된 5시간 및 공유 주간 창을 채웁니다. Codex에는 Fable 범위(`7d_oi`) 신호가 없지만 혼합 프로바이더 풀에서는 다른 프로바이더가 집계 Fable 값을 제공할 수 있습니다.
+`/usage` 라우트는 [`[server.usage]`](/ko/reference/configuration/#serverusage-선택)가 구성된 경우에만 존재하며, [`[server.auth]`](/ko/guides/shared-gateway/)도 필요합니다. `GET /v1/messages`와 같은 클라이언트 토큰으로 인증하고 공유 계정 풀의 창별 잔여 여유(해당 창을 보고한 비활성 아님 계정들의 `mean(1 - utilization)`, 즉 풀 전체 용량 중 아직 쓰지 않은 비율), 그 계정들이 보고한 리셋 시각 중 가장 이른 값, `ok`/`degraded`/`exhausted` 상태를 반환합니다. 계정 신원, 수, priority, `disabled`, 임계값, 계정별 수치는 공개하지 않습니다. 비활성 계정이 아닌 계정 중 해당 창을 보고한 계정이 하나도 없을 때만 `null`입니다. Codex 응답의 `x-codex-*` 헤더와 선택적인 `wham/usage` 폴링은 관측된 5시간 및 공유 주간 창을 채웁니다. WebSocket 전송에서는 스트림 안의 `codex.rate_limits` 이벤트가 재사용 연결을 포함한 모든 턴에서 같은 창을 채웁니다. Codex에는 Fable 범위(`7d_oi`) 신호가 없지만 혼합 프로바이더 풀에서는 다른 프로바이더가 집계 Fable 값을 제공할 수 있습니다. `pool`은 풀링되는 모든 프로바이더를 통틀은 집계이고, `providers`는 같은 정제된 집계를 풀링되는 프로바이더별로 구성된 프로바이더 이름을 키로 담으므로, 특정 프로바이더로 라우팅하는 클라이언트는 풀 전체 평균 대신 해당 프로바이더의 여유분과 상태를 읽을 수 있습니다. 풀링되지 않는 인증 모드의 프로바이더는 생략됩니다. 전체 응답 형태는 [영문 엔드포인트 레퍼런스](/reference/endpoints/)를 참고하세요.
 
 `GET /`와 `GET /health`는 [`[server.auth]`](/ko/guides/shared-gateway/)가 활성화되어 있어도 열린 채로 유지되며(헬스체크 도구는 보통 토큰을 첨부할 수 없음) 민감한 것을 노출하지 않습니다 — 오직 상태, 버전, 그리고 이미 공개된 엔드포인트 목록만입니다.
 
 ## 게이트웨이 프로토콜
 
-shunt는 공식 [Claude Code LLM 게이트웨이 프로토콜](https://code.claude.com/docs/en/llm-gateway-protocol)을 구현합니다: 올바른 헤더 및 바디 필드 전달, 기능 패스스루, 시스템 프롬프트 어트리뷰션 처리. 게이트웨이 소유 오류는 Anthropic 오류 형태로 반환되고, 업스트림 컨텍스트 오버플로 오류는 Anthropic의 `prompt is too long` 표현으로 다시 쓰여 Claude Code의 [압축-재시도](/ko/guides/effort-and-context/#context-overflow-recovery)가 발동하며, 스트리밍 응답은 버퍼링 없이 릴레이됩니다(선택적 [keepalive ping](/ko/guides/shared-gateway/#sse-keepalive-pings) 포함).
+shunt는 공식 [Claude Code LLM 게이트웨이 프로토콜](https://code.claude.com/docs/en/llm-gateway-protocol)을 구현합니다: 올바른 헤더 및 바디 필드 전달, 기능 패스스루, 시스템 프롬프트 어트리뷰션 처리. 게이트웨이 소유 오류는 Anthropic 오류 형태로 반환되고, 업스트림 컨텍스트 오버플로 오류는 Anthropic의 `prompt is too long` 표현으로 다시 쓰여 Claude Code의 [압축-재시도](/ko/guides/effort-and-context/#컨텍스트-오버플로-복구)가 발동하며, 스트리밍 응답은 버퍼링 없이 릴레이됩니다(선택적 [keepalive ping](/ko/guides/shared-gateway/#sse-keepalive-ping) 포함).

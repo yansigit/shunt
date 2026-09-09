@@ -11,7 +11,7 @@ description: shunt が Claude Code LLM ゲートウェイとして提供する�
 | `GET` | `/v1/models` | [Model discovery](/ja/guides/model-discovery/) — あなたの `[[models]]` エントリを返す |
 | `GET` | `/routes` | shunt ネイティブのルート discovery — 設定された `[[routes]]` テーブルをそのまま返す（model → provider/upstream_model/effort のマッピング、claude プレフィックスの discovery エイリアスを含む）。`/v1/models` とは別物で、後者はより狭い Anthropic プロトコルの discovery レスポンス（`id`、`display_name`、およびアップストリームのモデルメタデータ）を提供する |
 | `POST` | `/v1/messages` | 推論 — リクエストの `model` id に従ってルーティング |
-| `POST` | `/v1/messages/count_tokens` | [トークンカウント](/ja/guides/effort-and-context/#token-counting-count_tokens) |
+| `POST` | `/v1/messages/count_tokens` | [トークンカウント](/ja/guides/effort-and-context/#トークンカウントcount_tokens) |
 | `GET` | `/managed/settings` | ゲートウェイ JWT ごとの Claude Code managed settings。`ETag`、`If-None-Match`、`304 Not Modified` に対応 |
 | `GET` | `/v1/organizations/spend_limits` | 保存された支出上限を方向付きカーソルページネーションで一覧表示 |
 | `POST` | `/v1/organizations/spend_limits` | 1 つの `(scope, period)` に対する支出上限を作成または置換 |
@@ -40,7 +40,7 @@ description: shunt が Claude Code LLM ゲートウェイとして提供する�
 | `GET` | `/backend-api/codex/models` | Codex CLI モデルカタログのフォールバック — ChatGPT 形式のベースパス |
 | `POST` | `/backend-api/codex/analytics-events/events` | Codex CLI analytics sink — 受理して破棄し、サニタイズ済みイベント名のカウンターのみ記録 |
 | `POST` | `/codex/analytics-events/events` | Codex CLI analytics sink — ルート形式の `chatgpt_base_url` |
-| `GET` | `/usage` | クライアント向けのサニタイズ済みプール使用量 — 共有アカウントプールのウィンドウごとの残り余裕とリセット。アカウントの身元や容量は返さない |
+| `GET` | `/usage` | クライアント向けのサニタイズ済みプール使用量 — 共有アカウントプールのウィンドウごとの残り余裕とリセットに加え、プールされるプロバイダーごとの同じ集計。アカウントの身元や容量は返さない |
 
 `/admin*` ルートは [`[server.admin]`](/ja/reference/configuration/#serveradminオプション) が設定されている場合にのみ存在します。そのテーブルがなければ、いずれも登録されません。管理認証情報は設定されたヘッダーまたは `x-api-key` で受け付け、`read_keys` の認証情報は上記のすべての GET を通過しますが、すべての変更操作では `403` で、`POST /admin/login` では `401` で拒否されます。
 
@@ -50,10 +50,10 @@ spend-limit ルートは、起動時に [`[server.spend]`](/ja/reference/configu
 
 Inbound Codex Responses、モデルカタログ、analytics のルートは [`[server.codex_endpoint]`](/ja/reference/configuration/) が設定されている場合にのみ存在します。Responses ルートは生の OpenAI Responses HTTP/SSE と認証済み WebSocket アップグレードを提供します。Codex 専用の 2 つのモデルパスは `{"models":[]}` を返し、共有の `/v1/models` はクエリに `client_version` がある場合だけその形式を返し、それ以外では Anthropic 契約を保ちます。すべてのカタログ変形は通常のモデル検出認証ゲートを使います。2 つの analytics ルートは同じ inbound auth ポリシーを適用し、クライアント payload を転送または保持せず、認証後は不正な JSON やサイズ超過の body にも `200 {}` を返します。サニタイズ済みイベント名だけを `shunt.codex_client_events` に記録し、metric sink がなければ純粋な破棄 sink として動作します。
 
-`/usage` ルートは [`[server.usage]`](/ja/reference/configuration/#serverusageオプション) を設定した場合にのみ存在し、同じく [`[server.auth]`](/ja/guides/shared-gateway/) の設定を必要とします。`GET /v1/messages` と同じクライアントトークンで認証し、共有アカウントプールのウィンドウごとの残り余裕、リセット時刻、`ok`／`degraded`／`exhausted` ステータスを返します。アカウントの身元、件数、優先度、`disabled`、しきい値、アカウント単位の数値は公開しません。無効化されていないアカウントがそのウィンドウを報告していない場合だけ `null` になります。Codex の `x-codex-*` レスポンスヘッダーとオプションの `wham/usage` ポーリングは、5 時間と共有週次ウィンドウを埋めます。Codex には Fable スコープ（`7d_oi`）のシグナルがありませんが、混在プロバイダーのプールでは別のプロバイダーが集約 Fable 値を提供できます。
+`/usage` ルートは [`[server.usage]`](/ja/reference/configuration/#serverusageオプション) を設定した場合にのみ存在し、同じく [`[server.auth]`](/ja/guides/shared-gateway/) の設定を必要とします。`GET /v1/messages` と同じクライアントトークンで認証し、共有アカウントプールのウィンドウごとの残り余裕（そのウィンドウを報告した無効化されていないアカウントの `mean(1 - utilization)`、つまりプール全体の容量のうちまだ使われていない割合）、それらのアカウントが報告した最も早いリセット時刻、`ok`／`degraded`／`exhausted` ステータスを返します。アカウントの身元、件数、優先度、`disabled`、しきい値、アカウント単位の数値は公開しません。無効化されていないアカウントがそのウィンドウを報告していない場合だけ `null` になります。Codex の `x-codex-*` レスポンスヘッダーとオプションの `wham/usage` ポーリングは、5 時間と共有週次ウィンドウを埋めます。WebSocket トランスポートでは、ストリーム内の `codex.rate_limits` イベントが再利用接続を含むすべてのターンで同じウィンドウを埋めます。Codex には Fable スコープ（`7d_oi`）のシグナルがありませんが、混在プロバイダーのプールでは別のプロバイダーが集約 Fable 値を提供できます。`pool` はプールされるすべてのプロバイダーを通じた集計で、`providers` は同じサニタイズ済み集計をプールされるプロバイダーごとに、設定されたプロバイダー名をキーとして持ちます。そのため特定のプロバイダーにルーティングするクライアントは、プール全体の平均ではなく、そのプロバイダーの余裕とステータスを読み取れます。プールされない認証モードのプロバイダーは省略されます。完全なレスポンス形は[英語版エンドポイントリファレンス](/reference/endpoints/)を参照してください。
 
 `GET /` と `GET /health` は、[`[server.auth]`](/ja/guides/shared-gateway/) が有効なときも開いたままです（ヘルスチェックツールは通常トークンを付けられません）。機密情報は何も公開しません — ステータス、バージョン、およびすでに公開されているエンドポイント一覧のみです。
 
 ## ゲートウェイプロトコル
 
-shunt は公式の [Claude Code LLM ゲートウェイプロトコル](https://code.claude.com/docs/en/llm-gateway-protocol)を実装します: 正しいヘッダーとボディフィールドの転送、機能のパススルー、システムプロンプトのアトリビューション処理。ゲートウェイ所有のエラーは Anthropic のエラー形で返され、上流のコンテキストオーバーフローエラーは Anthropic の `prompt is too long` の文言へ書き換えられて Claude Code の[コンパクト＆リトライ](/ja/guides/effort-and-context/#context-overflow-recovery)が発火し、ストリーミングレスポンスはバッファリングなしで中継されます（オプションで[キープアライブ ping](/ja/guides/shared-gateway/#sse-keepalive-pings) 付き）。
+shunt は公式の [Claude Code LLM ゲートウェイプロトコル](https://code.claude.com/docs/en/llm-gateway-protocol)を実装します: 正しいヘッダーとボディフィールドの転送、機能のパススルー、システムプロンプトのアトリビューション処理。ゲートウェイ所有のエラーは Anthropic のエラー形で返され、上流のコンテキストオーバーフローエラーは Anthropic の `prompt is too long` の文言へ書き換えられて Claude Code の[コンパクト＆リトライ](/ja/guides/effort-and-context/#コンテキストオーバーフローの回復)が発火し、ストリーミングレスポンスはバッファリングなしで中継されます（オプションで[キープアライブ ping](/ja/guides/shared-gateway/#sse-キープアライブ-ping) 付き）。

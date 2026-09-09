@@ -160,6 +160,7 @@ async fn start_gateway_with_collaboration(
     config.server.codex_endpoint = Some(CodexEndpointConfig {
         provider: "codex".into(),
         collaboration,
+        routes: Vec::new(),
     });
     config.server.bind = "127.0.0.1:0".into();
     let listener = tokio::net::TcpListener::bind(config.server.bind_addr().unwrap())

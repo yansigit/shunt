@@ -521,6 +521,7 @@ mod tests {
         config.server.codex_endpoint = Some(CodexEndpointConfig {
             provider: "codex".to_string(),
             collaboration: false,
+            routes: Vec::new(),
         });
         config
     }

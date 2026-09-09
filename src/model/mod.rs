@@ -7,3 +7,4 @@ pub mod openai_chat_request;
 pub mod openai_chat_response;
 pub mod responses;
 pub mod responses_request;
+pub mod responses_schema;

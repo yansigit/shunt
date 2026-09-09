@@ -170,6 +170,7 @@ async fn start_native_gateway(
     config.server.codex_endpoint = Some(CodexEndpointConfig {
         provider: "codex".to_string(),
         collaboration: false,
+        routes: Vec::new(),
     });
     config.server.auth = Some(InboundAuthConfig {
         header: "x-shunt-token".to_string(),
@@ -219,6 +220,7 @@ async fn start_gateway(upstream: &RunningServer, suffix: &str) -> (RunningServer
     config.server.codex_endpoint = Some(CodexEndpointConfig {
         provider: "codex".to_string(),
         collaboration: false,
+        routes: Vec::new(),
     });
     config.server.auth = Some(InboundAuthConfig {
         header: "x-shunt-token".to_string(),
@@ -530,6 +532,7 @@ async fn missing_model_websocket_uses_pinned_fallback_even_when_unknown_route_ex
     config.server.codex_endpoint = Some(CodexEndpointConfig {
         provider: "codex".to_string(),
         collaboration: false,
+        routes: Vec::new(),
     });
     config.server.auth = Some(InboundAuthConfig {
         header: "x-shunt-token".to_string(),
@@ -609,6 +612,7 @@ async fn hot_reload_snapshot_routes_each_websocket_turn_once() {
     config.server.codex_endpoint = Some(CodexEndpointConfig {
         provider: "codex".to_string(),
         collaboration: false,
+        routes: Vec::new(),
     });
     config.server.auth = Some(InboundAuthConfig {
         header: "x-shunt-token".to_string(),

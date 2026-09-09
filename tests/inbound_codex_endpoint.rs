@@ -182,6 +182,7 @@ fn test_config(upstream_base_url: &str, accounts: Vec<AccountConfig>) -> Config 
     config.server.codex_endpoint = Some(CodexEndpointConfig {
         provider: "codex".to_string(),
         collaboration: false,
+        routes: Vec::new(),
     });
     config
 }

@@ -44,7 +44,7 @@ description: The endpoints shunt serves as a Claude Code LLM gateway.
 | `GET` | `/backend-api/codex/models` | Codex CLI model catalog fallback — ChatGPT-style base path |
 | `POST` | `/backend-api/codex/analytics-events/events` | Codex CLI analytics sink — accept and discard; record sanitized event-name counters only |
 | `POST` | `/codex/analytics-events/events` | Codex CLI analytics sink — root-style `chatgpt_base_url` form |
-| `GET` | `/usage` | Client-facing sanitized pool usage — per-window remaining headroom and reset for the shared account pool; never account identity or capacity |
+| `GET` | `/usage` | Client-facing sanitized pool usage — per-window remaining headroom and reset for the shared account pool, plus the same aggregate per pooled provider; never account identity or capacity |
 | `GET` | `/api/oauth/usage` | Claude Code CLI's own native usage-bar fetch path — sanitized, Claude-only, routing-aware worst-case pool usage in Anthropic's own wire shape |
 | `GET` | `/.well-known/oauth-authorization-server` | Gateway OAuth discovery metadata |
 | `POST` | `/oauth/device_authorization` | Start a gateway device authorization grant |
@@ -75,22 +75,40 @@ The `/admin*` routes exist only when [`[server.admin]`](/reference/configuration
 
 The Codex Responses, model-catalog, and analytics routes exist only when [`[server.codex_endpoint]`](/reference/configuration/#servercodex_endpoint-optional) is configured; without that table, none of them are registered. The three Responses paths serve raw OpenAI Responses HTTP/SSE plus authenticated WebSocket upgrades, unlike the Anthropic-Messages-translating `/v1/messages` above. The two Codex-only model paths return `{"models":[]}`; the shared `/v1/models` returns that shape only when its query contains `client_version`, otherwise preserving its Anthropic contract. All catalog variants use the normal model-discovery auth gate. The two analytics paths use the same inbound-auth policy, never forward or retain the client payload, and return `200 {}` after authentication even for malformed or oversized bodies. Only sanitized event names are counted in `shunt.codex_client_events`; with no metric sink configured they are pure discard sinks. See the [inbound Codex endpoint guide](/guides/inbound-codex-endpoint/).
 
-The `/usage` route exists only when [`[server.usage]`](/reference/configuration/#serverusage-optional) is configured, which itself requires [`[server.auth]`](/guides/shared-gateway/). It authenticates the same client token as `GET /v1/messages` (configured header, `x-api-key`, or `Authorization: Bearer`) and returns a **sanitized, aggregated** view of the shared account pool — per-window remaining headroom and reset time plus a coarse `ok`/`degraded`/`exhausted` status — so a non-admin caller can anticipate throttling. It never exposes account names, counts, priorities, `disabled` flags, thresholds, or per-account numbers; the full per-account detail stays behind admin-only `GET /admin/pool`. A window is `null` only when no non-disabled account reports it. Codex response `x-codex-*` headers and optional `wham/usage` polling populate the observed 5-hour and shared weekly windows; an unobserved window alone is `null`. Codex has no Fable-scoped (`7d_oi`) signal, although another provider in a mixed pool may supply the aggregate Fable window. Response shape:
+The `/usage` route exists only when [`[server.usage]`](/reference/configuration/#serverusage-optional) is configured, which itself requires [`[server.auth]`](/guides/shared-gateway/). It authenticates the same client token as `GET /v1/messages` (configured header, `x-api-key`, or `Authorization: Bearer`) and returns a **sanitized, aggregated** view of the shared account pool — per-window remaining headroom (`mean(1 - utilization)` across non-disabled accounts reporting the window, i.e. the fraction of the pool's combined capacity still unused) and the earliest reset among those accounts, plus a coarse `ok`/`degraded`/`exhausted` status — so a non-admin caller can anticipate throttling. It never exposes account names, counts, priorities, `disabled` flags, thresholds, or per-account numbers; the full per-account detail stays behind admin-only `GET /admin/pool`. A window is `null` only when no non-disabled account reports it. Codex response `x-codex-*` headers and optional `wham/usage` polling populate the observed 5-hour and shared weekly windows; an unobserved window alone is `null`. On the WebSocket transport the in-stream `codex.rate_limits` event supplies the same windows on every turn, reused connections included. Codex has no Fable-scoped (`7d_oi`) signal, although another provider in a mixed pool may supply the aggregate Fable window. `pool` is the aggregate across every pooled provider; `providers` carries the same sanitized aggregate per pooled provider, keyed by the configured provider name, so a client that routes to one provider can read that provider's headroom and status instead of the blended pool-wide mean. Providers whose auth mode is not pooled are omitted. Response shape:
 
 ```json
 {
   "pool": {
     "status": "ok",
     "windows": {
-      "5h":    { "remaining": 0.42, "resets_at": 1752000000 },
-      "7d":    { "remaining": 0.61, "resets_at": 1752500000 },
-      "fable": { "remaining": null, "resets_at": null }
+      "5h":    { "remaining": 0.21, "resets_at": 1751990000 },
+      "7d":    { "remaining": 0.37, "resets_at": 1752400000 },
+      "fable": { "remaining": 0.85, "resets_at": 1753000000 }
+    }
+  },
+  "providers": {
+    "claude": {
+      "status": "ok",
+      "windows": {
+        "5h":    { "remaining": 0.42, "resets_at": 1752000000 },
+        "7d":    { "remaining": 0.61, "resets_at": 1752500000 },
+        "fable": { "remaining": 0.85, "resets_at": 1753000000 }
+      }
+    },
+    "codex": {
+      "status": "exhausted",
+      "windows": {
+        "5h":    { "remaining": 0.0,  "resets_at": 1751990000 },
+        "7d":    { "remaining": 0.12, "resets_at": 1752400000 },
+        "fable": { "remaining": null, "resets_at": null }
+      }
     }
   }
 }
 ```
 
-The `/api/oauth/usage` route exists only when [`[server.oauth_usage]`](/reference/configuration/#serveroauth_usage-optional) is configured. It is the exact path the Claude Code CLI's own usage bars fetch (`fetchUtilization`), so when the CLI is pointed at shunt via `ANTHROPIC_BASE_URL`, its unmodified UI can show real numbers — **but only for CLIs using a full interactive `claude login` session**; `claude setup-token` and shared-gateway client-token setups were verified not to trigger the CLI's own fetch (see the [M14 behavior specification](https://github.com/pleaseai/shunt/blob/main/docs/m14-oauth-usage-endpoint.md) for the full precondition evidence). Unlike `GET /usage`, auth is bind-topology-gated: unauthenticated on a loopback [`[server]`](/reference/configuration/#server) bind, and requiring a **valid** credential — a configured client token or a valid gateway JWT, exactly as `/v1/messages` is gated — on a non-loopback bind (which itself then requires `[server.auth]` or `[server.gateway]` to be configured). Bare header presence is not accepted. It reports only `claude_oauth`-provider accounts, using a routing-aware, priority-tiered worst case per window rather than `/usage`'s pool-wide least-utilized aggregate — the worst case among the accounts the next request can actually route to, not an optimistic pool-wide minimum. It never exposes account names, counts, priorities, `disabled` flags, thresholds, or per-account numbers. Response shape (Anthropic's own `/api/oauth/usage` schema, `resets_at` in RFC3339):
+The `/api/oauth/usage` route exists only when [`[server.oauth_usage]`](/reference/configuration/#serveroauth_usage-optional) is configured. It is the exact path the Claude Code CLI's own usage bars fetch (`fetchUtilization`), so when the CLI is pointed at shunt via `ANTHROPIC_BASE_URL`, its unmodified UI can show real numbers — **but only for CLIs using a full interactive `claude login` session**; `claude setup-token` and shared-gateway client-token setups were verified not to trigger the CLI's own fetch (see the [M14 behavior specification](https://github.com/pleaseai/shunt/blob/main/docs/m14-oauth-usage-endpoint.md) for the full precondition evidence). Unlike `GET /usage`, auth is bind-topology-gated: unauthenticated on a loopback [`[server]`](/reference/configuration/#server) bind, and requiring a **valid** credential — a configured client token or a valid gateway JWT, exactly as `/v1/messages` is gated — on a non-loopback bind (which itself then requires `[server.auth]` or `[server.gateway]` to be configured). Bare header presence is not accepted. It reports only `claude_oauth`-provider accounts, using a routing-aware, priority-tiered worst case per window rather than `/usage`'s pool-wide mean headroom — the worst case among the accounts the next request can actually route to, not a pool-wide average. It never exposes account names, counts, priorities, `disabled` flags, thresholds, or per-account numbers. Response shape (Anthropic's own `/api/oauth/usage` schema, `resets_at` in RFC3339):
 
 ```json
 {

@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.44.0](https://github.com/pleaseai/shunt/compare/v0.43.0...v0.44.0) (2026-09-09)
+
+
+### Features
+
+* **codex:** translate routed inbound Responses requests for Anthropic and Chat Completions upstreams ([#481](https://github.com/pleaseai/shunt/issues/481)) ([078c6fe](https://github.com/pleaseai/shunt/commit/078c6fead6573f66975c87f601cdf1810e7d0382))
+
+
+### Bug Fixes
+
+* **codex:** record the in-stream codex.rate_limits event on the WebSocket transport ([#491](https://github.com/pleaseai/shunt/issues/491)) ([dbe7168](https://github.com/pleaseai/shunt/commit/dbe7168362bfd75938fc337e5b1cd1ee77e0f22e))
+* **responses:** drop tool-schema regex patterns the OpenAI validator cannot compile ([#488](https://github.com/pleaseai/shunt/issues/488)) ([5821280](https://github.com/pleaseai/shunt/commit/5821280f44cc4ea42d7823b01df7ad9f5766a39d))
+
+## [0.43.0](https://github.com/pleaseai/shunt/compare/v0.42.0...v0.43.0) (2026-09-08)
+
+
+### Features
+
+* **usage:** per-provider breakdown on GET /usage ([#483](https://github.com/pleaseai/shunt/issues/483)) ([3e5262b](https://github.com/pleaseai/shunt/commit/3e5262b6ee64b151789206da163a34e1199f4b23))
+* **usage:** report mean pool headroom instead of the least-utilized account on GET /usage ([#484](https://github.com/pleaseai/shunt/issues/484)) ([efe6ddd](https://github.com/pleaseai/shunt/commit/efe6ddda0be334adc0ffa99888fe529e58e0f606))
+
+## [0.42.0](https://github.com/pleaseai/shunt/compare/v0.41.3...v0.42.0) (2026-09-07)
+
+
+### Features
+
+* **codex:** support model-routed third-party upstreams on the inbound Responses endpoint ([#478](https://github.com/pleaseai/shunt/issues/478)) ([42f63b2](https://github.com/pleaseai/shunt/commit/42f63b29fdd56790239ca923e5ce36c710396186))
+
+## [0.41.3](https://github.com/pleaseai/shunt/compare/v0.41.2...v0.41.3) (2026-09-07)
+
+
+### Bug Fixes
+
+* **grok:** keep a product with no usagePercent from blanking the quota row ([#469](https://github.com/pleaseai/shunt/issues/469)) ([209b1dd](https://github.com/pleaseai/shunt/commit/209b1ddd9ea149568c7b9f4bdc1f2ae25f87c0d4))
+
+## [0.41.2](https://github.com/pleaseai/shunt/compare/v0.41.1...v0.41.2) (2026-09-07)
+
+
+### Bug Fixes
+
+* **gateway:** allow the device page's SSO form to redirect to the identity provider ([#473](https://github.com/pleaseai/shunt/issues/473)) ([0890922](https://github.com/pleaseai/shunt/commit/08909221a7004373911827636519edcce157d385))
+
+## [0.41.1](https://github.com/pleaseai/shunt/compare/v0.41.0...v0.41.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **antigravity:** keep an undelivered agy handoff from failing a completed turn ([#414](https://github.com/pleaseai/shunt/issues/414)) ([07ac6d4](https://github.com/pleaseai/shunt/commit/07ac6d4605fbe0953fc7a89fb23b74b85c728abc))
+* **gateway:** accept the device page's own form POST despite a null Origin ([#471](https://github.com/pleaseai/shunt/issues/471)) ([cd84174](https://github.com/pleaseai/shunt/commit/cd841744e4259d9697067384efcd44d60c2800b2))
+
 ## [0.41.0](https://github.com/pleaseai/shunt/compare/v0.40.2...v0.41.0) (2026-09-05)
 
 

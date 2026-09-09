@@ -21,7 +21,7 @@ description: 모든 shunt.toml 키 — server, providers, routes, models.
 | `default_provider` | `anthropic` | 일치하는 라우트가 없는 모든 모델의 프로바이더 |
 | `shutdown_timeout_seconds` | `30` | 첫 SIGTERM/SIGINT 뒤 진행 중인 HTTP/SSE/WebSocket 작업을 드레인한 후 나머지를 취소하기까지의 초. `1`–`3600`이어야 하며 변경 후 재시작 필요 |
 | `max_concurrent_requests` | `1024` | 응답 본문이 끝날 때까지 진행 중으로 계산하는 인바운드 요청의 최대 수. 초과 요청은 대기열에 넣지 않고 즉시 `503`과 `Retry-After: 1`로 거부합니다. `0`은 제한을 비활성화하며 `/`와 `/health`는 제한에서 제외됩니다. 이 키를 변경한 뒤에는 재시작해야 합니다 |
-| `sse_keepalive_seconds` | `30` | SSE `ping`이 주입되기 전의 유휴 초; `0`은 비활성화([상세](/ko/guides/shared-gateway/#sse-keepalive-pings)) |
+| `sse_keepalive_seconds` | `30` | SSE `ping`이 주입되기 전의 유휴 초; `0`은 비활성화([상세](/ko/guides/shared-gateway/#sse-keepalive-ping)) |
 
 ## HTTP 튜닝 테이블
 
@@ -190,16 +190,20 @@ headers = { "x-api-key" = "..." }
 
 `provider = "codex"`는 기본 `chatgpt_oauth` 프로바이더를 선택합니다. `collaboration = false`가 기본값이며, `true`로 설정하면 정확한 Anthropic 경로가 선언된 V2 collaboration 도구와 평문 agent task를 연결합니다. 네이티브 Responses 경로는 불투명하게 유지됩니다. 암호문 전용 task와 provider 연속 상태는 계속 전송 전에 실패하며, shunt는 복호화·캐시·영속화·과금 복구 호출을 하지 않습니다.
 
+선택적 `[[server.codex_endpoint.routes]]`는 `model`의 대소문자 구분 정확한 바이트 일치를 기존 전역 해석보다 먼저 적용합니다. 불일치하면 `[1m]` 정규화를 포함한 기존 정확 해석 후 고정 `provider`를 사용합니다.
+
 | 키 | 기본값 | 의미 |
 | :-- | :-- | :-- |
 | `provider` | `codex` | inbound request를 처리할 `[providers.<name>]` 테이블 이름. `auth = "chatgpt_oauth"`를 사용해야 함 |
 | `collaboration` | `false` | 정확한 Anthropic 경로에서 선언된 V2 collaboration 도구와 평문 agent task를 연결함. 네이티브 경로는 불투명하게 유지 |
 
-`POST /backend-api/codex/responses`, `POST /responses`, `POST /v1/responses`를 등록하며, 모두 지정한 provider의 account pool이 처리합니다. `[server.auth]`가 있으면 다른 server-side credential route처럼 유효한 client token을 요구합니다. `[server.auth]`가 없으면 operator의 Codex credential을 주입하면서도 접근 가능한 누구에게나 **open** 상태이므로 loopback 외 환경에서는 반드시 보호하세요. `/v1/messages`와 달리 request는 Anthropic Messages로 변환하거나 그 반대로 변환하지 않고 upstream과 verbatim relay합니다.
+`POST /backend-api/codex/responses`, `POST /responses`, `POST /v1/responses`를 등록하고 위의 우선순위로 라우팅합니다. `[server.auth]`가 있으면 유효한 client token이 필요합니다. 없으면 접근 가능한 클라이언트가 operator 자격 증명을 사용할 수 있으므로 loopback 밖에서는 접근을 보호하세요. 네이티브 Responses는 응답을 그대로 전달하고 전역 Anthropic 매핑은 엄격한 변환 브리지를 사용합니다.
 
 같은 옵트인이 `GET /models`와 `GET /backend-api/codex/models`를 등록하며, 이 경로들은 일반 모델 탐색 인증 게이트 후 유효한 Codex 폴백 `{"models":[]}`를 반환합니다. 공유 `GET /v1/models`에서도 `client_version` 쿼리가 있으면 Anthropic 형태의 헤더보다 우선하여 Codex 빈 형태를 선택합니다. `client_version`이 없으면 기존 Anthropic 탐색 응답은 변경되지 않습니다. shunt는 불완전한 Codex `ModelInfo` 행을 만들지 않습니다.
 
-정확한 `[models.upstream_model]` 또는 `[[routes]]`가 단 하나의 `kind = "responses"` 프로바이더를 선택할 때만 인바운드 네이티브 라우팅이 고정 프로바이더를 재정의합니다. 프리픽스 전용·비정확·불일치 모델은 고정된 `[server.codex_endpoint].provider`로 폴백하고, 정확하지만 모호하거나 변환/비-Responses 또는 모델 재작성 선언은 디스패치 전에 거부됩니다. 본문은 변경 없이 전달되며 출력 후 프로바이더 이동은 없습니다.
+Endpoint route가 일치하지 않으면 전역 해석은 `[1m]` 정규화 후 고유한 `[models.upstream_model]` 또는 `[[routes]]`를 확인합니다. 네이티브 Responses 매핑은 model을 바꾸지 않으며 정확한 Anthropic 매핑은 변환/collaboration을 사용합니다. 모호하거나 지원되지 않는 매핑은 거부하고 미일치 모델은 고정 provider를 사용합니다. 출력 후 provider를 바꾸지 않습니다.
+
+각 endpoint route는 필수 `model`(공개 id), 필수 `provider`(자격 증명을 가진 Responses provider), 선택 `upstream_model`(기본값은 `model`)을 가집니다. 빈 값, 중복 id, 자격 증명이 없는 인증 방식과 비-Responses provider는 거부됩니다. 기존 전역 Anthropic 변환 및 collaboration은 유지되지만, upstream M16 Chat/Anthropic 모듈은 아직 endpoint route 대상이 아닌 변환 코어입니다.
 
 ## `[server.usage]` (선택)
 
@@ -207,7 +211,9 @@ headers = { "x-api-key" = "..." }
 
 현재 이 테이블에는 키가 없으며, 존재만으로 활성화됩니다. [`[server.auth]`](#serverauth-선택)가 필수입니다. 엔드포인트는 클라이언트 토큰으로 호출자를 식별하므로 `[server.auth]` 없이 `[server.usage]`를 설정하면 시작이 실패하고, 인증 없이 풀 텔레메트리를 제공하지 않습니다.
 
-`GET /usage`는 `/v1/messages`와 같은 클라이언트 토큰(구성된 헤더, `x-api-key`, `Authorization: Bearer`)으로 인증하고 창별 잔여 여유, 리셋 시각, `ok`/`degraded`/`exhausted` 상태를 반환합니다. 계정 이름, 수, priority, `disabled`, 임계값, 계정별 수치는 노출하지 않습니다. 비활성 계정이 아닌 계정 중 해당 창을 보고한 계정이 하나도 없을 때만 창이 `null`입니다. Codex 응답의 `x-codex-*` 헤더는 5시간 및 공유 주간 창을 채웁니다. Codex 자체에는 Fable 범위(`7d_oi`) 신호가 없지만 혼합 프로바이더 풀에서는 다른 프로바이더가 집계 Fable 값을 제공할 수 있습니다. 양수 `usage_refresh_seconds`를 설정하면 선택적인 `wham/usage` 폴러도 imported이며 갱신 가능한 `chatgpt_oauth` 계정의 해당 창을 채웁니다. 폴링은 기본적으로 꺼져 있습니다.
+`GET /usage`는 `/v1/messages`와 같은 클라이언트 토큰(구성된 헤더, `x-api-key`, `Authorization: Bearer`)으로 인증하고 창별 잔여 여유(해당 창을 보고한 비활성 아님 계정들의 `mean(1 - utilization)`, 즉 풀 전체 용량 중 아직 쓰지 않은 비율 — 소진된 계정 9개와 새 계정 1개면 `0.1` — 풀 전체 집계이지 다음 요청이 통과될지에 대한 예측은 아님), 그 계정들이 보고한 리셋 시각 중 가장 이른 값, `ok`/`degraded`/`exhausted` 상태를 반환합니다. 계정 이름, 수, priority, `disabled`, 임계값, 계정별 수치는 노출하지 않습니다. 비활성 계정이 아닌 계정 중 해당 창을 보고한 계정이 하나도 없을 때만 창이 `null`입니다. Codex 응답의 `x-codex-*` 헤더는 5시간 및 공유 주간 창을 채웁니다. Codex 자체에는 Fable 범위(`7d_oi`) 신호가 없지만 혼합 프로바이더 풀에서는 다른 프로바이더가 집계 Fable 값을 제공할 수 있습니다. 양수 `usage_refresh_seconds`를 설정하면 선택적인 `wham/usage` 폴러도 imported이며 갱신 가능한 `chatgpt_oauth` 계정의 해당 창을 채웁니다. 폴링은 기본적으로 꺼져 있습니다.
+
+응답은 풀 전체 집계를 `pool`에 담고, `providers`에는 풀링되는 프로바이더별로 같은 정제된 집계를 구성된 프로바이더 이름(`[providers.<name>]`의 `<name>` 또는 `[[upstreams]]` 항목의 `name`이며, 계정 신원이 아님)을 키로 담습니다. 모델을 그 키에 대응시키는 것은 클라이언트의 몫입니다. [`GET /routes`](/ko/reference/endpoints/)는 `[[routes]]`에 명시된 모델만 다루고, `[[models]].upstream_model`, `[[route_prefixes]]`, `server.default_provider` 매핑을 노출하는 엔드포인트는 없으며, `GET /v1/models` 항목에는 프로바이더 필드가 없습니다. 혼합 풀에서 `pool`은 모든 프로바이더의 계정을 하나의 평균으로 섞어 보고하므로, 특정 프로바이더로 라우팅하는 클라이언트는 해당 프로바이더의 여유분과 상태를 `providers.<name>`에서 읽어야 합니다. 풀링되지 않는 인증 모드의 프로바이더는 생략되며, Fable 범위 신호가 없는 프로바이더의 `fable` 창은 `pool`이 값을 보고하더라도 `null`입니다. 전체 형태는 [엔드포인트 레퍼런스](/ko/reference/endpoints/)를 참고하세요.
 
 ## `[server.pool]` (선택)
 
@@ -228,7 +234,7 @@ headers = { "x-api-key" = "..." }
 
 각 창 `X`에 대해 유효 소프트 임계값은 다음 순서로 결정됩니다: 계정 `threshold_X` → 계정 `threshold` → `default_threshold_X` → `default_threshold` → `hard_threshold`, 그리고 `hard_threshold`로 상한이 걸립니다. 모든 임계값은 `[0.0, 1.0]` 범위의 사용률 비율이며, 범위를 벗어나면 시작이 실패합니다. 임계값과 번-레이트 노브는 두 풀 계열 모두를 관장합니다: Anthropic 풀은 `anthropic-ratelimit-unified-*` 헤더로부터, Codex/ChatGPT 풀은 `x-codex-*` 5시간/주간 윈도우로부터 동작합니다(Codex에는 Fable 범위의 `7d_oi` 창이 없어 `default_threshold_fable`은 그곳에서 무력화됩니다). `usage_refresh_seconds`는 `claude_oauth` 계정뿐 아니라, 비공식 `wham/usage` 엔드포인트를 통해 Codex/ChatGPT 백엔드 `chatgpt_oauth` 계정도 폴링합니다.
 
-양수 `usage_refresh_seconds`는 추가로 백그라운드 폴러를 시작해, 각 계열의 usage API와 대조해 계정 풀의 쿼터 상태를 재보정합니다: `claude_oauth` 계정은 공식 Anthropic OAuth usage API와, Codex/ChatGPT 백엔드 `chatgpt_oauth` 계정은 비공식 `wham/usage` 엔드포인트와 대조합니다. 미설정 또는 `0`이면 비활성(기본값)입니다. 두 계열 모두 imported(갱신 가능) 계정만 폴링되며 — 장기 `claude setup-token`이나 어느 계열이든 `token_env` 계정은 usage 엔드포인트가 비갱신 토큰을 거부하므로 건너뜁니다. Claude 폴러는 보고된 창의 사용률, 창 고유 리셋 시각과 사용률 관측 시각을 갱신합니다. 창별 및 집계 status의 freshness와 status 관측 때 캡처한 리셋 경계만 헤더에서 유지하며, shunt 외부의 동일 계정 소비까지 포함한 권위 있는 사용량과 대조하지만 status 수명은 연장하지 않습니다. Codex 폴러는 사용률과 사용률 관측 시각을 갱신하며, 리셋과 status 메타데이터는 헤더에서 유지합니다. 보고된 창에서는 미래의 헤더 리셋을 유지하고, 저장된 리셋이 이미 지났으면 새 사용률을 쓰기 전에 그 리셋만 지웁니다. wham의 `reset_at`은 실제 리셋 메타데이터로 채택하지 않습니다. 비공개 스키마는 lenient하고 fail-soft하게 해석되며, 간격은 부팅 시 고정되고 설정 리로드는 폴러를 시작·중지·재조정하지 않습니다.
+양수 `usage_refresh_seconds`는 추가로 백그라운드 폴러를 시작해, 각 계열의 usage API와 대조해 계정 풀의 쿼터 상태를 재보정합니다: `claude_oauth` 계정은 공식 Anthropic OAuth usage API와, Codex/ChatGPT 백엔드 `chatgpt_oauth` 계정은 비공식 `wham/usage` 엔드포인트와 대조합니다. 미설정 또는 `0`이면 비활성(기본값)입니다. 두 계열 모두 imported(갱신 가능) 계정만 폴링되며 — 장기 `claude setup-token`이나 어느 계열이든 `token_env` 계정은 usage 엔드포인트가 비갱신 토큰을 거부하므로 건너뜁니다. Claude 폴러는 보고된 창의 사용률, 창 고유 리셋 시각과 사용률 관측 시각을 갱신합니다. 창별 및 집계 status의 freshness와 status 관측 때 캡처한 리셋 경계만 헤더에서 유지하며, shunt 외부의 동일 계정 소비까지 포함한 권위 있는 사용량과 대조하지만 status 수명은 연장하지 않습니다. Codex 폴러는 사용률과 사용률 관측 시각을 갱신하며, 리셋 메타데이터는 응답에서(`x-codex-*` 헤더와 WebSocket `codex.rate_limits` 이벤트), status 메타데이터는 헤더에서 유지합니다. 보고된 창에서는 미래의 저장된 리셋을 유지하고, 저장된 리셋이 이미 지났으면 새 사용률을 쓰기 전에 그 리셋만 지웁니다. wham의 `reset_at`은 실제 리셋 메타데이터로 채택하지 않습니다. 비공개 스키마는 lenient하고 fail-soft하게 해석되며, 간격은 부팅 시 고정되고 설정 리로드는 폴러를 시작·중지·재조정하지 않습니다.
 
 `state_path`는 풀의 쿼터 상태(모든 provider 계정의 창별 사용률과 각 창의 고유 리셋 시각, 사용률과 status의 독립 관측 시각 및 캡처한 status 리셋 경계)를 디스크에 저장합니다. 없으면 재시작이 빈 풀로 시작해, 각 계정이 재시작 후 첫 응답 전까지 미관측 상태로 보이면서 burn-rate 회피가 비활성화되고 `GET /usage`가 트래픽으로 풀이 다시 채워질 때까지 빈 값을 반환합니다. 이 파일은 권위 있는 소스가 아니라 best-effort 캐시입니다 — 쿼터는 어차피 업스트림 응답에서 재도출되므로, 파일이 없거나·오래됐거나·손상돼도 cold start만 발생할 뿐 부팅 실패로 이어지지 않습니다. 쓰기는 비공개 temp 파일(Unix에서 `0600`)을 대상 위로 원자적으로 rename하는 방식이며, 쿼터가 변경됐을 때만 백그라운드 타이머로 이뤄집니다. 쓰기에 실패하면 다음 tick에서 재시도합니다. 쿨다운은 저장되지 않고(재시작 시 소멸), 복원된 창 중 이미 리셋이 지난 것은 복원 시 import 단계에서 첫 선택이나 snapshot보다 먼저 폐기됩니다. 사용률은 자체 관측 시각 상한과 해당 창의 리셋 중 이른 시각에 만료되고, 상한만 지났으면 해당 창의 미래 리셋을 남깁니다. status는 자체 관측 시각 상한과 관측 때 캡처한 status 리셋 경계 중 이른 시각에 만료되며 캡처한 경계도 함께 지워집니다. 버전 2 파일은 명시적 migration 경로로 버전 3으로 다시 쓰며, `observed_at_status`가 없는 집계 `status`는 저장된 `reset_5h`, `reset_7d`, `reset_7d_oi` 중 가장 이른 리셋을 변경할 수 없는 기한으로 포착합니다. 그 리셋이 이미 지났으면 만료된 리셋, stamp가 없는 집계 `status`, 합성한 stamp를 같은 import에서 함께 제거합니다. 7일이라는 타당한 범위를 넘는 미래 리셋은 부팅 시각부터 7일 후를 상한으로 삼고, 리셋이 없으면 부팅 시각부터 7일 cap을 시작합니다. 이미 stamp된 v2 값은 리셋으로 다시 해석하지 않지만, 일반 import는 고아 메타데이터를 정규화하고 경과한 신호를 만료시키며 미래 시각을 부팅 시각으로 보정하고, 남은 stamp 없는 집계에는 필요하면 부팅 시각을 넣습니다. 이후 reset-only나 usage 갱신은 포착한 기한을 연장하지 않으며 v3으로 다시 쓴 뒤 두 번째 복원에서도 같은 상태를 유지합니다. 버전 3의 리셋 없는 status는 reset-only 갱신 뒤에도 리셋 없는 상태로 유지됩니다. 경로는 부팅 시 고정되며, 설정 리로드는 영속화를 시작·중지하거나 경로를 바꾸지 않습니다.
 
@@ -329,7 +335,7 @@ codex-fallback = "gpt-5.2"
 
 origin과 무관하게, 유지된 각 슬롯은 그 슬롯이 실제로 담고 있는 값으로도 검사됩니다. `authorization`과 `x-api-key`는 각각 그 슬롯 자신의 값이 shunt 자체가 발급한 JWT와 **모양이 같거나** — `aud` 클레임이 `"shunt"`이거나, `iss` 클레임이 이 게이트웨이의 아이덴티티이거나, `shunt_token_use` 클레임이 `"gateway-session"`(shunt만 발급하는 전용 마커)인 세 세그먼트 구조 — 설정된 `[server.auth]` 클라이언트 토큰과 일치할 때에만 제거됩니다. JWT 검사는 의도적으로 "지금 이 토큰이 인증되는가"가 아니라 "모양이 같은가"로 판단합니다: 만료된 토큰, 다른 `public_url`을 쓰는 형제 인스턴스가 발급한 토큰, `jwt_secret` 로테이션 이후 더 이상 검증되지 않는 토큰도 여전히 shunt 자신의 크리덴셜이므로 여전히 제거됩니다. 이 마커는 모양 검사에 추가된 분기일 뿐 필수 조건이 아닙니다: 마커가 존재하기 전에 발급된 토큰도 `aud`/`iss`로 여전히 일치하며, `verify` 자체도 마커를 요구하지 않으므로 이전 버전의 shunt가 발급한 토큰은 TTL 내에 있는 한 계속 인증됩니다. `apiKeyHelper`는 두 슬롯을 같은 값으로 채우므로 어느 크리덴셜이든 한쪽 또는 양쪽 슬롯에 들어올 수 있습니다. 다른 슬롯이 게이트웨이 JWT나 정적 클라이언트 토큰을 담고 있어도, 진짜 업스트림 크리덴셜을 담은 슬롯은 그대로 전달됩니다. 게이트 크리덴셜을 담은 슬롯만 제거됩니다. `[server.auth] header`에는 `authorization` 자신을 포함해 어떤 헤더 이름이든 지정할 수 있으며, 그렇게 설정하면 클라이언트는 접두사 없는 `Authorization: <token>` 형태로 인증합니다. 따라서 이 슬롯은 `Bearer` 페이로드뿐 아니라 값 전체로도 검사되며, 그런 토큰은 업스트림으로 전달되지 않습니다. 이 설정에는 한 가지 유의점이 있습니다: 추론 요청에서 shunt는 라우팅 전에 설정된 헤더를 조건 없이 제거하므로, 그 슬롯은 업스트림으로 아무것도 싣지 않습니다 — 게이트 토큰뿐 아니라 호출자 자신의 크리덴셜도 함께 사라집니다. `header`를 기본값인 전용 `x-shunt-token`으로 두면 이 충돌을 피할 수 있습니다.
 
-프록시한 성공 응답과 최종 실패에는 모두 `x-gateway-upstream`(선택한 업스트림 이름), `x-gateway-model`(클라이언트가 요청한 id), `x-gateway-upstream-model`(매핑된 백엔드 id)이 포함됩니다. `count_tokens`는 체인의 첫 항목만 사용하며 페일오버하지 않습니다. `[server.codex_endpoint]`는 설정된 업스트림 하나에 고정되며 이 체인에 참여하지 않습니다.
+프록시한 성공 응답과 최종 실패에는 모두 `x-gateway-upstream`(선택한 업스트림 이름), `x-gateway-model`(클라이언트가 요청한 id), `x-gateway-upstream-model`(매핑된 백엔드 id)이 포함됩니다. `count_tokens`는 체인의 첫 항목만 사용하며 페일오버하지 않습니다. `[server.codex_endpoint]`는 `[[server.codex_endpoint.routes]]` 항목이 없는 모든 모델에 대해 설정된 업스트림 하나에 고정되며, 어느 쪽이든 이 체인에 참여하지 않습니다.
 
 ### 기존 설정 마이그레이션
 
@@ -358,7 +364,7 @@ Cursor 기록과 취소를 위한 설정 키는 추가되지 않습니다. 기�
 | `api_key_header` | `bearer`(기본) \| `x_api_key` | 주입된 키가 전송되는 헤더. |
 | `accounts` | 계정 테이블 배열 | Anthropic OAuth 계정 풀. `kind = "anthropic"`이고 `auth = "claude_oauth"`일 때만 유효; 아래 참고. |
 | `effort` | `low` … `max` | 선택적 기본 추론 노력(`responses` 프로바이더). `kind = "antigravity"`에도 적용되며, 접미사가 없는 `gemini-*` `upstream_model`에 카탈로그의 effort 접미사로 붙습니다. |
-| `count_tokens` | `tiktoken`(기본) \| `estimate` | `responses` 및 `cursor` provider: 로컬 tiktoken 카운트 대 `501 not_supported` fallback([상세](/ko/guides/effort-and-context/#token-counting-count_tokens)). |
+| `count_tokens` | `tiktoken`(기본) \| `estimate` | `responses` 및 `cursor` provider: 로컬 tiktoken 카운트 대 `501 not_supported` fallback([상세](/ko/guides/effort-and-context/#토큰-카운팅-count_tokens)). |
 | `tool_search` | 미설정("auto", 기본) \| `true` \| `false` | gpt-5.4+ 모델이면서 계열이 xAI/Grok이 아닐 때 Claude Code의 도구 검색에 네이티브 클라이언트 실행 `tool_search` 프로토콜을 사용합니다. 미설정 시에는 이미 검증된 호스트 — ChatGPT/Codex 백엔드와 `api.openai.com` — 에서만 기본으로 네이티브를 사용하고, LiteLLM·vLLM·OpenRouter·자체 호스팅 프록시 등 그 외 모든 OpenAI 호환 엔드포인트는 텍스트 shim을 유지합니다. 검증된 커스텀 엔드포인트를 네이티브에 옵트인하려면 `true`로, shim을 항상 강제하려면 `false`로 설정하세요. [Codex → 도구 검색](/ko/guides/codex/#네이티브-프로토콜)을 참고하세요. |
 
 이름만 있는 항목은 `shunt login claude --name <name> --mode <mode>`(`<mode>`는 `oauth`, `import`, `setup-token` 중 하나)로 만든 `~/.shunt/accounts/claude/<name>.json`을 읽습니다. 대화형 CLI는 이 세 mode를 묻고 갱신 가능한 OAuth를 권장합니다. `--long-lived`는 `--mode setup-token`의 deprecated alias입니다. `SHUNT_CLAUDE_ACCOUNTS_DIR`로 스토어 디렉터리를 재정의할 수 있습니다. `[[providers.<name>.accounts]]`에 명시적으로 나열된 계정 목록이 비어 있으면 스토어 디렉터리의 유효한 계정 파일을 모두 스캔합니다. 갱신 가능한 OAuth/import 파일은 provider가 refresh token을 회전할 때 제자리에서 갱신되므로 파일마다 활성 owner가 하나만 있어야 합니다. 실행 중인 여러 shunt 프로세스에서 파일을 공유하거나 독립적으로 복사하지 마세요. 프로세스마다 별도로 프로비저닝하거나, 적절한 경우 정적 setup token을 사용하세요.

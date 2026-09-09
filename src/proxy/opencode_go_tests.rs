@@ -627,6 +627,7 @@ async fn opencode_go_router_boundaries_native_inbound_exact_go_rejected() {
     config.server.codex_endpoint = Some(CodexEndpointConfig {
         provider: "codex".into(),
         collaboration: false,
+        routes: Vec::new(),
     });
     let (router, counters) = boundary_router(config, &fixture);
     let response = router
@@ -647,6 +648,68 @@ async fn opencode_go_router_boundaries_native_inbound_exact_go_rejected() {
     );
 }
 
+/// Endpoint-local routes cannot bypass either config validation or admission.
+#[tokio::test]
+async fn opencode_go_endpoint_route_rejected_before_credential_or_network() {
+    let fixture = start_fixture().await;
+    let mut config = boundary_config(&fixture, &[("generic", "gpt-boundary")]).await;
+    config.server.codex_endpoint = Some(CodexEndpointConfig {
+        provider: "codex".into(),
+        collaboration: false,
+        routes: vec![crate::config::CodexRouteConfig {
+            model: "explicit-go".into(),
+            provider: "go".into(),
+            upstream_model: Some("go-boundary".into()),
+        }],
+    });
+    assert!(matches!(
+        config.clone().validate(),
+        Err(crate::config::ConfigError::CodexRouteWrongKind { .. })
+    ));
+    let explicit = config
+        .server
+        .codex_endpoint
+        .as_mut()
+        .unwrap()
+        .routes
+        .pop()
+        .unwrap();
+    let counters = Arc::new(SeamCounters::default());
+    let (_, _, mut state) = build_router_with_test_dependencies(
+        config,
+        fixture_client(fixture.address),
+        Arc::new(CountingResolver {
+            counters: Arc::clone(&counters),
+        }),
+    )
+    .expect("valid native router");
+    // Exercise defense in depth if an internal caller bypasses validation.
+    let mut unchecked = (*state.config).clone();
+    unchecked
+        .server
+        .codex_endpoint
+        .as_mut()
+        .unwrap()
+        .routes
+        .push(explicit);
+    state.config = Arc::new(unchecked);
+    let error = codex_endpoint::forward_turn(
+        state,
+        Some("explicit-go".into()),
+        None,
+        Default::default(),
+        Bytes::from(json!({"model": "explicit-go", "input": "fixture"}).to_string()),
+        Instant::now(),
+        InboundOperation::Responses,
+    )
+    .await
+    .expect_err("Go endpoint routes must fail before dispatch");
+    assert_eq!(error.response.status(), StatusCode::BAD_REQUEST);
+    assert!(error.message.contains("not admitted"), "{}", error.message);
+    assert_zero_go(&counters, &fixture, "endpoint-local Go route");
+    assert_eq!(counters.generic_resolves.load(Ordering::SeqCst), 0);
+}
+
 /// Defense-in-depth at forward_turn: a pinned native Go route (the endpoint
 /// provider pinned at Go behind the already-built router state) is rejected by
 /// the shared admission gate before the resolver or client. Validated configs
@@ -661,6 +724,7 @@ async fn opencode_go_router_boundaries_native_pinned_go_rejected_before_seams() 
     config.server.codex_endpoint = Some(CodexEndpointConfig {
         provider: "codex".into(),
         collaboration: false,
+        routes: Vec::new(),
     });
     let (_, _, mut state) = build_router_with_test_dependencies(
         config,
@@ -676,6 +740,7 @@ async fn opencode_go_router_boundaries_native_pinned_go_rejected_before_seams() 
     pinned_config.server.codex_endpoint = Some(CodexEndpointConfig {
         provider: "go".into(),
         collaboration: false,
+        routes: Vec::new(),
     });
     state.config = Arc::new(pinned_config);
     let error = codex_endpoint::forward_turn(

@@ -508,33 +508,34 @@ fn passthrough_request(
         InboundOperation::Responses => responses_url(&state.config, &route.provider),
         InboundOperation::Compact => responses_compact_url(&state.config, &route.provider),
     };
-    let mut request = state
+    let request = state
         .http_client
         .post(url)
         .headers(passthrough_headers.clone());
+    apply_credential(request, credential).body(body.clone())
+}
+
+pub(super) fn apply_credential(
+    request: reqwest::RequestBuilder,
+    credential: Credential,
+) -> reqwest::RequestBuilder {
     match credential {
         Credential::ChatGptOAuth {
             access_token,
             account_id,
-        } => {
-            request = request
-                .bearer_auth(access_token)
-                .header("chatgpt-account-id", account_id);
-        }
+        } => request
+            .bearer_auth(access_token)
+            .header("chatgpt-account-id", account_id),
         // Native Responses routes may use API-key or xAI OAuth credentials; keep
         // credential injection provider-specific without adding a synthetic
         // client-identity header.
-        Credential::ApiKey { value, header } => {
-            request = match header {
-                ApiKeyHeader::Bearer => request.bearer_auth(value),
-                ApiKeyHeader::XApiKey => request.header("x-api-key", value),
-            };
-        }
+        Credential::ApiKey { value, header } => match header {
+            ApiKeyHeader::Bearer => request.bearer_auth(value),
+            ApiKeyHeader::XApiKey => request.header("x-api-key", value),
+        },
         Credential::XaiOauth { access_token }
         | Credential::ClaudeOauth { access_token, .. }
-        | Credential::GoogleOauth { access_token, .. } => {
-            request = request.bearer_auth(access_token);
-        }
+        | Credential::GoogleOauth { access_token, .. } => request.bearer_auth(access_token),
         // Send nothing rather than bearer an off-origin subscription token:
         // neither an Antigravity nor a Kimi credential can legitimately reach a
         // Responses upstream (validation pins them to `kind = "antigravity"`
@@ -544,13 +545,12 @@ fn passthrough_request(
         | Credential::CommandCodeOauth { .. }
         | Credential::KimiOauth { .. }
         | Credential::AntigravityOauth { .. }
-        | Credential::Passthrough => {}
+        | Credential::Passthrough => request,
     }
-    request.body(body.clone())
 }
 
-fn send_error(error: SendError<reqwest::Error>) -> AdapterError {
-    error.into_adapter_error(|error| own_error(error.to_string()))
+pub(super) fn send_error(error: SendError<reqwest::Error>) -> AdapterError {
+    error.into_adapter_error(|error| own_error(error.without_url().to_string()))
 }
 
 /// Relay an upstream Responses response to the inbound client **verbatim**:
@@ -563,7 +563,7 @@ fn send_error(error: SendError<reqwest::Error>) -> AdapterError {
 /// body bytes stream through unbuffered — no keepalive pings, no SSE parsing, no
 /// translation — so the Codex CLI consumes the same bytes the ChatGPT/Codex
 /// backend produced.
-fn relay_passthrough(upstream: reqwest::Response) -> axum::response::Response {
+pub(super) fn relay_passthrough(upstream: reqwest::Response) -> axum::response::Response {
     let status = upstream.status();
     let mut builder = Response::builder().status(status);
     for (name, value) in upstream.headers() {

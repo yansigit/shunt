@@ -1,9 +1,15 @@
-//! Dedicated inbound OpenAI Responses -> Anthropic Messages translation.
+//! Translation adapters for inbound OpenAI Responses requests.
 //!
-//! This direction intentionally does not reuse or mutate the mature
-//! Anthropic-client -> Responses translator. Native Responses routes never enter
-//! this module and therefore retain byte-for-byte passthrough behavior.
+//! `request`, `response`, and `collaboration` serve the strict local Anthropic
+//! bridge. The upstream `messages_*`, `chat_*`, `events`, and `reasoning`
+//! modules are translation core only; their endpoint dispatch remains deferred.
 
+pub mod chat_request;
+pub mod chat_stream;
 pub mod collaboration;
+pub mod events;
+pub mod messages_request;
+pub mod messages_stream;
+pub mod reasoning;
 pub mod request;
 pub mod response;

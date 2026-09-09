@@ -112,6 +112,9 @@ const TERMINAL_EVENTS: &[&str] = &[
     "error",
 ];
 
+/// The backend's in-stream rate-limit report. Unlike the handshake's `x-codex-*`
+/// headers it arrives on every turn, including turns on a reused connection.
+const RATE_LIMITS_EVENT: &str = "codex.rate_limits";
 /// Terminal events that leave the connection healthy enough to reuse.
 /// A failed/incomplete/error response may have left the socket in an undefined
 /// state, so those are not pooled.
@@ -415,14 +418,23 @@ impl serde::Serialize for ResponseCreateFrame<'_> {
     }
 }
 
-/// What to record as continuation state after a turn completes: the request's
-/// non-input signature and an optional shared translated request. The reader
-/// extracts its full logical `input` after the turn completes, then assembles
+/// Observer for the backend's in-stream `codex.rate_limits` event, called with
+/// the event's payload as it streams past. Shared because the reader task owns
+/// the plan for the turn's duration.
+pub type RateLimitTap = std::sync::Arc<dyn Fn(&Value) + Send + Sync>;
+
+/// What to record after a turn completes: the request's non-input signature, an
+/// optional shared translated request, and an optional observer for the
+/// backend's in-stream `codex.rate_limits` event. The reader extracts its full
+/// logical `input` after the turn completes, then assembles
 /// `input ++ output_items` for the next turn's prefix match. Sharing the [`Arc`]
-/// replaces the old per-turn deep clone of the input array.
+/// replaces the old per-turn deep clone of the input array. The rate-limit tap
+/// is what gives a *reused* connection a quota observation: only a fresh
+/// handshake carries the `x-codex-*` headers.
 pub struct RecordPlan {
     pub signature: String,
     pub request: Option<Arc<Value>>,
+    pub rate_limits: Option<RateLimitTap>,
 }
 
 impl RecordPlan {
@@ -431,6 +443,7 @@ impl RecordPlan {
         Self {
             signature: String::new(),
             request: None,
+            rate_limits: None,
         }
     }
 }
@@ -720,8 +733,10 @@ fn ws_config() -> WebSocketConfig {
 
 /// Perform the websocket handshake, mapping a refused upgrade to a status-bearing
 /// [`CodexWsError`] and capturing the successful response's headers. Reused or
-/// prewarmed connections do not perform another handshake, so consumers only get
-/// a fresh quota observation when a new connection is established.
+/// prewarmed connections do not perform another handshake, so the handshake's
+/// quota headers are only available when a new connection is established; the
+/// in-stream `codex.rate_limits` event ([`RecordPlan::rate_limits`]) supplies a
+/// per-turn observation on reused connections too.
 async fn connect(
     ws_url: &str,
     headers: HeaderMap,
@@ -992,6 +1007,15 @@ async fn run_turn(
                     return TurnEnd::Dead;
                 }
                 continuation.capture(&event);
+                // The backend reports rate limits as an in-stream event, which is
+                // the only quota signal a reused connection ever sees. Observe it
+                // here and still forward it: the event stays part of the turn's
+                // response stream rather than being consumed by the tap.
+                if event.event.as_deref() == Some(RATE_LIMITS_EVENT) {
+                    if let Some(tap) = &record.rate_limits {
+                        tap(&event.data);
+                    }
+                }
                 let name = event.event.as_deref().unwrap_or("");
                 let is_terminal = TERMINAL_EVENTS.contains(&name);
                 let completed = REUSABLE_TERMINALS.contains(&name);
@@ -1542,6 +1566,75 @@ mod tests {
         );
         let _ = release_sender.send(());
         server.await.unwrap();
+    }
+
+    /// In-stream rate limits are tapped once and still forwarded downstream.
+    #[tokio::test]
+    async fn rate_limits_event_taps_and_still_forwards() {
+        use tokio::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async_with_config(
+                socket,
+                Some(WebSocketConfig::default()),
+            )
+            .await
+            .unwrap();
+            let _ = ws.next().await;
+            for event in [
+                r#"{"type":"response.created","response":{"id":"resp_rl"}}"#,
+                r#"{"type":"codex.rate_limits","rate_limits":{"primary":{"used_percent":26.0}}}"#,
+                r#"{"type":"response.completed","response":{}}"#,
+            ] {
+                ws.send(Message::Text(event.to_string().into()))
+                    .await
+                    .unwrap();
+            }
+            ws.send(Message::Close(None)).await.unwrap();
+        });
+        let observed = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = Arc::clone(&observed);
+        let body = serde_json::json!({"model":"m","input":[]});
+        let frame = response_create_frame(&body);
+        let turn = begin(
+            &format!("ws://{addr}/codex/responses"),
+            HeaderMap::new(),
+            None,
+            "codex",
+        )
+        .await
+        .unwrap();
+        let mut events = turn
+            .stream(
+                &frame,
+                RecordPlan {
+                    signature: String::new(),
+                    request: None,
+                    rate_limits: Some(Arc::new(move |event: &Value| {
+                        sink.lock().unwrap().push(event.clone())
+                    })),
+                },
+            )
+            .await
+            .unwrap();
+        let mut names = Vec::new();
+        while let Some(item) = events.recv().await {
+            names.push(item.unwrap().event.unwrap_or_default());
+        }
+        server.await.unwrap();
+        let observed = observed.lock().unwrap();
+        assert_eq!(observed.len(), 1);
+        assert_eq!(observed[0]["rate_limits"]["primary"]["used_percent"], 26.0);
+        assert_eq!(
+            names,
+            vec![
+                "response.created",
+                "codex.rate_limits",
+                "response.completed"
+            ]
+        );
     }
 
     /// When the mock server also enables `permessage-deflate`, the production
@@ -2483,6 +2576,7 @@ mod tests {
                 RecordPlan {
                     signature: "sig-a".to_string(),
                     request: Some(Arc::new(serde_json::json!({"input": [user_hi.clone()]}))),
+                    rate_limits: None,
                 },
             )
             .await

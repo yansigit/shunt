@@ -2,11 +2,11 @@
 //!
 //! Lets the OpenAI Codex CLI point its `chatgpt_base_url` (or a custom
 //! `model_provider`) at shunt and be load-balanced across a ChatGPT/Codex OAuth
-//! account pool. Unlike the Anthropic Messages path (`/v1/messages`), this is a
-//! **raw passthrough**: the inbound Responses body is forwarded upstream
-//! unchanged and the upstream response is relayed verbatim — only the M10
-//! account-pool machinery (selection, failover, refresh) is reused. See
-//! `docs/m11-inbound-codex-endpoint.md`.
+//! account pool. Explicit endpoint-local native routes take precedence over
+//! legacy exact global mappings, then the pinned pool is the fallback. Native
+//! replies relay verbatim; explicit routes may rewrite the request model and
+//! use a third-party header allowlist. Legacy exact Anthropic mappings retain
+//! their strict translation/collaboration bridge. See `docs/m11-inbound-codex-endpoint.md`.
 
 use std::time::Instant;
 
@@ -27,6 +27,8 @@ use crate::{
 };
 
 pub mod frame;
+mod model;
+mod routing;
 pub mod websocket;
 
 /// Inbound Responses routes this handler serves, registered by
@@ -46,17 +48,6 @@ pub(crate) const PATHS: [&str; 3] = [
 /// Remote compaction is HTTP-only and therefore registered separately from
 /// [`PATHS`], whose entries also accept inbound WebSocket upgrades.
 pub(crate) const COMPACT_PATH: &str = "/v1/responses/compact";
-
-/// Minimal view of the inbound Responses body: the `model` is read only for
-/// metrics/logging labels — the body itself forwards upstream byte-for-byte, so
-/// a missing or malformed model never blocks the request (the upstream rejects it).
-/// `model` is deserialized as a [`ModelField`] rather than `Option<String>` so
-/// [`parse_model`] can tell "field absent" apart from "field present but not a
-/// string" instead of both silently becoming `None`.
-#[derive(Debug, Deserialize)]
-struct ModelView {
-    model: Option<ModelField>,
-}
 
 /// What the inbound body's `model` field turned out to be, classified *without*
 /// materializing it.
@@ -335,7 +326,7 @@ async fn forward(
     // Ordinary Responses treats the model as a best-effort routing label for
     // compatibility. Compact must fail before network dispatch unless a valid,
     // unique, non-empty model can be routed to a verified native endpoint.
-    let (label, model) = if operation == responses::inbound::InboundOperation::Compact {
+    let (label, model, decoded) = if operation == responses::inbound::InboundOperation::Compact {
         let model = compact_model(&headers, &body, max_request_bytes)
             .await
             .map_err(|message| ForwardError {
@@ -345,16 +336,29 @@ async fn forward(
                         .into_response(),
                 ),
             })?;
-        (model.clone(), Some(model))
+        (model.clone(), Some(model), None)
     } else {
-        let label = model_label(&headers, &body, max_request_bytes).await;
-        let model = (label != UNKNOWN_MODEL).then_some(label.clone());
-        (label, model)
+        // Keep an actual model named `unknown` distinct from an unreadable
+        // model: only the latter must never select an endpoint-local route.
+        let keep_decoded = !codex_endpoint.routes.is_empty();
+        let resolved = model::resolve_model(&headers, &body, max_request_bytes, keep_decoded).await;
+        let model = resolved.model;
+        let label = model.clone().unwrap_or_else(|| UNKNOWN_MODEL.to_string());
+        (label, model, resolved.decoded)
     };
     crate::observability::record_requested_model(&label);
     let pool_key = pool_sticky_key(inbound_client.as_deref(), session_id);
 
-    forward_turn(state, model, pool_key, headers, body, started_at, operation).await
+    forward_prepared_turn(
+        state,
+        PreparedTurn { model, decoded },
+        pool_key,
+        headers,
+        body,
+        started_at,
+        operation,
+    )
+    .await
 }
 
 pub(crate) fn extract_session_id(headers: &HeaderMap) -> Option<String> {
@@ -399,12 +403,70 @@ pub(crate) async fn forward_turn(
     state: AppState,
     model: Option<String>,
     pool_key: Option<String>,
+    headers: HeaderMap,
+    body: Bytes,
+    started_at: Instant,
+    operation: responses::inbound::InboundOperation,
+) -> Result<(StatusCode, axum::response::Response), ForwardError> {
+    forward_prepared_turn(
+        state,
+        PreparedTurn {
+            model,
+            decoded: None,
+        },
+        pool_key,
+        headers,
+        body,
+        started_at,
+        operation,
+    )
+    .await
+}
+
+struct PreparedTurn {
+    model: Option<String>,
+    decoded: Option<Bytes>,
+}
+
+async fn forward_prepared_turn(
+    state: AppState,
+    prepared: PreparedTurn,
+    pool_key: Option<String>,
     mut headers: HeaderMap,
     body: Bytes,
     started_at: Instant,
     operation: responses::inbound::InboundOperation,
 ) -> Result<(StatusCode, axum::response::Response), ForwardError> {
-    let decision = crate::routing::resolve_native_inbound(&state.config, model.as_deref());
+    let PreparedTurn { model, decoded } = prepared;
+    // Endpoint-local routes are opt-in, byte-exact overrides. If none matches,
+    // retain the fork's existing global-route and pinned-provider behavior.
+    let explicit = state
+        .config
+        .server
+        .codex_endpoint
+        .as_ref()
+        .and_then(|endpoint| model.as_deref().and_then(|model| endpoint.route_for(model)));
+    let endpoint_routed = explicit.is_some();
+    // No route can consume the reusable decode on the compatibility path.
+    let decoded = if endpoint_routed {
+        decoded
+    } else {
+        drop(decoded);
+        None
+    };
+    let decision = match explicit {
+        Some(configured) => {
+            crate::routing::NativeInboundDecision::Selected(crate::routing::Route {
+                provider: configured.provider.clone(),
+                adapter: crate::routing::AdapterKind::Responses,
+                model: model.clone().expect("matched route has a model"),
+                upstream_model: configured.upstream_model().to_string(),
+                effort: None,
+                service_tier: None,
+            })
+        }
+        None => crate::routing::resolve_native_inbound(&state.config, model.as_deref()),
+    };
     let route = match decision {
         crate::routing::NativeInboundDecision::Pinned(route)
         | crate::routing::NativeInboundDecision::Selected(route) => route,
@@ -458,7 +520,13 @@ pub(crate) async fn forward_turn(
 
     let result = match route.adapter {
         crate::routing::AdapterKind::Responses => {
-            responses::forward_codex_inbound(state, route, operation, pool_key, headers, body).await
+            if endpoint_routed {
+                forward_endpoint_route(state, route, operation, pool_key, headers, body, decoded)
+                    .await
+            } else {
+                responses::forward_codex_inbound(state, route, operation, pool_key, headers, body)
+                    .await
+            }
         }
         crate::routing::AdapterKind::Anthropic
             if operation == responses::inbound::InboundOperation::Responses =>
@@ -558,174 +626,64 @@ fn translation_adapter_error(message: String) -> AdapterError {
     }
 }
 
-/// The label used when the request's model cannot be read (see [`model_label`]).
-const UNKNOWN_MODEL: &str = "unknown";
-
-/// Read the `model` for metrics/logging labels only — the body itself forwards
-/// upstream byte-for-byte, so a body this cannot read never blocks the request
-/// (the upstream rejects it).
-///
-/// Current Codex releases zstd-compress the Responses request body whenever both
-/// of their gates pass, which includes the documented `chatgpt_base_url` client
-/// shape pointed at this endpoint (issue #285). The compressed bytes relay
-/// upstream fine — `content-encoding` is forwarded verbatim — but a plain
-/// `from_slice` on them fails, which would silently label every metric, log line,
-/// and span for the request `unknown`. So decode a zstd body for the label, and
-/// log (rather than swallow) anything that still leaves the model unreadable.
-///
-/// [`MAX_REQUEST_BODY_BYTES`] is passed as [`decode_zstd_and_parse`]'s `cap`, the
-/// same absolute limit this endpoint already applies to the arrival buffer — so
-/// the arrival buffer and the decoded copy can be transiently resident together,
-/// at worst two buffers each up to that cap (not one, as compressing surely
-/// shrinks the wire size). What actually bounds the *decode work itself* for a
-/// small, hostile body is `compression::MAX_DECODE_RATIO`, not this cap: it ties
-/// worst-case decoded size to a multiple of what the peer actually uploaded
-/// (issue #291). A small absolute cap here instead would be unsound for the
-/// opposite reason — `serde_json::from_slice` needs a *complete* document, so any
-/// truncation-style cap below a real turn's size would silently relabel every
-/// large legitimate turn `unknown`, regressing issue #285's fix. The ratio bound
-/// is what makes keeping the large absolute cap here safe.
-///
-/// The zstd branch fuses the decode with the `model` extraction inside one
-/// bounded blocking task via [`decode_zstd_and_parse`], rather than decoding to
-/// a [`Bytes`] here and parsing it afterward on the async executor: the decoded
-/// body can be as large as [`MAX_REQUEST_BODY_BYTES`] (a ~1 MiB compressed
-/// upload already buys a 64 MiB budget via the ratio bound), and a
-/// `serde_json::from_slice` over a document that size is itself worker-blocking
-/// work — a 400 KiB document alone is already milliseconds, far past Tokio's
-/// ~100 µs budget. Doing both inside the same blocking task means the admission
-/// permit covers the parse too, and only the extracted [`ParsedModel`] (never
-/// the decoded bytes) crosses back to the async side (issue #291 follow-up).
-/// The identity/`Other` branches below have the same worker-blocking parse
-/// property but predate this fix — see the comment at their call site for why
-/// they are deliberately left as-is.
-async fn model_label(headers: &HeaderMap, body: &Bytes, max_request_bytes: usize) -> String {
-    match crate::compression::body_encoding(headers) {
-        BodyEncoding::Zstd => {
-            match crate::compression::decode_zstd_and_parse(
-                body.clone(),
-                max_request_bytes,
-                |decoded| {
-                    let decoded_bytes = decoded.len();
-                    (parse_model(&decoded), decoded_bytes)
-                },
-            )
-            .await
-            {
-                Ok(Some((parsed, decoded_bytes))) => {
-                    label_from_parsed(parsed, decoded_bytes, body.len())
-                }
-                Ok(None) => {
-                    tracing::warn!(
-                        wire_bytes = body.len(),
-                        limit = max_request_bytes,
-                        "inbound codex body decodes past the request size limit or the \
-                         compressed-to-decoded ratio bound; model label unavailable"
-                    );
-                    UNKNOWN_MODEL.to_string()
-                }
-                Err(error) => {
-                    // `error` here is a libzstd-authored message (allocation/format
-                    // failure), not client-controlled content — unlike the parse
-                    // error handled in `label_from_parsed`, so logging it verbatim
-                    // does not risk echoing the request body.
-                    tracing::warn!(
-                        wire_bytes = body.len(),
-                        error = %error,
-                        "failed to decode zstd inbound codex body; model label unavailable"
-                    );
-                    UNKNOWN_MODEL.to_string()
-                }
-            }
-        }
-        // A coding shunt does not decode (anything other than zstd/identity) is
-        // not fatal to the label: fall through and attempt a best-effort plain
-        // parse below, same as `Identity`. Returning `unknown` unconditionally
-        // here would let a client suppress its own model label by sending a
-        // bogus `content-encoding` header on an otherwise-plain body.
-        BodyEncoding::Other => {
-            tracing::warn!(
-                content_encoding = ?headers.get(axum::http::header::CONTENT_ENCODING),
-                "inbound codex body uses an unsupported content-encoding; \
-                 attempting a best-effort plain-JSON parse for the model label"
-            );
-            // Pre-existing (predates issue #291's fix, which only fuses the new
-            // zstd decode with its parse — see the doc comment above): this parse
-            // still runs synchronously on the async executor. Left as-is
-            // deliberately so that asymmetry with the zstd branch above is legible
-            // rather than accidental.
-            label_from_parsed(parse_model(body), body.len(), body.len())
-        }
-        BodyEncoding::Identity => {
-            // Pre-existing (predates issue #291's fix, which only fuses the new
-            // zstd decode with its parse — see the doc comment above): this parse
-            // runs synchronously on the async executor rather than the blocking
-            // pool. Left as-is deliberately, out of scope for the zstd-only fix.
-            label_from_parsed(parse_model(body), body.len(), body.len())
-        }
+/// Keep the upstream's routed wire contract isolated from the legacy bridge.
+async fn forward_endpoint_route(
+    state: AppState,
+    route: crate::routing::Route,
+    operation: responses::inbound::InboundOperation,
+    pool_key: Option<String>,
+    mut headers: HeaderMap,
+    body: Bytes,
+    decoded: Option<Bytes>,
+) -> Result<(StatusCode, axum::response::Response), AdapterError> {
+    let pooled = state.config.is_chatgpt_backend(&route.provider);
+    let rewrite = (route.upstream_model != route.model).then_some(route.upstream_model.as_str());
+    if rewrite.is_some() {
+        headers.remove("x-codex-routing-hint");
+    }
+    let body = if pooled && rewrite.is_none() {
+        drop(decoded);
+        body
+    } else {
+        let prepared = routing::identity_body(
+            &headers,
+            &body,
+            decoded,
+            rewrite,
+            state.config.server.limits.max_request_bytes,
+        )
+        .await
+        .map_err(|error| match error {
+            routing::BodyError::TooLarge => AdapterError {
+                message: "request body exceeds the configured limit".into(),
+                response: Box::new(
+                    ShuntError::new(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        "invalid_request_error",
+                        "request body exceeds the configured limit",
+                    )
+                    .into_response(),
+                ),
+                failure: None,
+            },
+            routing::BodyError::Invalid => translation_adapter_error(
+                "routed request body could not be prepared as a JSON object".into(),
+            ),
+        })?;
+        headers.remove(axum::http::header::CONTENT_ENCODING);
+        headers.remove(axum::http::header::CONTENT_LENGTH);
+        prepared
+    };
+    if pooled || operation == responses::inbound::InboundOperation::Compact {
+        responses::forward_codex_inbound(state, route, operation, pool_key, headers, body).await
+    } else {
+        responses::forward_codex_routed(state, route, headers, body).await
     }
 }
 
-/// Turn a [`ParsedModel`] into the label string, logging *why* the label is
-/// `unknown` when it is. Shared by every [`model_label`] branch so the log
-/// shape is identical regardless of which path produced the [`ParsedModel`].
-///
-/// The `Malformed` arm deliberately logs only the error's classification
-/// (`line`/`column`/`classify()`), never `error.to_string()` /
-/// `error = %error`: `serde_json::Error`'s `Display` embeds the offending
-/// value it choked on (e.g. `invalid type: string "<entire body>", expected
-/// struct ModelView`), so logging it verbatim would echo the client-controlled
-/// request body — up to `MAX_REQUEST_BODY_BYTES` of it — into `warn!`, which
-/// becomes a Sentry breadcrumb (`observability`) and is exported by the OTel
-/// logs bridge (`telemetry`). Do not "helpfully" restore `error = %error` here.
-fn label_from_parsed(parsed: ParsedModel, decoded_bytes: usize, wire_bytes: usize) -> String {
-    match parsed {
-        ParsedModel::Model(model) => model,
-        ParsedModel::Malformed(error) => {
-            tracing::warn!(
-                decoded_bytes,
-                wire_bytes,
-                error_line = error.line(),
-                error_column = error.column(),
-                error_kind = ?error.classify(),
-                "inbound codex body is not valid JSON; labeling metrics and logs `unknown`"
-            );
-            UNKNOWN_MODEL.to_string()
-        }
-        ParsedModel::Missing => {
-            tracing::warn!(
-                decoded_bytes,
-                wire_bytes,
-                "inbound codex body has no `model` field; labeling metrics and logs `unknown`"
-            );
-            UNKNOWN_MODEL.to_string()
-        }
-        ParsedModel::NotAString(model_type) => {
-            tracing::warn!(
-                decoded_bytes,
-                wire_bytes,
-                model_type,
-                "inbound codex body's `model` field is not a string; labeling metrics and logs `unknown`"
-            );
-            UNKNOWN_MODEL.to_string()
-        }
-    }
-}
-
-/// The distinguishable outcomes of reading `model` out of a decoded body, so
-/// [`model_label`] can log *why* the label is unavailable instead of folding
-/// malformed JSON, a missing field, and a wrong-typed field into one silent
-/// `None` (as a bare `.ok().and_then(..)` chain over `Option<String>` would).
-enum ParsedModel {
-    Model(String),
-    /// The body is not valid JSON at all.
-    Malformed(serde_json::Error),
-    /// Valid JSON with no `model` field (or an explicit `null`).
-    Missing,
-    /// Valid JSON with a `model` field that is not a string. Carries only the
-    /// JSON type name, never the client-controlled value — see [`ModelField`].
-    NotAString(&'static str),
-}
+#[cfg(test)]
+use model::model_label;
+use model::UNKNOWN_MODEL;
 
 #[derive(Debug)]
 struct CompactModelView {
@@ -797,22 +755,11 @@ fn parse_compact_model(body: &[u8]) -> Result<String, String> {
         serde_json::from_slice(body).map_err(|_| "invalid compaction request body".to_string())?;
     match view.model {
         Some(ModelField::Str(model)) if !model.is_empty() => Ok(model),
+        Some(ModelField::Other(kind)) => {
+            tracing::debug!(model_type = kind, "compaction model is not a string");
+            Err("compaction request requires a non-empty string model".to_string())
+        }
         _ => Err("compaction request requires a non-empty string model".to_string()),
-    }
-}
-
-fn parse_model(body: &[u8]) -> ParsedModel {
-    match serde_json::from_slice::<ModelView>(body) {
-        Ok(ModelView {
-            model: Some(ModelField::Str(model)),
-        }) => ParsedModel::Model(model),
-        // `Option`'s deserializer maps an explicit `null` to `None` before
-        // `ModelFieldVisitor` runs, so absent and `null` arrive here alike.
-        Ok(ModelView { model: None }) => ParsedModel::Missing,
-        Ok(ModelView {
-            model: Some(ModelField::Other(model_type)),
-        }) => ParsedModel::NotAString(model_type),
-        Err(error) => ParsedModel::Malformed(error),
     }
 }
 
