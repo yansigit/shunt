@@ -4,9 +4,9 @@ milestone: v2
 milestone_name: Provider Compatibility
 current_phase: 16
 current_phase_name: Cross-Provider Release Gate
-current_plan: Not started
+current_plan: 16-01 executing; 16-03 complete
 status: executing
-stopped_at: Phase 16 independent GLM high re-review passed; all five plans ready to execute; live smoke 0/8
+stopped_at: Phase 16 wave 1 executing; documentation plan complete; release ledger in progress; live smoke 0/8
 last_updated: "2026-09-09T05:10:30.824Z"
 last_activity: 2026-09-08
 last_activity_desc: Phase 15 complete, transitioned to Phase 16
@@ -15,9 +15,9 @@ progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 48
-  completed_plans: 43
-  percent: 90
-total_plans_in_phase: 0
+  completed_plans: 44
+  percent: 92
+total_plans_in_phase: 5
 ---
 
 # Project State
@@ -31,11 +31,11 @@ See: `.planning/PROJECT.md` (updated 2026-09-08 after Phase 15)
 
 ## Current Position
 
-Phase: 16 (Cross-Provider Release Gate) — READY TO EXECUTE
-Current Plan: Not started
+Phase: 16 (Cross-Provider Release Gate) — EXECUTING
+Current Plan: 16-01 executing; 16-03 complete
 Total Plans in Phase: 5
-Status: Ready to execute
-Last activity: 2026-09-08 — Phase 15 complete, transitioned to Phase 16
+Status: Executing wave 1
+Last activity: 2026-09-09 — Plan 16-03 committed with 20 passing docs tests and built locale link checks; plan 16-01 in progress
 
 ## Performance Metrics
 
