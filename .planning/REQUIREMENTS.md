@@ -96,12 +96,12 @@ requirement maps to exactly one roadmap phase after roadmap creation.
 
 ### Verification, Provenance, and Documentation
 
-- [ ] **REL-01**: Every supported provider, authentication path, exact model, and wire tuple has sanitized hermetic fixtures covering normal, streaming, tool-heavy, terminal, malformed, truncation, authentication, and retry boundaries as applicable.
-- [ ] **REL-02**: Captured or translated fixtures record their source repository, pinned revision, capture date, and sanitization status without retaining secrets, account/project identifiers, or private user content.
-- [ ] **REL-03**: Any substantial implementation or fixture translated from OpenCodex retains the required MIT notice and provenance; independently implemented behavior records its evidence source.
-- [ ] **REL-04**: Live smoke tests are opt-in, bounded in time and cost, redact credential material, use isolated temporary state, and verify source credential files remain byte-for-byte unchanged; missing credentials produce a documented skip.
-- [ ] **REL-05**: Each observable provider/configuration change updates README, relevant engineering docs, and the English plus ko/ja/zh-cn site and root README surfaces in the same implementation phase; generated `wiki/` content is not hand-edited.
-- [ ] **REL-06**: Release verification passes formatting, Clippy with warnings denied, the full all-features workspace suite, documentation/site validation, and negative scope checks before merge.
+- [x] **REL-01**: Every supported provider, authentication path, exact model, and wire tuple has sanitized hermetic fixtures covering normal, streaming, tool-heavy, terminal, malformed, truncation, authentication, and retry boundaries as applicable.
+- [x] **REL-02**: Captured or translated fixtures record their source repository, pinned revision, capture date, and sanitization status without retaining secrets, account/project identifiers, or private user content.
+- [x] **REL-03**: Any substantial implementation or fixture translated from OpenCodex retains the required MIT notice and provenance; independently implemented behavior records its evidence source.
+- [x] **REL-04**: Live smoke tests are opt-in, bounded in time and cost, redact credential material, use isolated temporary state, and verify source credential files remain byte-for-byte unchanged; missing credentials produce a documented skip.
+- [x] **REL-05**: Each observable provider/configuration change updates README, relevant engineering docs, and the English plus ko/ja/zh-cn site and root README surfaces in the same implementation phase; generated `wiki/` content is not hand-edited.
+- [x] **REL-06**: Release verification passes formatting, Clippy with warnings denied, the full all-features workspace suite, documentation/site validation, and negative scope checks before merge.
 
 ## Out of Scope
 
@@ -183,12 +183,12 @@ Each committed requirement has exactly one owning phase.
 | SAFE-05 | Phase 9 | Complete |
 | SAFE-06 | Phase 9 | Complete |
 | SAFE-07 | Phase 9 | Complete |
-| REL-01 | Phase 16 | Pending |
-| REL-02 | Phase 16 | Pending |
-| REL-03 | Phase 16 | Pending |
-| REL-04 | Phase 16 | Pending |
-| REL-05 | Phase 16 | Pending |
-| REL-06 | Phase 16 | Pending |
+| REL-01 | Phase 16 | Complete |
+| REL-02 | Phase 16 | Complete |
+| REL-03 | Phase 16 | Complete |
+| REL-04 | Phase 16 | Complete |
+| REL-05 | Phase 16 | Complete |
+| REL-06 | Phase 16 | Complete |
 
 **Coverage:**
 

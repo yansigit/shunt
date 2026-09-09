@@ -1,15 +1,15 @@
 ---
 phase: 16-cross-provider-release-gate
 verified: 2026-09-09
-status: pending
-score: independent review pending
+status: passed
+score: 6/6 requirements verified
 ---
 
 # Phase 16 release verification
 
-Automated and owned-local visual gates passed. Independent provenance,
-security and code-review reconciliation is still pending; this is not phase
-completion or permission to merge.
+Automated and owned-local visual gates passed. Independent GLM/high provenance,
+security and code review passed; root resolved its parallel-record timing gaps.
+Phase 16 is verified. Milestone audit and shipping remain separate.
 
 ## Current gate transcript
 
@@ -44,12 +44,12 @@ See 16-FINAL-GATES.json for exact focused and final Rust command outputs.
 
 | Requirement | Source plans | Evidence | Status |
 |---|---|---|---|
-| REL-01 | 01,05 | Durable 45 exact documented model rows + six unbound contracts, nine scenario dispositions each; nonzero focused suites | Await independent mapping review |
-| REL-02 | 01,02,05 | Source repo/revision/date/sanitization fields, mutation tests, explicit capture/live none | Await independent provenance review |
-| REL-03 | 02,05 | Full OpenCodex and jcode MIT notices; independent original-source research; historical jcode copy revision explicitly unknown | Await final notice review |
+| REL-01 | 01,05 | Durable 45 exact documented model rows + six unbound contracts, nine scenario dispositions each; nonzero focused suites | Passed; independent reference and semantic spot review |
+| REL-02 | 01,02,05 | Source repo/revision/date/sanitization fields, mutation tests, explicit capture/live none | Passed independent review |
+| REL-03 | 02,05 | Full OpenCodex and jcode MIT notices; independent original-source research; historical jcode copy revision explicitly unknown | Passed independent review |
 | REL-04 | 04,05 | Complete bounded preflight dispositions; no credential contents read, refresh, retry or generation | Passed skip-capable contract, not live compatibility |
 | REL-05 | 03,05 | Four README/provider locale mirrors, configuration/navigation regression, site and Computer | Passed |
-| REL-06 | 02,05 | Separate fmt, Clippy, full suite, scope, security and code-review gates | Independent review pending |
+| REL-06 | 02,05 | Separate fmt, Clippy, full suite, scope, security and code-review gates | Passed; 16-INDEPENDENT-REVIEW.md records final reconciliation |
 
 ## Evidence limits and deviations
 

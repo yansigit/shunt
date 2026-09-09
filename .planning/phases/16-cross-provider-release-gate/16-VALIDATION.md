@@ -1,8 +1,8 @@
 ---
 phase: "16"
 slug: "cross-provider-release-gate"
-status: in_review
-nyquist_compliant: false
+status: validated
+nyquist_compliant: true
 wave_0_complete: true
 created: "2026-09-08"
 ---
@@ -72,8 +72,10 @@ Live smoke is opt-in and root-owned: at most eight total requests, no retries, 6
 - [x] No watch-mode verification or unbounded smoke requests.
 - [x] Actual feedback latency recorded.
 - [x] Final format, Clippy, full tests, site and scoped smoke results recorded.
-- [ ] nyquist_compliant set only after evidence review.
+- [x] nyquist_compliant set only after evidence review.
 
 Approval: bounded live-smoke scope approved by user; all generations explicitly
 skipped (0/8). Automated and Computer gates passed. Independent final review
-is pending; nyquist_compliant remains false until that reconciliation.
+passed for evidence/provenance/security; root reconciled final transcripts in
+16-VERIFICATION.md and 16-INDEPENDENT-REVIEW.md. Sampling deviation remains
+explicit above; no missing historical execution is claimed.

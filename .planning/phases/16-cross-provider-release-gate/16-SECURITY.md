@@ -1,6 +1,6 @@
 ---
 phase: "16"
-status: review-ready
+status: passed
 asvs_level: 1
 blocking_threshold: high
 created: "2026-09-09"
@@ -45,4 +45,10 @@ The wrapper's live-home access is limited to the user-required raw config finger
 - REL-02/unclassified: final independent review must reconcile every source/revision/date/sanitization mapping, including shared-adapter evidence scope. A passing schema validator alone cannot resolve it.
 - REL-03/unclassified: final independent review must confirm the completed notice scope. Original-source research is available in `16-PROVENANCE-AUDIT.md`; the historical jcode copy revision remains unknown and is not invented.
 
-No security risk waiver is used to turn an unknown result into a pass. Final release sign-off, complete milestone scope scans, and final automated gates remain pending.
+No security risk waiver is used to turn an unknown result into a pass.
+Final resolution: independent GLM/high review explicitly passed REL-02/03,
+including mappings, notices, unknown historical revision and source-only scope.
+Both flagged assumptions above are now reviewed, not silently discarded.
+16-INDEPENDENT-REVIEW.md retains the result and root's artifact reconciliation;
+16-FINAL-GATES.json records all passing final Rust gates. No high-severity
+finding remains. Milestone audit is separate.
