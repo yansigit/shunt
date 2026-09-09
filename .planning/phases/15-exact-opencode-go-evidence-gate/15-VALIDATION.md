@@ -1,9 +1,9 @@
 ---
 phase: "15"
 slug: "exact-opencode-go-evidence-gate"
-status: executed
-nyquist_compliant: false
-wave_0_complete: false
+status: validated
+nyquist_compliant: true
+wave_0_complete: true
 created: "2026-09-08"
 ---
 
@@ -98,6 +98,33 @@ see 15-RUNTIME-REVIEW.md. Pre-credential counters and error outcomes discriminat
 admission bypasses; DNS pinning contains attempted egress. The dedicated CLI
 smoke additionally observes no connection to its loopback proxy sentinel.
 
-**Approval:** owned executable checks passed. Nyquist and whole-phase verification
-remain separate workflow gates. OGO-02 remains a flagged manual assumption with
-zero admitted tuples; no live/captured support or Computer acceptance is claimed.
+## Validation Audit 2026-09-08
+
+Infrastructure: Rust libtest via Cargo; no added test framework. All nine task
+rows across six plans have executable verification and observed nonzero passing
+selection. Requirements map:
+
+| Requirement | Direct evidence | Current scope |
+|---|---|---|
+| OGO-01 | `opencode_go_ledger`, mutation validator | Four source-only records with explicit unknowns, canonical target and pinned provenance |
+| OGO-02 | Config/admission/router tests, ledger admitted-empty assertion, docs tests | No tuple supported without evidence; empty set is valid |
+| OGO-03 | Pre-credential router rejection, docs conditional session assertions | No current Go dispatch/session producer; future admission contract documented |
+| OGO-04 | Router rejection/fallback filtering and real CLI negative | No permissive Go wire/EOF/retry bypass can be selected |
+| REL-05 (phase contribution) | 19 per-file/scope tests, site build and 12 built-page checks | English plus ko/ja/zh-cn README/provider/config/guides and navigation; milestone-wide audit remains Phase 16 |
+
+| Metric | Count |
+|---|---|
+| Current-scope missing or failing coverage | 0 |
+| New tests required by this audit | 0 |
+| Escalated implementation gaps | 0 |
+
+### Manual-only evidence boundary
+
+OGO-02's unclassified edge remains explicitly flagged: the assumption that a
+future exact tuple will satisfy safe captured/live evidence is unresolved.
+It does not authorize promotion and is not marked as executed. The current
+empty-admission contract has automated coverage; future promotion requires a
+new evidence review. No live/captured support or Computer acceptance is claimed.
+
+**Approval:** Nyquist-compliant for the approved empty-admission scope.
+Whole-phase verification remains separate. No tests were removed or weakened.
