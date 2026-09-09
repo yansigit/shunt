@@ -14,7 +14,7 @@ tech-stack:
   patterns: [explicit-provider-kind identity, empty evidence allowlist, pre-credential filtering]
 key-files:
   created: [src/proxy/opencode_go_tests.rs]
-  modified: [src/config.rs, src/config/presets.rs, src/routing.rs, src/proxy/capability.rs, src/proxy/failover.rs, src/codex_endpoint.rs, src/proxy.rs]
+  modified: [src/config.rs, src/config/presets.rs, src/routing.rs, src/proxy/capability.rs, src/proxy/failover.rs, src/codex_endpoint.rs, src/proxy.rs, src/server.rs]
 key-decisions:
   - "OpenCode Go remains unsupported until an exact evidence tuple is admitted; the shipped allowlist is empty."
   - "ProviderKind::OpenCodeGo maps to the existing OpenAI Chat adapter without adding a dormant adapter or session producer."
@@ -23,31 +23,35 @@ key-decisions:
 
 ## Tasks
 
-- Task 1 RED: added `opencode_go_config_acceptance`; pre-implementation run failed behaviorally with `UnknownProviderPreset` (1 selected test, 1 failed).
+- Task 1 RED: added `opencode_go_config_acceptance`; pre-implementation run failed behaviorally with `UnknownProviderPreset` (1 selected, 1 failed).
 - Task 2 GREEN: added the enum variant, canonical `opencode-go` preset, identity validation, adapter mapping, and shared empty admission gate. Focused acceptance tests passed (2 selected, 2 passed).
-- Task 3: added crate-local router-boundary counter assertions for Go primary rejection and Go fallback removal while preserving a generic primary (1 selected, 1 passed).
+- Task 3 (corrected): the original Task 3 test was vacuous — atomic seam counters were created, read, and never connected to a resolver, client, router, or HTTP request — and it has been replaced. `src/server.rs` now exposes a `#[cfg(test)] build_router_with_test_dependencies` wrapper taking a `reqwest::Client` and `Arc<dyn CredentialResolver>`, and `src/proxy/opencode_go_tests.rs` drives a real axum router over a loopback fixture through it: a DNS-pinned client routes canonical Go egress into the fixture, injected counting resolver/client seam implementations separate Go from generic traffic, and each boundary test issues real POSTs. Coverage: Go-primary rejection before any Go seam; Go fallback removal on a `[generic_dead, go]` chain after a genuine dead-leg connect failure, with an e2e 200 positive control on the generic control model proving real traffic; count_tokens Go rejection with an honest 501 generic estimate control (OpenAiChat count_tokens is forced to estimation by design, so the previous 200 expectation was wrong); exact native Go inbound rejection (independent `resolve_native_inbound` layer); pinned/unknown native Go rejection before seams; plus canonical config/auth/env negative TOML fixtures and the empty-admission/preserved-generic-fallback gate test. The ordered-preset fixture builds a real `Config::upstreams` declaration order (generic_dead before go) so the model chain is representative.
 
 ## Verification
 
 - `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib opencode_go_config_acceptance -- --test-threads=1` — passed (1/1).
-- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib opencode_go_ -- --test-threads=1` — passed (2/2).
-- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib opencode_go_router_boundaries -- --test-threads=1` — passed (1/1).
-- `node /tmp/shunt-phase12-isolated-run.cjs cargo fmt --all` — passed.
-- Wrapper reported production OpenCodex config mtime/SHA and backup inventory unchanged after each stateful command.
+- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib opencode_go_ -- --test-threads=1` — 8 passed, 0 failed (5 real boundary tests + 3 config/gate tests).
+- Mutation proof (gate removal): temporarily short-circuited `enforce_opencode_go_admission` behind `SHUNT_MUTATION_PROOF` in `src/proxy/capability.rs`, then `SHUNT_MUTATION_PROOF=1 node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib opencode_go_router_boundaries -- --test-threads=1` — 1 passed, 4 FAILED: the fallback-drop test returned 401 (Go leg genuinely dispatched to the fixture) instead of 502 with zero Go seams; go-primary returned 401 instead of 400 "not admitted"; count_tokens returned 501 instead of 400; pinned-native became unreachable at `codex_endpoint.rs:522`. The short-circuit was then removed and the suite returned to 8/8 green — removing the gate makes the real boundary tests fail, so they are not vacuous counters. (The exact-Go native test still passes under the mutation by design: it exercises the independent `resolve_native_inbound` layer, not the admission gate.)
+- `node /tmp/shunt-phase12-isolated-run.cjs cargo clippy --all-targets --all-features -- -D warnings` — clean.
+- `node /tmp/shunt-phase12-isolated-run.cjs cargo fmt --all --check` — clean.
+- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --workspace` — exit 0, 0 failed (one `antigravity_process::streaming_turn_translates_stub_events_to_sse` load flake in a first run; it passed in isolation in 0.19s and the full suite passed on re-run).
+- Wrapper reported production OpenCodex config mtime/SHA and backup inventory unchanged after every stateful command.
 
 ## Commits
 
 - `58b8b54` — `test(15-01): add failing OpenCode Go config acceptance`
 - `b4a3f62` — `feat(15-01): add empty OpenCode Go admission gate`
 - `39312fd` — `test(15-01): prove OpenCode Go router admission boundaries`
+- `08c4af6` — `fix(15-01): replace vacuous Go boundary counters with real router evidence`
 
 ## Deviations and remaining limits
 
-- The crate-local boundary harness uses injected atomic seam counters and the shared gate; it does not claim live provider, credential, socket, or Computer verification.
+- The crate-local boundary harness uses injected resolver/client seams and the shared gate; it does not claim live provider, credential, socket, or Computer verification.
 - No public docs, credential writeback, session header, EOF recovery, dynamic catalog, or admitted Go tuple was added.
+- Corrected after root review: the original Task 3 summary over-claimed. The replaced harness uses a real router, real POSTs, a DNS-pinned loopback client, and injected resolver/client seams (synthetic credentials only); generic count_tokens control is an honest 501 estimate rather than 200, because OpenAiChat count_tokens is estimation-only by design. No dormant session producer, new wire format, or credential writeback was introduced.
 
 ## Self-Check: PASSED
 
 - All plan-created files exist.
 - Plan commits are present in git history.
-- Focused acceptance and boundary tests pass with nonzero selected counts.
+- Focused acceptance and boundary tests pass with nonzero selected counts, and the boundary suite fails under gate mutation (evidence of real coverage).
