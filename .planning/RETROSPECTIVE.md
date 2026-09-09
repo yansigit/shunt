@@ -58,6 +58,46 @@
 
 ## Cross-Milestone Trends
 
+## Milestone: v2 — Provider Compatibility
+
+**Completed locally:** 2026-09-09 | **Phases:** 8 | **Plans:** 48
+
+### What Was Built
+
+Strict shared preservation boundaries; Gemini/Antigravity and Cursor hardening;
+generic Chat; separate Command Code products; deny-by-default Go evaluation;
+durable evidence/notices and four-locale release documentation.
+
+### What Worked
+
+Synthetic real-router fixtures, mutation checks and bounded cancellation probes
+exposed defects without live credentials. Independent high-effort review caught
+notice gaps. Production fingerprint isolation remained intact throughout.
+
+### What Was Inefficient
+
+Intermittent delegation controls, inconsistent historical metadata, and repeated
+final artifact reconciliation consumed time. Source/schema evidence cannot
+substitute for current live availability; preflight correctly skipped unknown
+cost/output/refresh bounds. Full regression per intermediate wave was not run;
+focused task feedback and final full gates were used and explicitly recorded.
+
+### Patterns Established and Lessons
+
+- Store permanent regression inputs outside active planning before archiving.
+- Keep source, capture, live, static and Computer evidence distinct.
+- Always set subagent thinking effort explicitly; do not wait on completed agents.
+- Preserve correct assertions when correcting documentation or fixture paths.
+
+### Cost Observations
+
+No Shunt live generation: 0/8 approved attempts, US$0 planned. Development-agent
+cost and model percentages were not measured and are not invented.
+
+---
+
+## Cross-Milestone Trends (continued)
+
 ### Process Evolution
 
 | Milestone | Sessions | Phases | Key Change |

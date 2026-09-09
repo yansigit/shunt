@@ -1,5 +1,41 @@
 # Milestones
 
+## v2 Provider Compatibility (Completed: 2026-09-09)
+
+**Delivered:** Bounded provider compatibility, strict translation and evidence
+gates; locally complete and verified, not remotely published or deployed.
+
+**Phases completed:** 9–16; 8 phases, 48 plans, 110 plan task elements.
+The archive helper's 37-task statistic recognized only some summary schemas;
+110 is counted from the actual plan task elements.
+
+**Key accomplishments:**
+
+- Preserved Codex/native and Vercel behavior with tested replay and cleanup boundaries.
+- Hardened Gemini/Antigravity identity, tool history, terminals and account-bound replay.
+- Hardened Cursor with request-local history/KV, strict Connect parsing and cancellation.
+- Added generic Chat and isolated Command Code API/subscription contracts.
+- Kept Go admission empty under exact-model evidence gates.
+- Completed durable provenance/MIT notices, four-locale docs, Computer and release verification.
+
+**Verification:** 63/63 requirements, 8/8 phases, 7/7 integration flows;
+2,979 tests passed, zero failed, two existing ignored. Format, warnings-denied
+Clippy, 173-page site, 260 local fragment links, five-check owned smoke and
+scoped Computer review passed. Live smoke: 0/8, US$0 planned, explicit skips.
+Known verification overrides: 0. Minor advisories remain in the audit.
+
+**Stats:** 394 files changed, +56,549 / −2,085 lines across the implementation
+and planning range e029ae2..0414881; 2026-09-06 → 2026-09-09.
+These are mixed code/docs/planning diff counts, not pure runtime LOC.
+
+**Archive:** [roadmap](milestones/v2-ROADMAP.md),
+[requirements](milestones/v2-REQUIREMENTS.md),
+[audit](milestones/v2-MILESTONE-AUDIT.md).
+
+**Next:** No new milestone scoped. No merge, push or deployment performed.
+
+---
+
 ## v1 OpenCodex Port (Shipped: 2026-09-06)
 
 **Delivered:** OpenCodex-proven Responses behavior and tests adapted into a

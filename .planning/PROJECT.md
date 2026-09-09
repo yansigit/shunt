@@ -16,7 +16,13 @@ translation, capability-aware fallback, opt-in collaboration preservation, and
 finite process shutdown. All 20 v1 requirements and the repository-wide quality
 gate passed.
 
-## Current Milestone: v2 Provider Compatibility
+v2 Provider Compatibility completed locally on 2026-09-09: 63 requirements,
+eight phases and 48 plans verified and archived. Final tests: 2,979 passed,
+zero failed, two existing ignored; format, Clippy, site, owned smoke and
+scoped Computer review passed. Live calls were explicitly skipped and Go
+admits zero tuples. No publication or deployment has occurred.
+
+## Completed Milestone: v2 Provider Compatibility
 
 **Goal:** Make Shunt's useful OpenCodex-backed providers protocol-faithful and
 streaming-safe while adding the missing transport families without importing
@@ -75,7 +81,7 @@ evidence-boundary review passed; future admission still needs captured/live evid
 
 ### Active
 
-- [ ] Complete v2 milestone audit and archival; no merge/publication authorized.
+None. No next milestone is scoped; publication remains a separate decision.
 
 ### Out of Scope
 
@@ -169,4 +175,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Revisit deferred work only with evidence from usage or failing transcripts.
 
 ---
-*Last updated: 2026-09-09 after Phase 16*
+*Last updated: 2026-09-09 after v2 milestone completion*
