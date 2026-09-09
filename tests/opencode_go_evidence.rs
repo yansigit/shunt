@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 use std::fs;
-const PHASE: &str = ".planning/phases/15-exact-opencode-go-evidence-gate";
+// Durable snapshots: milestone archiving must not remove test inputs.
+const FIXTURES: &str = "tests/fixtures/opencode-go";
 const IDS: [&str; 4] = [
     "glm-5.3-flash",
     "omen-alpha",
@@ -71,7 +72,7 @@ fn validate(v: &Value) -> Result<(), String> {
 }
 
 fn ledger() -> Value {
-    let path = format!("{}/{PHASE}/15-EVIDENCE.md", env!("CARGO_MANIFEST_DIR"));
+    let path = format!("{}/{FIXTURES}/ledger.md", env!("CARGO_MANIFEST_DIR"));
     assert!(
         std::path::Path::new(&path).is_file(),
         "required four-candidate evidence ledger has not been authored"
@@ -88,7 +89,7 @@ fn ledger() -> Value {
 fn opencode_go_ledger() {
     validate(&ledger()).expect("complete source-only ledger");
     let path = format!(
-        "{}/{PHASE}/15-EDGE-COVERAGE.json",
+        "{}/{FIXTURES}/edge-coverage.json",
         env!("CARGO_MANIFEST_DIR")
     );
     let edges: Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
