@@ -244,7 +244,7 @@ Plans:
 
 - [x] 15-01-PLAN.md
 - [x] 15-02-PLAN.md
-- [ ] 15-03-PLAN.md
+- [x] 15-03-PLAN.md
 - [ ] 15-04-PLAN.md
 - [ ] 15-05-PLAN.md
 - [ ] 15-06-PLAN.md
@@ -277,7 +277,7 @@ Plans:
 | 12. Cursor Evidence-Backed Hardening | v2 | 8/8 | Complete    | 2026-09-07 |
 | 13. Generic OpenAI Chat Completions | v2 | 5/5 | Complete    | 2026-09-08 |
 | 14. Command Code Product Separation | v2 | 6/6 | Complete    | 2026-09-08 |
-| 15. Exact OpenCode Go Evidence Gate | v2 | 2/6 | In Progress|  |
+| 15. Exact OpenCode Go Evidence Gate | v2 | 3/6 | In Progress|  |
 | 16. Cross-Provider Release Gate | v2 | 0/TBD | Not started | - |
 
 ## Scope Boundaries
