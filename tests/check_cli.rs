@@ -195,3 +195,126 @@ fn check_accepts_routing_to_the_antigravity_cli_transport_without_a_credential()
     );
     assert!(stdout(&output).contains("config ok"), "{}", stdout(&output));
 }
+
+/// A real process-level rejection smoke, not evidence of live Go support.
+/// Crate-local router tests separately prove zero credential seam calls.
+#[tokio::test]
+async fn opencode_go_cli_negative() {
+    use std::{net::TcpListener, process::Stdio, time::Duration};
+
+    struct Gateway(std::process::Child);
+    impl Drop for Gateway {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    let dir = TempDir::new("opencode-go-negative");
+    let home = dir.0.clone();
+    let listener = TcpListener::bind("127.0.0.1:0").expect("reserve gateway address");
+    let address = listener.local_addr().unwrap();
+    assert_ne!(address.port(), 10100);
+    // Keep the proxy port reserved but never forward anything. The Chat client
+    // honors these proxy variables, containing an accidental dispatch to loopback.
+    let proxy = TcpListener::bind("127.0.0.1:0").expect("reserve outbound sentinel");
+    proxy.set_nonblocking(true).unwrap();
+    let proxy_url = format!("http://{}", proxy.local_addr().unwrap());
+    let config = dir.config(&format!(
+        r#"[server]
+bind = "{address}"
+default_provider = "go"
+
+[[upstreams]]
+name = "go"
+provider = "opencode-go"
+base_url = "https://opencode.ai/zen/go/v1"
+
+[[routes]]
+model = "go-smoke"
+provider = "go"
+upstream_model = "glm-5.3-flash"
+"#
+    ));
+    drop(listener);
+    let mut gateway = Gateway(
+        Command::new(env!("CARGO_BIN_EXE_shunt"))
+            .args(["run", "--config"])
+            .arg(&config)
+            .current_dir(&dir.0)
+            .env_clear()
+            .env("OPENCODEX_HOME", &dir.0)
+            .env("OPENCODEX_PORT", address.port().to_string())
+            .env("SHUNT_OPENCODE_GO_API_KEY", "synthetic-go-smoke-key")
+            .env("HTTP_PROXY", &proxy_url)
+            .env("HTTPS_PROXY", &proxy_url)
+            .env("ALL_PROXY", &proxy_url)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("start owned gateway"),
+    );
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .unwrap();
+    let base = format!("http://{address}");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        assert!(
+            gateway.0.try_wait().unwrap().is_none(),
+            "gateway exited before readiness"
+        );
+        if client
+            .head(&base)
+            .send()
+            .await
+            .is_ok_and(|r| r.status().is_success())
+        {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "gateway readiness timed out"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    // Unary and streaming clients must both hit admission, not a startup error.
+    for stream in [false, true] {
+        let response = client
+            .post(format!("{base}/v1/messages"))
+            .json(&serde_json::json!({
+                "model": "go-smoke", "max_tokens": 8, "stream": stream,
+                "messages": [{"role": "user", "content": "synthetic smoke"}]
+            }))
+            .send()
+            .await
+            .expect("actual routed request");
+        assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+        let body: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(body["type"], "error");
+        assert_eq!(body["error"]["type"], "invalid_request_error");
+        assert_eq!(
+            body["error"]["message"],
+            "OpenCode Go selection is not admitted by exact evidence"
+        );
+    }
+    assert!(
+        matches!(proxy.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock),
+        "unexpected outbound proxy connection"
+    );
+    drop(gateway);
+    let files: Vec<_> = std::fs::read_dir(&home)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(
+        files,
+        [std::ffi::OsString::from("shunt.toml")],
+        "unexpected persisted state"
+    );
+    drop(dir);
+    assert!(!home.exists(), "temporary home must be removed");
+}
