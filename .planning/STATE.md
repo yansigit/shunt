@@ -4,20 +4,20 @@ milestone: v2
 milestone_name: Provider Compatibility
 current_phase: 15
 current_phase_name: Exact OpenCode Go Evidence Gate
-current_plan: 1
+current_plan: 3
 status: executing
-stopped_at: Phase 15 revision 3 reviewed; revision cap reached; user approach decision required
+stopped_at: Phase 15 plans 01 and 02 complete; English documentation execution underway
 last_updated: "2026-09-09T01:27:54.330Z"
 last_activity: 2026-09-08
-last_activity_desc: Phase 15 execution started
-state_head: 31ae37ba20f43ceec4e70704e47202e6798cb19b
+last_activity_desc: Approved root corrections independently passed; runtime and ledger verified
+state_head: 7e518bf
 progress:
   total_phases: 8
-  completed_phases: 7
+  completed_phases: 6
   total_plans: 43
-  completed_plans: 37
-  percent: 86
-total_plans_in_phase: 0
+  completed_plans: 39
+  percent: 75
+total_plans_in_phase: 6
 ---
 
 # Project State
@@ -32,10 +32,10 @@ See: `.planning/PROJECT.md` (updated 2026-09-08 after Phase 14)
 ## Current Position
 
 Phase: 15 (Exact OpenCode Go Evidence Gate) — EXECUTING
-Current Plan: 1
+Current Plan: 3
 Total Plans in Phase: 6
 Status: Executing Phase 15
-Last activity: 2026-09-08 — Phase 15 execution started
+Last activity: 2026-09-08 — Phase 15 plans 01/02 complete; plan 03 executing
 
 ## Performance Metrics
 
@@ -182,14 +182,16 @@ smoke occurred; isolation wrapper verified production fingerprints unchanged.
 
 ## Operator Next Steps
 
-- Latest checkpoint: Phase 15 revision 3/3 contains six draft plans. Root inline
-  semantic review found three blockers and four warnings; see the final section
-  of 15-PLAN-REVIEW.md. No independent subagent verdict is claimed for revision 3.
-  The GSD revision cap requires a user decision before further correction or
-  execution. Recommended approach: root-led targeted corrections followed by
-  fresh checking, retaining canonical-destination, isolation, and verification
-  gates. Phase 15 implementation, Phase 16 acceptance, and milestone closure are
-  not complete. No runtime code, build, tests, or live smoke ran at this checkpoint.
+- Latest checkpoint supersedes the historical blocked planning notes above:
+  the user approved root-led corrections, fresh Luna/high checking passed, and
+  Phase 15 plans 01/02 are complete (2/6). Real-router admission tests passed
+  8/8, including counter/mutation proof; the evidence ledger passed 2/2 and
+  admits zero tuples. Formatting and warnings-denied Clippy passed with the
+  production fingerprint inventory unchanged. Luna/high is executing English
+  documentation plan 03; GLM/high is independently reviewing the runtime.
+  Remaining work: locale plan 05, guides plan 06, CLI/release plan 04, phase
+  verification, Phase 16 acceptance, and milestone closure. No live or GUI
+  verification is claimed. Preserve the OGO-02 manual evidence assumption.
 
 - The user-approved installed GSD gate validator repair is complete and backed up at `/Users/user/gsd-gate-backup-mEVeg3`. Dotted query names validate; gate checks were rerun without disabling them. See 13-01-SUMMARY.md.
 - Phase 13 is complete: 5/5 plans, 2,875 passed, 0 failed, 2 existing ignored; CLI/curl Chat smoke and all documentation locales pass. Validation has no gaps; all 19 authored security threats have mitigations. Computer visual checks remain skipped/blocked, never passed.
