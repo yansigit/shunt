@@ -249,11 +249,24 @@ pub(crate) fn build_router_with_test_client(
     config: Config,
     client: reqwest::Client,
 ) -> Result<(Router, SharedState, AppState), ConfigError> {
-    build_router_with_dependencies(
+    build_router_with_test_dependencies(
         config,
         client,
         Arc::new(DefaultCredentialResolver::default()),
     )
+}
+
+/// Crate-private test seam: build the real router with an injected HTTP client
+/// and credential resolver, so boundary tests can prove a request path never
+/// reaches a credential lookup or an upstream socket. Exposes no production
+/// API; integration binaries must never name it.
+#[cfg(test)]
+pub(crate) fn build_router_with_test_dependencies(
+    config: Config,
+    http_client: reqwest::Client,
+    credential_resolver: Arc<dyn CredentialResolver>,
+) -> Result<(Router, SharedState, AppState), ConfigError> {
+    build_router_with_dependencies(config, http_client, credential_resolver)
 }
 
 fn build_router_with_dependencies(

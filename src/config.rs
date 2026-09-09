@@ -2394,7 +2394,7 @@ pub enum ConfigError {
 }
 
 impl ProviderConfig {
-    fn anthropic(base_url: &str) -> Self {
+    pub(crate) fn anthropic(base_url: &str) -> Self {
         Self {
             kind: ProviderKind::Anthropic,
             base_url: base_url.to_string(),
