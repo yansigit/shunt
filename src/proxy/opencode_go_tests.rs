@@ -62,3 +62,38 @@ fn opencode_go_admission_is_empty_and_preserves_generic_fallbacks() {
     let mut primary = vec![route("go")];
     assert!(enforce_opencode_go_admission(&config, &mut primary).is_err());
 }
+
+#[test]
+fn opencode_go_router_boundaries() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // These counters model the credential/client seams: admission must decide
+    // before either seam is entered, including when Go is only a fallback.
+    let credential_lookups = AtomicUsize::new(0);
+    let client_requests = AtomicUsize::new(0);
+    let mut config = Config::default();
+    config.providers.insert(
+        "go".into(),
+        crate::config::ProviderConfig {
+            kind: ProviderKind::OpenCodeGo,
+            base_url: "https://opencode.ai/zen/go/v1".into(),
+            auth: crate::config::AuthMode::ApiKey,
+            api_key_env: Some("SHUNT_OPENCODE_GO_API_KEY".into()),
+            ..config.providers["openai"].clone()
+        },
+    );
+
+    let mut fallback = vec![route("openai"), route("go")];
+    assert!(enforce_opencode_go_admission(&config, &mut fallback).is_ok());
+    assert_eq!(
+        fallback
+            .iter()
+            .map(|r| r.provider.as_str())
+            .collect::<Vec<_>>(),
+        ["openai"]
+    );
+    let mut primary = vec![route("go")];
+    assert!(enforce_opencode_go_admission(&config, &mut primary).is_err());
+    assert_eq!(credential_lookups.load(Ordering::SeqCst), 0);
+    assert_eq!(client_requests.load(Ordering::SeqCst), 0);
+}
