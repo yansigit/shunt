@@ -11,6 +11,7 @@ provides:
   - Release metadata and canonical credential-boundary regression tests
 affects: [16-04, 16-05]
 actuals:
+  tokens: 4244
   tasks: 2
   commits: 3
 tech-stack:
