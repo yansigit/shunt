@@ -6,7 +6,7 @@ current_phase: 15
 current_phase_name: Exact OpenCode Go Evidence Gate
 current_plan: Not started
 status: planning
-stopped_at: Phase 15 draft plans written; preflight requires revision and independent check
+stopped_at: Phase 15 revision 3 reviewed; revision cap reached; user approach decision required
 last_updated: "2026-09-08T20:18:14.128Z"
 last_activity: 2026-09-08
 last_activity_desc: Phase 14 complete, transitioned to Phase 15
@@ -34,7 +34,7 @@ See: `.planning/PROJECT.md` (updated 2026-09-08 after Phase 14)
 Phase: 15 — Exact OpenCode Go Evidence Gate
 Current Plan: Not started
 Total Plans in Phase: 0
-Status: Draft plans require revision; independent plan check pending
+Status: Revision 3 reviewed; execution blocked pending user approach decision
 Last activity: 2026-09-08 — Phase 15 approval, backups, context and GLM/high research recorded
 
 ## Performance Metrics
@@ -181,6 +181,15 @@ plans. No new revision is needed before that check. No code/tests/live provider
 smoke occurred; isolation wrapper verified production fingerprints unchanged.
 
 ## Operator Next Steps
+
+- Latest checkpoint: Phase 15 revision 3/3 contains six draft plans. Root inline
+  semantic review found three blockers and four warnings; see the final section
+  of 15-PLAN-REVIEW.md. No independent subagent verdict is claimed for revision 3.
+  The GSD revision cap requires a user decision before further correction or
+  execution. Recommended approach: root-led targeted corrections followed by
+  fresh checking, retaining canonical-destination, isolation, and verification
+  gates. Phase 15 implementation, Phase 16 acceptance, and milestone closure are
+  not complete. No runtime code, build, tests, or live smoke ran at this checkpoint.
 
 - The user-approved installed GSD gate validator repair is complete and backed up at `/Users/user/gsd-gate-backup-mEVeg3`. Dotted query names validate; gate checks were rerun without disabling them. See 13-01-SUMMARY.md.
 - Phase 13 is complete: 5/5 plans, 2,875 passed, 0 failed, 2 existing ignored; CLI/curl Chat smoke and all documentation locales pass. Validation has no gaps; all 19 authored security threats have mitigations. Computer visual checks remain skipped/blocked, never passed.
