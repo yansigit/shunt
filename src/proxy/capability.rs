@@ -6,7 +6,36 @@
 
 use serde_json::Value;
 
-use crate::routing::{AdapterKind, Route};
+use crate::{
+    config::{Config, ProviderKind},
+    routing::{AdapterKind, Route},
+};
+
+/// Evidence-gated OpenCode Go admission. The allowlist is intentionally empty
+/// until an exact captured/live tuple is verified; identity is taken only from
+/// the explicit provider kind, never inferred from URLs or model names.
+pub(crate) fn enforce_opencode_go_admission(
+    config: &Config,
+    routes: &mut Vec<Route>,
+) -> Result<(), &'static str> {
+    let mut index = 0;
+    while index < routes.len() {
+        let route = &routes[index];
+        let is_go = config
+            .providers
+            .get(&route.provider)
+            .is_some_and(|provider| provider.kind == ProviderKind::OpenCodeGo);
+        if !is_go {
+            index += 1;
+            continue;
+        }
+        if index == 0 {
+            return Err("OpenCode Go selection is not admitted by exact evidence");
+        }
+        routes.remove(index);
+    }
+    Ok(())
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Requirements {

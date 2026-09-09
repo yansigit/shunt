@@ -61,6 +61,15 @@ pub(super) async fn forward(
             }
         })?;
     super::capability::filter_fallbacks(&mut routes, body.json(), &requested_model);
+    super::capability::enforce_opencode_go_admission(&state.config, &mut routes).map_err(
+        |message| ForwardError {
+            message: message.to_string(),
+            response: Box::new(
+                ShuntError::new(StatusCode::BAD_REQUEST, "invalid_request_error", message)
+                    .into_response(),
+            ),
+        },
+    )?;
     crate::observability::record_requested_model(&requested_model);
     // Records the request's final outcome exactly once, at whichever terminal
     // return point below is taken — the intermediate per-attempt failover

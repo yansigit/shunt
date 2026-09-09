@@ -418,6 +418,18 @@ pub(crate) async fn forward_turn(
             });
         }
     };
+    let mut routes = vec![route.clone()];
+    if let Err(message) =
+        crate::proxy::capability::enforce_opencode_go_admission(&state.config, &mut routes)
+    {
+        return Err(ForwardError {
+            message: message.to_string(),
+            response: Box::new(
+                ShuntError::new(StatusCode::BAD_REQUEST, "invalid_request_error", message)
+                    .into_response(),
+            ),
+        });
+    }
     if operation == responses::inbound::InboundOperation::Compact
         && !state
             .config

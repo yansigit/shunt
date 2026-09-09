@@ -95,6 +95,13 @@ pub(super) const PRESETS: &[ProviderPreset] = &[
         api_key_env: Some("SHUNT_COMMANDCODE_API_KEY"),
     },
     ProviderPreset {
+        name: "opencode-go",
+        kind: ProviderKind::OpenCodeGo,
+        base_url: "https://opencode.ai/zen/go/v1",
+        auth: AuthMode::ApiKey,
+        api_key_env: Some("SHUNT_OPENCODE_GO_API_KEY"),
+    },
+    ProviderPreset {
         name: "command-code",
         kind: ProviderKind::CommandCode,
         base_url: "https://api.commandcode.ai",
@@ -144,12 +151,13 @@ mod tests {
                 "zhipu",
                 "minimax-cn",
                 "commandcode",
+                "opencode-go",
                 "command-code"
             ]
         );
         assert_eq!(
             available_names(),
-            "anthropic, codex, openai, xai, grok, kimi, cursor, kimi-code, zhipu, minimax-cn, commandcode, command-code"
+            "anthropic, codex, openai, xai, grok, kimi, cursor, kimi-code, zhipu, minimax-cn, commandcode, opencode-go, command-code"
         );
     }
 

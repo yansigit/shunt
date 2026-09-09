@@ -30,6 +30,7 @@ impl From<ProviderKind> for AdapterKind {
             ProviderKind::Gemini => AdapterKind::Gemini,
             ProviderKind::OpenAiChat => AdapterKind::OpenAiChat,
             ProviderKind::CommandCode => AdapterKind::CommandCode,
+            ProviderKind::OpenCodeGo => AdapterKind::OpenAiChat,
             // Stage 1 of the native Antigravity upstream is wire-identical to
             // the Code Assist path, so it rides the Gemini adapter; only the
             // credential and the discovery metadata differ. The

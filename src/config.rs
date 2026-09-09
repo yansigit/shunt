@@ -1791,6 +1791,9 @@ pub enum ProviderKind {
     OpenAiChat,
     /// Command Code subscription NDJSON, separate from its API-key Chat product.
     CommandCode,
+    /// OpenCode Go's exact, evidence-gated OpenAI Chat identity.
+    #[serde(rename = "opencode_go")]
+    OpenCodeGo,
     /// Local Antigravity CLI binary (`agy`) execution.
     ///
     /// **Deprecated.** Superseded by `kind = "antigravity"`, which reaches the
@@ -2024,6 +2027,10 @@ pub struct RoutePrefixConfig {
 pub enum ConfigError {
     #[error("failed to load configuration: {0}")]
     Figment(#[from] Box<figment::Error>),
+    #[error(
+        "provider \"{provider}\" has an invalid OpenCode Go destination/authentication identity"
+    )]
+    InvalidOpenCodeGoIdentity { provider: String },
     #[error("config file not found: {}", .0.display())]
     MissingConfigFile(PathBuf),
     #[error("failed to read config file {}: {message}", .path.display())]
@@ -3384,6 +3391,15 @@ impl Config {
                     })?;
             }
             let url = self.provider_base_url(name, &provider.base_url)?;
+            if provider.kind == ProviderKind::OpenCodeGo
+                && (provider.auth != AuthMode::ApiKey
+                    || provider.api_key_env.as_deref() != Some("SHUNT_OPENCODE_GO_API_KEY")
+                    || url.as_str().trim_end_matches('/') != "https://opencode.ai/zen/go/v1")
+            {
+                return Err(ConfigError::InvalidOpenCodeGoIdentity {
+                    provider: name.clone(),
+                });
+            }
             if provider.auth == AuthMode::ApiKey
                 && provider
                     .api_key_env
