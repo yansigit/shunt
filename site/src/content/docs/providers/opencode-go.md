@@ -6,7 +6,7 @@ description: "OpenCode Go remains unadmitted until an exact, hermetic and creden
 # OpenCode Go is not supported today
 
 The admitted OpenCode Go set is empty (the empty admitted set). Shunt rejects every explicit Go
-selection before pre-credential lookup or network dispatch, so no credential and no
+selection at the pre-credential gate, before credential lookup or network dispatch, so no credential and no
 `x-opencode-session` header are emitted today.
 
 The opt-in configuration identity is `kind = "opencode_go"`, using
@@ -33,5 +33,4 @@ contract. Only then may it send a stable opaque, conversation-scoped
 contain prompt-derived identity or raw account/session data. The empty admitted
 set means that session producer is absent today.
 
-See the [configuration reference](/reference/configuration/) and the
-[OpenCode Go evidence-gate engineering note](/docs/opencode-go-evidence-gate/).
+See the [configuration reference](/reference/configuration/).

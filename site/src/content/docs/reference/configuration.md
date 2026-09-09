@@ -380,8 +380,8 @@ Whether the poller runs at all, and its polling interval, are decided once from 
 OpenCode Go is currently **not supported** and has an empty admitted set. The
 explicit opt-in kind is `opencode_go`; its exact key is
 `SHUNT_OPENCODE_GO_API_KEY`, and its canonical destination is
-`https://opencode.ai/zen/go/v1`. Every Go selection is rejected before
-pre-credential lookup and dispatch, so no credential or `x-opencode-session` is
+`https://opencode.ai/zen/go/v1`. Every Go selection is rejected at the
+pre-credential gate, before credential lookup and dispatch, so no credential or `x-opencode-session` is
 emitted today.
 
 The four source-only candidates are `glm-5.3-flash`, `omen-alpha`,

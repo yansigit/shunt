@@ -124,24 +124,6 @@ For a custom Chat backend, set `kind = "openai_chat"`, an explicit `http://` or 
 
 A provider is either an ordered `[[upstreams]]` entry or a legacy `[providers.<name>]` TOML table (under YAML, an entry in the corresponding sequence or mapping). Three translation kinds cover most upstreams: `kind = "anthropic"` (the upstream speaks Anthropic Messages; passed through, optionally with a different key), `kind = "responses"` (the upstream speaks the OpenAI Responses API; shunt translates Anthropic Messages ⇄ Responses, streaming included), and `kind = "openai_chat"` (the upstream speaks the OpenAI Chat Completions API; shunt translates Anthropic Messages ⇄ Chat Completions, streaming included — API-key auth only, no built-in preset; see [Providers → OpenAI-compatible](https://shunt.dev/providers/openai-chat/)). A fourth native kind, `kind = "cursor"`, bridges Cursor's ConnectRPC/protobuf AgentService so a Cursor subscription is reachable through the same Anthropic-Messages interface.
 
-### OpenCode Go (evidence-gated, zero support)
-
-OpenCode Go is currently **not supported**: the empty admitted set is empty, and no
-credential or `x-opencode-session` header is emitted. The opt-in spelling is
-`kind = "opencode_go"`, with `SHUNT_OPENCODE_GO_API_KEY` and the canonical
-destination `https://opencode.ai/zen/go/v1`; selecting it rejects before
-pre-credential lookup and dispatch. The four source-only candidate records are
-`glm-5.3-flash`, `omen-alpha`, `muse-spark-1.3-contributor`, and
-`deepseek-v4-flash`.
-
-Future admission requires exact hermetic and credential-safe captured or live
-evidence for model, destination, wire, effort, and capabilities. Any admitted
-tuple must reuse the matching existing Chat contract and may send only a stable
-opaque conversation-scoped `x-opencode-session` to that canonical destination.
-Strict authoritative terminal behavior and cancellation/retry ownership remain
-required; permissive EOF repair is not. See the [OpenCode Go provider guide](https://shunt.dev/providers/opencode-go/)
-and [evidence-gate engineering note](docs/opencode-go-evidence-gate.md).
-
 Ordered upstreams enable cross-provider failover. Declaration order is the attempt order; a model's `upstream_model` map selects the participating entries and maps its public id to each backend's id:
 
 ```toml
@@ -316,6 +298,24 @@ provider = "kimi"
 ```
 
 See [Providers](https://shunt.dev/guides/providers/) for the full list and per-provider notes.
+
+### OpenCode Go (evidence-gated, zero support)
+
+OpenCode Go is currently **not supported**: the empty admitted set is empty, and no
+credential or `x-opencode-session` header is emitted. The opt-in spelling is
+`kind = "opencode_go"`, with `SHUNT_OPENCODE_GO_API_KEY` and the canonical
+destination `https://opencode.ai/zen/go/v1`; selecting it rejects at the
+pre-credential gate, before credential lookup and dispatch. The four source-only
+candidate records are `glm-5.3-flash`, `omen-alpha`,
+`muse-spark-1.3-contributor`, and `deepseek-v4-flash`.
+
+Future admission requires exact hermetic and credential-safe captured or live
+evidence for model, destination, wire, effort, and capabilities. Any admitted
+tuple must reuse the matching existing Chat contract and may send only a stable
+opaque conversation-scoped `x-opencode-session` to that canonical destination.
+Strict authoritative terminal behavior and cancellation/retry ownership remain
+required; permissive EOF repair is not. See the [OpenCode Go provider guide](https://shunt.dev/providers/opencode-go/)
+and [evidence-gate engineering note](docs/opencode-go-evidence-gate.md).
 
 ## Documentation
 

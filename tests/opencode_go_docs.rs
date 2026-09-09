@@ -9,10 +9,42 @@ fn section(text: &str, heading: &str) -> String {
     let start = text
         .find(heading)
         .unwrap_or_else(|| panic!("required section {heading:?} is missing"));
+    let line_start = text[..start].rfind('\n').map_or(0, |index| index + 1);
+    let level = text[line_start..]
+        .chars()
+        .take_while(|character| *character == '#')
+        .count();
+    assert!(
+        level > 0,
+        "required section {heading:?} is not a Markdown heading"
+    );
     let tail = &text[start..];
-    tail.find("\n## ")
-        .map(|end| tail[..end].to_owned())
-        .unwrap_or_else(|| tail.to_owned())
+    let mut offset = tail.find('\n').map_or(tail.len(), |index| index + 1);
+    while offset < tail.len() {
+        let line_end = tail[offset..]
+            .find('\n')
+            .map_or(tail.len(), |index| offset + index);
+        let line = &tail[offset..line_end];
+        let candidate_level = line
+            .chars()
+            .take_while(|character| *character == '#')
+            .count();
+        if candidate_level > 0 && candidate_level <= level {
+            return tail[..offset - 1].to_owned();
+        }
+        offset = line_end.saturating_add(1);
+    }
+    tail.to_owned()
+}
+
+#[test]
+fn opencode_go_docs_section_scope() {
+    let fixture = "### OpenCode Go\nbody\n#### nested\nnested body\n### Sibling\nsibling body";
+    let extracted = section(fixture, "### OpenCode Go");
+    assert!(extracted.contains("body"));
+    assert!(extracted.contains("nested body"));
+    assert!(!extracted.contains("Sibling"));
+    assert!(!extracted.contains("sibling body"));
 }
 
 fn assert_zero_support_contract(text: &str, surface: &str) {
