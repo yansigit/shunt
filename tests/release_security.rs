@@ -12,30 +12,65 @@ fn notices_valid(notices: &str) -> bool {
     let Some((open, jcode)) = notices.split_once("## jcode Cursor transport") else {
         return false;
     };
-    ["Cursor", "Command Code", "2026-09-07", "2026-09-08",
+    [
+        "Cursor",
+        "Command Code",
+        "2026-09-07",
+        "2026-09-08",
         "055c3ecf0de6c35f59195fc434d6b08525182b7f",
-        "Copyright (c) 2026 opencodex contributors"]
-        .iter().all(|s| open.contains(s))
-        && ["Copyright (c) 2025 Jeremy Huang", "1jehuang/jcode",
-            "e65e47c31af2ab79346458ff1511bea533930b59", "2026-09-09",
-            "historical copy revision is unknown"]
-            .iter().all(|s| jcode.contains(s))
+        "Copyright (c) 2026 opencodex contributors",
+    ]
+    .iter()
+    .all(|s| open.contains(s))
+        && [
+            "Copyright (c) 2025 Jeremy Huang",
+            "1jehuang/jcode",
+            "e65e47c31af2ab79346458ff1511bea533930b59",
+            "2026-09-09",
+            "historical copy revision is unknown",
+        ]
+        .iter()
+        .all(|s| jcode.contains(s))
         && [open, jcode].iter().all(|section| {
-            ["MIT License", "Permission is hereby granted, free of charge",
+            [
+                "MIT License",
+                "Permission is hereby granted, free of charge",
                 "The above copyright notice and this permission notice",
-                "THE SOFTWARE IS PROVIDED \"AS IS\"", "LIABILITY"]
-                .iter().all(|s| section.contains(s))
+                "THE SOFTWARE IS PROVIDED \"AS IS\"",
+                "LIABILITY",
+            ]
+            .iter()
+            .all(|s| section.contains(s))
         })
 }
 
 fn sanitized(value: &Value) -> bool {
     match value {
-        Value::String(s) => !["sk-", "ghp_", "github_pat_", "Bearer ", "xoxb-", "AKIA", "-----BEGIN PRIVATE KEY"]
-            .iter().any(|marker| s.contains(marker)),
+        Value::String(s) => ![
+            "sk-",
+            "ghp_",
+            "github_pat_",
+            "Bearer ",
+            "xoxb-",
+            "AKIA",
+            "-----BEGIN PRIVATE KEY",
+        ]
+        .iter()
+        .any(|marker| s.contains(marker)),
         Value::Array(values) => values.iter().all(sanitized),
         Value::Object(map) => map.iter().all(|(key, value)| {
-            !["access_token", "refresh_token", "apiKey", "userId", "account_id", "project_id", "private_prompt", "raw_session"]
-                .contains(&key.as_str()) && sanitized(value)
+            ![
+                "access_token",
+                "refresh_token",
+                "apiKey",
+                "userId",
+                "account_id",
+                "project_id",
+                "private_prompt",
+                "raw_session",
+            ]
+            .contains(&key.as_str())
+                && sanitized(value)
         }),
         _ => true,
     }
@@ -44,19 +79,41 @@ fn sanitized(value: &Value) -> bool {
 #[test]
 fn release_security_notices_cover_translated_material() {
     let notices = text("THIRD-PARTY-NOTICES.md");
-    assert!(notices_valid(&notices), "both upstream notices and distinct provenance dates are required");
-    for marker in ["Cursor", "2026-09-07", "2026-09-08", "Copyright (c) 2025 Jeremy Huang", "Permission is hereby granted, free of charge"] {
-        assert!(!notices_valid(&notices.replace(marker, "removed")), "missing {marker} must fail");
+    assert!(
+        notices_valid(&notices),
+        "both upstream notices and distinct provenance dates are required"
+    );
+    for marker in [
+        "Cursor",
+        "2026-09-07",
+        "2026-09-08",
+        "Copyright (c) 2025 Jeremy Huang",
+        "Permission is hereby granted, free of charge",
+    ] {
+        assert!(
+            !notices_valid(&notices.replace(marker, "removed")),
+            "missing {marker} must fail"
+        );
     }
 }
 
 #[test]
 fn release_security_ledger_rejects_sensitive_fields() {
     let source = text("docs/provider-release-evidence.md");
-    let block = source.split_once("```release-ledger\n").unwrap().1.split_once("\n```").unwrap().0;
+    let block = source
+        .split_once("```release-ledger\n")
+        .unwrap()
+        .1
+        .split_once("\n```")
+        .unwrap()
+        .0;
     let ledger: Value = serde_json::from_str(block).unwrap();
     assert!(sanitized(&ledger));
-    for mutation in [json!({"access_token":"synthetic"}), json!({"nested":[{"private_prompt":"synthetic"}]}), json!({"provenance":"Bearer synthetic"})] {
+    for mutation in [
+        json!({"access_token":"synthetic"}),
+        json!({"nested":[{"private_prompt":"synthetic"}]}),
+        json!({"provenance":"Bearer synthetic"}),
+    ] {
         assert!(!sanitized(&mutation));
     }
     assert_eq!(ledger["go"]["admitted"], json!([]));
