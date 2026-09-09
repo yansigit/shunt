@@ -13,6 +13,16 @@ description: 組み込みプロバイダーと、TOML テーブルで任意の A
 - **`kind = "antigravity"`** — HTTP 経由で Google Antigravity バックエンドに接続します。
 - **`kind = "antigravity_cli"`** — **非推奨**。ローカルの Antigravity `agy` CLI を呼び出します。
 
+## OpenCode Go：証拠ゲート、サポートなし
+
+オプトインの `opencode-go` プリセットは `kind = "opencode_go"`、
+`SHUNT_OPENCODE_GO_API_KEY`、正規の宛先 `https://opencode.ai/zen/go/v1` を
+使います。OpenCode Go は現在サポートされていません。許可集合は空で、
+許可されたモデルはありません。Go が主な宛先なら資格情報の参照や送信より前に
+リクエスト全体を拒否し、後続の Go 候補は除外します。資格情報や
+`x-opencode-session` は送信しません。候補のみの証拠と厳格な終端・昇格要件は
+[OpenCode Go](/ja/providers/opencode-go/)を参照してください。
+
 ## Command Code プリセット
 
 `commandcode` は API キー Chat 製品（`openai_chat`、`SHUNT_COMMANDCODE_API_KEY`）、`command-code` は別のサブスクリプション NDJSON 製品（`command_code`、`command_code_oauth`、`SHUNT_COMMAND_CODE_TOKEN`）です。`[[upstreams]]` に明示してください。トークン変数が存在しない場合のみ固定 `~/.commandcode/auth.json` を読み取り専用で使い、空・不正な明示値では切り替えません。更新・書き込みは行いません。正確なモデル・effort、上限、ライブ検証ではないソース由来の検証範囲は [Command Code](/ja/providers/command-code/)を参照してください。

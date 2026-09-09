@@ -13,6 +13,15 @@ description: 内置的提供方,以及如何用一个 TOML 表添加任意兼容
 - **`kind = "antigravity"`** —— 通过 HTTP 连接 Google Antigravity 后端。
 - **`kind = "antigravity_cli"`** —— **已废弃**;调用本地的 Antigravity `agy` CLI。
 
+## OpenCode Go：证据门控，不支持
+
+可选的 `opencode-go` 预设使用 `kind = "opencode_go"`、
+`SHUNT_OPENCODE_GO_API_KEY` 和规范目标 `https://opencode.ai/zen/go/v1`。
+OpenCode Go 目前不受支持，准入集合为空，没有已准入模型。Go 作为主目标时，
+会在凭据查找或发送前拒绝整个请求；后续 Go 候选会被移除。
+当前不会发送凭据或 `x-opencode-session`。候选证据及严格终止和准入要求见
+[OpenCode Go](/zh-cn/providers/opencode-go/)。
+
 ## Command Code 预设
 
 `commandcode` 是 API 密钥 Chat 产品（`openai_chat`、`SHUNT_COMMANDCODE_API_KEY`）；`command-code` 是独立订阅 NDJSON 产品（`command_code`、`command_code_oauth`、`SHUNT_COMMAND_CODE_TOKEN`）。请在 `[[upstreams]]` 中显式声明。仅当订阅令牌变量完全不存在时，才只读访问固定的 `~/.commandcode/auth.json`；空值或无效显式值不回退。不进行刷新或写回。精确模型、effort、限制，以及源码推导而非实时验证的证据边界，见 [Command Code](/zh-cn/providers/command-code/)。

@@ -13,6 +13,16 @@ Providers are a **name → config map**. Anthropic-compatible and Responses-comp
 - **`kind = "antigravity"`** — the Google Antigravity backend over HTTP.
 - **`kind = "antigravity_cli"`** — **deprecated**; invokes the local Antigravity `agy` CLI.
 
+## OpenCode Go: evidence-gated, zero support
+
+The opt-in `opencode-go` preset uses `kind = "opencode_go"`,
+`SHUNT_OPENCODE_GO_API_KEY`, and the canonical destination
+`https://opencode.ai/zen/go/v1`. OpenCode Go is **not supported**: the
+empty admitted set permits no model. A Go primary rejects the whole request before credential lookup
+or dispatch; Go fallback candidates are removed. Neither credentials nor
+`x-opencode-session` are sent. See [OpenCode Go](/providers/opencode-go/) for
+the candidate-only evidence ledger and strict terminal/promotion requirements.
+
 ## Command Code presets
 
 `commandcode` is the API-key Chat product (`openai_chat`, `SHUNT_COMMANDCODE_API_KEY`); `command-code` is the separate subscription NDJSON product (`command_code`, `command_code_oauth`, `SHUNT_COMMAND_CODE_TOKEN`). Declare them explicitly in `[[upstreams]]`. Only an absent subscription token variable permits the fixed read-only `~/.commandcode/auth.json` fallback; empty/invalid values never fall back. There is no refresh or writeback. Exact model/effort rows, limits and the source-derived—not live-verified—evidence boundary are in [Command Code](/providers/command-code/).
