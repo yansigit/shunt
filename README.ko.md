@@ -292,7 +292,7 @@ provider = "kimi"
 
 ## OpenCode Go (증거 게이트, 지원 없음)
 
-OpenCode Go는 현재 지원되지 않습니다. 허용된 OpenCode Go 집합은 비어 있으며(빈 허용 집합), shunt는 자격 증명 전 게이트에서 모든 명시적 Go 선택을 자격 증명 조회나 네트워크 디스패치 전에 거부합니다. 따라서 현재 자격 증명과 `x-opencode-session` 헤더는 전송되지 않습니다.
+OpenCode Go는 현재 지원되지 않습니다. 허용된 OpenCode Go 집합은 비어 있으며, shunt는 자격 증명 전 게이트에서 모든 명시적 Go 선택을 자격 증명 조회나 네트워크 디스패치 전에 거부합니다. 따라서 현재 자격 증명과 `x-opencode-session` 헤더는 전송되지 않습니다.
 
 옵트인 구성 ID는 `kind = "opencode_go"`이며 `SHUNT_OPENCODE_GO_API_KEY`와 표준 대상 `https://opencode.ai/zen/go/v1`을 사용합니다. 현재 소스 전용 후보는 다음과 같습니다.
 

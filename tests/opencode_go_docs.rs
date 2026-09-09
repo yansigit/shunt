@@ -282,7 +282,10 @@ fn opencode_go_docs_nav_i18n() {
 #[test]
 fn opencode_go_docs_plain_empty_wording() {
     for path in [
-        "README.md", "README.ko.md", "README.ja.md", "README.zh-CN.md",
+        "README.md",
+        "README.ko.md",
+        "README.ja.md",
+        "README.zh-CN.md",
         "site/src/content/docs/providers/opencode-go.md",
         "site/src/content/docs/ko/providers/opencode-go.md",
         "site/src/content/docs/ja/providers/opencode-go.md",
@@ -293,10 +296,16 @@ fn opencode_go_docs_plain_empty_wording() {
     ] {
         let text = read(path);
         for redundant in [
-            "empty admitted set is empty", "(the empty admitted set)",
-            "(빈 허용 집합)", "（空の許可集合）", "（空准入集合）",
+            "empty admitted set is empty",
+            "(the empty admitted set)",
+            "(빈 허용 집합)",
+            "（空の許可集合）",
+            "（空准入集合）",
         ] {
-            assert!(!text.contains(redundant), "{path}: redundant wording {redundant:?}");
+            assert!(
+                !text.contains(redundant),
+                "{path}: redundant wording {redundant:?}"
+            );
         }
     }
 }

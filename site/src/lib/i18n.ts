@@ -69,7 +69,7 @@ export const NAVIGATION: NavigationGroup[] = [
       { label: "Vercel AI Gateway", slug: "providers/vercel-ai-gateway" },
       {
         label: "OpenCode Go",
-        translations: { ko: "OpenCode Go (한국어)", ja: "OpenCode Go (日本語)", "zh-cn": "OpenCode Go (简体中文)" },
+        translations: { ko: "OpenCode Go", ja: "OpenCode Go", "zh-cn": "OpenCode Go" },
         slug: "providers/opencode-go",
       },
     ],

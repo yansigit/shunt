@@ -5,7 +5,7 @@ description: "정확하고 hermetic하며 자격 증명 안전한 튜플이 입�
 
 # OpenCode Go는 현재 지원되지 않습니다
 
-허용된 OpenCode Go 집합은 비어 있습니다(빈 허용 집합). shunt는 자격 증명 전 게이트에서 모든 명시적 Go 선택을 자격 증명 조회나 네트워크 디스패치 전에 거부하므로 현재 자격 증명이나 `x-opencode-session` 헤더가 전송되지 않습니다.
+허용된 OpenCode Go 집합은 비어 있습니다. shunt는 자격 증명 전 게이트에서 모든 명시적 Go 선택을 자격 증명 조회나 네트워크 디스패치 전에 거부하므로 현재 자격 증명이나 `x-opencode-session` 헤더가 전송되지 않습니다.
 
 옵트인 구성 ID는 `kind = "opencode_go"`이며 `SHUNT_OPENCODE_GO_API_KEY`와 표준 대상 `https://opencode.ai/zen/go/v1`을 사용합니다. 현재 소스 전용 후보는 다음과 같습니다.
 

@@ -395,7 +395,7 @@ codex = "gpt-5.2"
 
 ### OpenCode Go（証拠ゲート、サポートなし）
 
-OpenCode Go は現在サポートされていません。許可された集合は空（空の許可集合）であり、shunt は資格情報取得前ゲートで明示的な Go 選択を資格情報の参照やネットワーク送信より前に拒否します。そのため現在は資格情報も `x-opencode-session` ヘッダーも送信されません。
+OpenCode Go は現在サポートされていません。許可された集合は空であり、shunt は資格情報取得前ゲートで明示的な Go 選択を資格情報の参照やネットワーク送信より前に拒否します。そのため現在は資格情報も `x-opencode-session` ヘッダーも送信されません。
 
 オプトイン構成は `kind = "opencode_go"`、`SHUNT_OPENCODE_GO_API_KEY`、正規の宛先 `https://opencode.ai/zen/go/v1` を使います。候補は `glm-5.3-flash`、`omen-alpha`、`muse-spark-1.3-contributor`、`deepseek-v4-flash` です。これらはサポート済みでもライブ検証済みでもありません。不明なフィールド、誤った wire、ファミリー推論、未サポートの effort 別名、失敗した証拠は拒否されます。ゲートウェイは厳格な権威ある終端を要求し、寛容な EOF 成功の合成や不完全なターンの修復を行いません。
 

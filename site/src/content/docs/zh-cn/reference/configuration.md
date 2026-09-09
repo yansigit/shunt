@@ -395,7 +395,7 @@ codex = "gpt-5.2"
 
 ### OpenCode Go（证据门控，不支持）
 
-OpenCode Go 目前不受支持。已准入集合为空（空准入集合）；shunt 在凭据前门控中、凭据查找或网络分发之前拒绝显式 Go 选择，因此当前不会发送凭据或 `x-opencode-session` header。
+OpenCode Go 目前不受支持。已准入集合为空；shunt 在凭据前门控中、凭据查找或网络分发之前拒绝显式 Go 选择，因此当前不会发送凭据或 `x-opencode-session` header。
 
 可选配置使用 `kind = "opencode_go"`、`SHUNT_OPENCODE_GO_API_KEY` 和规范目标 `https://opencode.ai/zen/go/v1`。候选为 `glm-5.3-flash`、`omen-alpha`、`muse-spark-1.3-contributor`、`deepseek-v4-flash`。这些并非受支持或已实时验证的模型。未知字段、错误 wire、按系列推断、不支持的 effort 别名和失败证据都会被拒绝。网关要求严格的权威终止，不会从宽松 EOF 合成成功，也不会修复不完整的 turn。
 

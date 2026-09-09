@@ -301,7 +301,7 @@ See [Providers](https://shunt.dev/guides/providers/) for the full list and per-p
 
 ### OpenCode Go (evidence-gated, zero support)
 
-OpenCode Go is currently **not supported**: the empty admitted set is empty, and no
+OpenCode Go is currently **not supported**: the admitted set is empty, and no
 credential or `x-opencode-session` header is emitted. The opt-in spelling is
 `kind = "opencode_go"`, with `SHUNT_OPENCODE_GO_API_KEY` and the canonical
 destination `https://opencode.ai/zen/go/v1`; selecting it rejects at the

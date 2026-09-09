@@ -424,7 +424,7 @@ codex = "gpt-5.2"
 
 ### OpenCode Go (증거 게이트, 지원 없음)
 
-OpenCode Go는 현재 지원되지 않습니다. 허용된 집합은 비어 있으며(빈 허용 집합), shunt는 자격 증명 전 게이트에서 명시적인 Go 선택을 자격 증명 조회나 네트워크 디스패치 전에 거부합니다. 따라서 현재 자격 증명이나 `x-opencode-session` 헤더는 전송되지 않습니다.
+OpenCode Go는 현재 지원되지 않습니다. 허용된 집합은 비어 있으며, shunt는 자격 증명 전 게이트에서 명시적인 Go 선택을 자격 증명 조회나 네트워크 디스패치 전에 거부합니다. 따라서 현재 자격 증명이나 `x-opencode-session` 헤더는 전송되지 않습니다.
 
 옵트인 구성은 `kind = "opencode_go"`와 `SHUNT_OPENCODE_GO_API_KEY`, 표준 대상 `https://opencode.ai/zen/go/v1`을 사용합니다. 후보는 `glm-5.3-flash`, `omen-alpha`, `muse-spark-1.3-contributor`, `deepseek-v4-flash`입니다. 이들은 지원되거나 실시간 검증된 모델이 아닙니다. 알 수 없는 필드, 잘못된 wire, 패밀리 추론, 지원되지 않는 effort 별칭 및 실패한 증거는 거부됩니다. 게이트웨이는 엄격한 권위 있는 터미널을 요구하며 허용적인 EOF 성공 합성이나 불완전한 턴 복구를 하지 않습니다.
 

@@ -5,7 +5,7 @@ description: "OpenCode Go remains unadmitted until an exact, hermetic and creden
 
 # OpenCode Go is not supported today
 
-The admitted OpenCode Go set is empty (the empty admitted set). Shunt rejects every explicit Go
+The OpenCode Go admitted set is empty. Shunt rejects every explicit Go
 selection at the pre-credential gate, before credential lookup or network dispatch, so no credential and no
 `x-opencode-session` header are emitted today.
 

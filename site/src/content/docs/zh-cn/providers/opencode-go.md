@@ -5,7 +5,7 @@ description: "在证明精确、hermetic 且凭据安全的元组之前，不准
 
 # OpenCode Go 目前不受支持
 
-已准入的 OpenCode Go 集合为空（空准入集合）。shunt 在凭据前门控中、凭据查找或网络分发之前拒绝所有显式 Go 选择，因此当前不会发送凭据或 `x-opencode-session` header。
+已准入的 OpenCode Go 集合为空。shunt 在凭据前门控中、凭据查找或网络分发之前拒绝所有显式 Go 选择，因此当前不会发送凭据或 `x-opencode-session` header。
 
 可选配置标识为 `kind = "opencode_go"`，使用 `SHUNT_OPENCODE_GO_API_KEY` 和规范目标 `https://opencode.ai/zen/go/v1`。当前仅有源码证据的候选为：
 

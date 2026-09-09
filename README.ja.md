@@ -295,7 +295,7 @@ provider = "kimi"
 
 ## OpenCode Go（証拠ゲート、サポートなし）
 
-OpenCode Go は現在サポートされていません。許可された OpenCode Go 集合は空（空の許可集合）であり、shunt は資格情報取得前ゲートで明示的な Go 選択をすべて、資格情報の参照やネットワーク送信より前に拒否します。そのため現在は資格情報も `x-opencode-session` ヘッダーも送信されません。
+OpenCode Go は現在サポートされていません。許可された OpenCode Go 集合は空であり、shunt は資格情報取得前ゲートで明示的な Go 選択をすべて、資格情報の参照やネットワーク送信より前に拒否します。そのため現在は資格情報も `x-opencode-session` ヘッダーも送信されません。
 
 オプトイン構成 ID は `kind = "opencode_go"` で、`SHUNT_OPENCODE_GO_API_KEY` と正規の宛先 `https://opencode.ai/zen/go/v1` を使います。現在のソースのみの候補は次のとおりです。
 
