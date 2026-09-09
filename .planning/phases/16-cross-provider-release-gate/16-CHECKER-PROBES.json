@@ -1,0 +1,231 @@
+{
+  "verify_paths": {
+    "status": "ok",
+    "commands": [
+      {
+        "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test release_matrix release_matrix -- --test-threads=1",
+        "status": "not_applicable",
+        "severity": "none",
+        "reason": null,
+        "form": null,
+        "rawTarget": null,
+        "target": null,
+        "manifest": null,
+        "script": null,
+        "sentinel": false,
+        "base": "/Users/user/.codex/worktrees/0466/shunt",
+        "plan": "16-01-PLAN.md",
+        "task": "Task 1: RED-first release ledger validator"
+      },
+      {
+        "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test release_matrix release_matrix -- --test-threads=1",
+        "status": "not_applicable",
+        "severity": "none",
+        "reason": null,
+        "form": null,
+        "rawTarget": null,
+        "target": null,
+        "manifest": null,
+        "script": null,
+        "sentinel": false,
+        "base": "/Users/user/.codex/worktrees/0466/shunt",
+        "plan": "16-01-PLAN.md",
+        "task": "Task 2: Populate finite exact-tuple ledger and provenance map"
+      },
+      {
+        "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test release_security release_security -- --test-threads=1",
+        "status": "not_applicable",
+        "severity": "none",
+        "reason": null,
+        "form": null,
+        "rawTarget": null,
+        "target": null,
+        "manifest": null,
+        "script": null,
+        "sentinel": false,
+        "base": "/Users/user/.codex/worktrees/0466/shunt",
+        "plan": "16-02-PLAN.md",
+        "task": "Task 1: Provenance and prohibited-scope checks"
+      },
+      {
+        "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test release_security credential_boundary -- --test-threads=1",
+        "status": "not_applicable",
+        "severity": "none",
+        "reason": null,
+        "form": null,
+        "rawTarget": null,
+        "target": null,
+        "manifest": null,
+        "script": null,
+        "sentinel": false,
+        "base": "/Users/user/.codex/worktrees/0466/shunt",
+        "plan": "16-02-PLAN.md",
+        "task": "Task 2: Verify credential-boundary and no-writeback claims"
+      },
+      {
+        "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test opencode_go_docs opencode_go_docs -- --test-threads=1",
+        "status": "not_applicable",
+        "severity": "none",
+        "reason": null,
+        "form": null,
+        "rawTarget": null,
+        "target": null,
+        "manifest": null,
+        "script": null,
+        "sentinel": false,
+        "base": "/Users/user/.codex/worktrees/0466/shunt",
+        "plan": "16-03-PLAN.md",
+        "task": "Task 1: Locale wording and sidebar RED/GREEN parity"
+      },
+      {
+        "command": "node /tmp/shunt-phase12-isolated-run.cjs npm --prefix site run build",
+        "status": "ok",
+        "severity": "none",
+        "reason": null,
+        "form": "prefix",
+        "rawTarget": "site",
+        "target": "/Users/user/.codex/worktrees/0466/shunt/site",
+        "manifest": null,
+        "script": null,
+        "sentinel": false,
+        "base": "/Users/user/.codex/worktrees/0466/shunt",
+        "plan": "16-03-PLAN.md",
+        "task": "Task 2: Build site and verify rendered locale links/anchors"
+      },
+      {
+        "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test check_cli opencode_go_cli_negative -- --test-threads=1",
+        "status": "not_applicable",
+        "severity": "none",
+        "reason": null,
+        "form": null,
+        "rawTarget": null,
+        "target": null,
+        "manifest": null,
+        "script": null,
+        "sentinel": false,
+        "base": "/Users/user/.codex/worktrees/0466/shunt",
+        "plan": "16-04-PLAN.md",
+        "task": "Task 1: Root-owned preflight and bounded smoke execution"
+      },
+      {
+        "command": "node /tmp/shunt-phase12-isolated-run.cjs env RUSTFLAGS=-Dwarnings cargo test --all-features --workspace",
+        "status": "not_applicable",
+        "severity": "none",
+        "reason": null,
+        "form": null,
+        "rawTarget": null,
+        "target": null,
+        "manifest": null,
+        "script": null,
+        "sentinel": false,
+        "base": "/Users/user/.codex/worktrees/0466/shunt",
+        "plan": "16-05-PLAN.md",
+        "task": "Task 1: Serialized final automated gates and code/security review"
+      },
+      {
+        "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test opencode_go_docs opencode_go_docs -- --test-threads=1",
+        "status": "not_applicable",
+        "severity": "none",
+        "reason": null,
+        "form": null,
+        "rawTarget": null,
+        "target": null,
+        "manifest": null,
+        "script": null,
+        "sentinel": false,
+        "base": "/Users/user/.codex/worktrees/0466/shunt",
+        "plan": "16-05-PLAN.md",
+        "task": "Task 2: Owned visual evaluation and final sign-off"
+      }
+    ],
+    "counts": {
+      "blocker": 0,
+      "warning": 0,
+      "total": 9
+    },
+    "readError": null
+  },
+  "failure_directions": {
+    "status": "ok",
+    "commands": [
+      {
+        "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test release_matrix release_matrix -- --test-threads=1",
+        "statement": "The filter selects zero tests, RED is a compile failure, or validation accepts duplicate/empty/secret-bearing/non-empty-Go fixtures.",
+        "status": "ok",
+        "severity": "none",
+        "plan": "16-01-PLAN.md",
+        "task": "Task 1: RED-first release ledger validator"
+      },
+      {
+        "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test release_matrix release_matrix -- --test-threads=1",
+        "statement": "Any row lacks named evidence or rationale, rows are nondeterministically ordered, Cursor uses the preset URL, provenance is incomplete, secrets/private identifiers appear, Go admissions become non-empty, or zero tests are selected.",
+        "status": "ok",
+        "severity": "none",
+        "plan": "16-01-PLAN.md",
+        "task": "Task 2: Populate finite exact-tuple ledger and provenance map"
+      },
+      {
+        "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test release_security release_security -- --test-threads=1",
+        "statement": "The filter selects zero tests, a missing MIT/provenance marker passes, a prohibited-scope or secret scan is absent, or tests inspect live credential stores.",
+        "status": "ok",
+        "severity": "none",
+        "plan": "16-02-PLAN.md",
+        "task": "Task 1: Provenance and prohibited-scope checks"
+      },
+      {
+        "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test release_security credential_boundary -- --test-threads=1",
+        "statement": "The filter selects zero tests, any check permits writeback/refresh or unbounded reads, or the wrapper/port/fingerprint constraints are missing.",
+        "status": "ok",
+        "severity": "none",
+        "plan": "16-02-PLAN.md",
+        "task": "Task 2: Verify credential-boundary and no-writeback claims"
+      },
+      {
+        "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test opencode_go_docs opencode_go_docs -- --test-threads=1",
+        "statement": "The filter selects zero tests, any locale omits required tokens, positive support appears, wording regression is not caught by mutation, or labels retain suffixes.",
+        "status": "ok",
+        "severity": "none",
+        "plan": "16-03-PLAN.md",
+        "task": "Task 1: Locale wording and sidebar RED/GREEN parity"
+      },
+      {
+        "command": "node /tmp/shunt-phase12-isolated-run.cjs npm --prefix site run build",
+        "statement": "Build fails, a locale route/link is missing or duplicated, anchors are invented rather than read from dist, or wiki is modified.",
+        "status": "ok",
+        "severity": "none",
+        "plan": "16-03-PLAN.md",
+        "task": "Task 2: Build site and verify rendered locale links/anchors"
+      },
+      {
+        "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test check_cli opencode_go_cli_negative -- --test-threads=1",
+        "statement": "The named filter selects zero tests, any live request exceeds a bound, retries, follows redirects, exposes secrets, mutates source credentials/production state, or an unsafe/unknown path is reported as pass.",
+        "status": "ok",
+        "severity": "none",
+        "plan": "16-04-PLAN.md",
+        "task": "Task 1: Root-owned preflight and bounded smoke execution"
+      },
+      {
+        "command": "node /tmp/shunt-phase12-isolated-run.cjs env RUSTFLAGS=-Dwarnings cargo test --all-features --workspace",
+        "statement": "The command exits nonzero, any focused filter selected zero tests, Cargo commands overlap, production fingerprints change, or any REL row lacks a distinct result.",
+        "status": "ok",
+        "severity": "none",
+        "plan": "16-05-PLAN.md",
+        "task": "Task 1: Serialized final automated gates and code/security review"
+      },
+      {
+        "command": "node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test opencode_go_docs opencode_go_docs -- --test-threads=1",
+        "statement": "The filter selects zero tests, visual evidence is claimed without screenshots/observations or honest unavailability, or validation marks a blocked gate as pass.",
+        "status": "ok",
+        "severity": "none",
+        "plan": "16-05-PLAN.md",
+        "task": "Task 2: Owned visual evaluation and final sign-off"
+      }
+    ],
+    "counts": {
+      "blocker": 0,
+      "warning": 0,
+      "total": 9
+    },
+    "readError": null
+  }
+}

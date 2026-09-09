@@ -27,11 +27,25 @@ Run the relevant named focused suite after each task; reject zero-test filtered 
 
 ## Per-Task Verification Map
 
-Planner must replace this seed with concrete task IDs, requirements REL-01–REL-06, threat references, exact named commands, expected nonzero test counts, and existing/new file status before plans pass. All tasks remain pending; no Phase 16 check has passed yet.
+| task | requirements | automated verification | manual/evidence requirement |
+|---|---|---|---|
+| 16-01.1 | REL-01/02 | `release_matrix release_matrix` (must select >0) | RED before ledger |
+| 16-01.2 | REL-01/02 | same focused validator | mutation failure then GREEN |
+| 16-02.1 | REL-02/03/06 | `release_security release_security` (must select >0) | MIT/provenance/scope record |
+| 16-02.2 | REL-02/03 | `release_security credential_boundary` (must select >0) | no-writeback evidence |
+| 16-03.1 | REL-05 | `opencode_go_docs opencode_go_docs` (must select >0) | RED/mutation/GREEN and locale parity |
+| 16-03.2 | REL-05 | `npm --prefix site run build` | built anchors from `site/dist` |
+| 16-04.1 | REL-04 | `check_cli opencode_go_cli_negative` (must select >0) | root-owned preflight/live skip/pass records |
+| 16-05.1 | REL-01..06 | `env RUSTFLAGS=-Dwarnings cargo test --all-features --workspace` | serialized focused suites, fingerprints, code/security review |
+| 16-05.2 | REL-05/06 | `opencode_go_docs opencode_go_docs` (must select >0) | root/Astrahigh visual screenshots or honest blocked record |
+
+Every command is a separate `node /tmp/shunt-phase12-isolated-run.cjs`
+invocation from the dedicated worktree; Cargo is serialized and zero-test
+filters fail. Existing 2,972-pass output is baseline only.
 
 ## Wave 0 Requirements
 
-Existing test infrastructure is available. Planner must identify any focused coverage gaps and schedule their tests before dependent work; no new general-purpose framework or runtime dependency is authorized.
+Existing test infrastructure is available. Plan 01 task 1 creates release_matrix tests before its ledger GREEN; plan 02 creates release_security tests before final verification. Both are pending, not completed. No new framework or runtime dependency is authorized. Plan 01 and docs plan 03 share wave 1 with non-overlapping edits; root serializes their Cargo requests. Plans 02, 04 and 05 follow in waves 2, 3 and 4.
 
 ## Manual-Only Verifications
 
