@@ -1,9 +1,9 @@
 ---
 phase: "16"
 slug: "cross-provider-release-gate"
-status: draft
+status: in_review
 nyquist_compliant: false
-wave_0_complete: false
+wave_0_complete: true
 created: "2026-09-08"
 ---
 
@@ -19,7 +19,9 @@ Rust Cargo/Tokio integration tests, existing real-router fixtures, CLI subproces
 - Lints: `node /tmp/shunt-phase12-isolated-run.cjs env RUSTFLAGS=-Dwarnings cargo clippy --all-targets --all-features -- -D warnings`
 - Site: `node /tmp/shunt-phase12-isolated-run.cjs npm --prefix site run build`
 
-Runtime will be measured during execution; no timing or test count is assumed.
+Actual final evidence: 2,979 tests passed, zero failed, two existing ignored.
+Final site build took 4.17s; fixture-path focused compilation took 5.80s.
+Exact Rust outputs and per-suite durations are retained in 16-FINAL-GATES.json.
 
 ## Sampling Rate
 
@@ -45,7 +47,16 @@ filters fail. Existing 2,972-pass output is baseline only.
 
 ## Wave 0 Requirements
 
-Existing test infrastructure is available. Plan 01 task 1 creates release_matrix tests before its ledger GREEN; plan 02 creates release_security tests before final verification. Both are pending, not completed. No new framework or runtime dependency is authorized. Plan 01 and docs plan 03 share wave 1 with non-overlapping edits; root serializes their Cargo requests. Plans 02, 04 and 05 follow in waves 2, 3 and 4.
+Existing test infrastructure was reused. Plans 01 and 02 authored their new
+release tests and completed GREEN and mutation checks; plan 03 completed its
+docs RED/mutation/GREEN sequence. No framework or runtime dependency was added.
+All Cargo executions were serialized through the exclusive wrapper. One busy
+lock returned 73 without starting a child; root retried after its owner exited.
+
+Execution deviation: the initial per-wave full-regression sampling proposal
+was not followed. Focused feedback ran per task, and full workspace gates ran
+at final phase verification (twice, including after fixture relocation).
+No absent historical wave-level run is counted as a pass.
 
 ## Manual-Only Verifications
 
@@ -55,12 +66,14 @@ Live smoke is opt-in and root-owned: at most eight total requests, no retries, 6
 
 ## Validation Sign-Off
 
-- [ ] Every task has automated verification or explicit manual evidence requirements.
-- [ ] Sampling continuity: no three consecutive tasks without automated verification.
-- [ ] Wave 0 covers all missing tests.
-- [ ] No watch-mode verification or unbounded smoke requests.
-- [ ] Actual feedback latency recorded.
-- [ ] Final format, Clippy, full tests, site and scoped smoke results recorded.
+- [x] Every task has automated verification or explicit manual evidence requirements.
+- [x] Sampling continuity: no three consecutive tasks without automated verification.
+- [x] Wave 0 covers all missing tests.
+- [x] No watch-mode verification or unbounded smoke requests.
+- [x] Actual feedback latency recorded.
+- [x] Final format, Clippy, full tests, site and scoped smoke results recorded.
 - [ ] nyquist_compliant set only after evidence review.
 
-Approval: bounded live-smoke scope approved by user; validation execution pending.
+Approval: bounded live-smoke scope approved by user; all generations explicitly
+skipped (0/8). Automated and Computer gates passed. Independent final review
+is pending; nyquist_compliant remains false until that reconciliation.
