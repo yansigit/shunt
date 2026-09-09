@@ -56,8 +56,6 @@
 
 ---
 
-## Cross-Milestone Trends
-
 ## Milestone: v2 — Provider Compatibility
 
 **Completed locally:** 2026-09-09 | **Phases:** 8 | **Plans:** 48
@@ -96,20 +94,22 @@ cost and model percentages were not measured and are not invented.
 
 ---
 
-## Cross-Milestone Trends (continued)
+## Cross-Milestone Trends
 
 ### Process Evolution
 
 | Milestone | Sessions | Phases | Key Change |
 |-----------|----------|--------|------------|
 | v1 | 1 | 8 | Established behavior-first porting with per-phase verification and final integration audit |
+| v2 | Not measured | 8 | Durable test fixtures survive archival; source, live and Computer proof stay distinct |
 
 ### Cumulative Quality
 
 | Milestone | Tests | Requirements | Verification Overrides |
 |-----------|-------|--------------|------------------------|
 | v1 | 2,049 library passed; 40 binary passed; all integrations passed | 20/20 | 0 |
+| v2 | 2,979 passed; two existing ignored | 63/63 | 0 |
 
 ### Top Lessons (Verified Across Milestones)
 
-1. Await evidence from a future milestone before declaring a cross-milestone trend.
+1. Behavior-first fixtures and explicit verification boundaries remained useful across both milestones.

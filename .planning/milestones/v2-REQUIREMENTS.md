@@ -1,9 +1,9 @@
 # Requirements Archive: v2 Provider Compatibility
 
 **Archived:** 2026-09-09
-**Status:** SHIPPED
+**Status:** COMPLETED LOCALLY — not pushed, published or deployed
 
-For current requirements, see `.planning/REQUIREMENTS.md`.
+All requirements below are archived. No next milestone is scoped yet.
 
 ---
 
