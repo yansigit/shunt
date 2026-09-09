@@ -46,13 +46,21 @@ jobs:
           cache-targets: false
 
       - name: Format check
-        run: cargo fmt --all --check
+        run: node scripts/isolated-run.cjs cargo fmt --all --check
+
+      - name: Upstream maintenance tooling tests
+        run: |
+          OPENCODEX_HOME="$(mktemp -d)" OPENCODEX_PORT=31987 node --test scripts/isolated-run.test.cjs
+          bash scripts/test_upstream_preflight.sh
 
       - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: node scripts/isolated-run.cjs cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Test
-        run: cargo test --all-features --workspace
+        run: node scripts/isolated-run.cjs cargo test --all-features --workspace
+
+      - name: Mock gateway smoke
+        run: node scripts/isolated-run.cjs bash .claude/skills/run-shunt/smoke.sh
 
       - name: sccache stats
         if: always()
@@ -92,7 +100,7 @@ jobs:
           tool: cargo-llvm-cov
 
       - name: Generate coverage (lcov)
-        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+        run: node scripts/isolated-run.cjs cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
 
       - name: sccache stats
         if: always()

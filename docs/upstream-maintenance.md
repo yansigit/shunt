@@ -1,7 +1,9 @@
 # Keeping the fork compatible with upstream
 
-Research and integration decision, 2026-09-09. This is a maintenance recommendation,
-not a promise of conflict-free merges or an enabled recurring automation.
+Research and integration decision, 2026-09-09. The maintenance safeguards below
+reduce merge risk; they do not promise conflict-free or behaviorally correct merges.
+See [activation and verification evidence](upstream-maintenance-verification.md)
+for the tested setup and its remaining limits.
 
 ## Recommendation for this repository
 
@@ -33,8 +35,9 @@ rebase caveat is downstream history disruption, not simply graph aesthetics.
 
 1. Preserve a known-good tag and inventory dirty files. Never include credentials
    or local configuration in commits or broadly stash unrelated user work.
-2. Fetch `upstream`, inspect its PRs, and run
-   `git merge-tree --write-tree --name-only HEAD upstream/main`. This performs a
+2. Run `bash scripts/upstream-preflight.sh --fetch`, then inspect upstream PRs.
+   Without `--fetch` the script uses the existing local upstream ref offline.
+   It uses `git merge-tree --write-tree --name-only HEAD upstream/main` for a
    real merge simulation without touching the index or worktree. A clean result
    is only a textual result, not a test result.
 3. Review semantic overlap before applying the merge: config precedence,
@@ -46,17 +49,26 @@ rebase caveat is downstream history disruption, not simply graph aesthetics.
 5. Commit the verified merge locally. Pushing, publishing, and deployment remain
    separate authorized actions.
 
-Prefer smaller, regularly reviewed syncs and early preflight checks. A scheduled
-check would be useful, but no schedule is installed by this research task.
+Prefer smaller, regularly reviewed syncs and early preflight checks. Scheduled
+checks must report changes without automatically merging or publishing them.
+On this workstation, the approved `Shunt upstream preflight` task is scheduled
+for Mondays at 09:00 local time. It checks this integration worktree and reports
+new revisions, changed conflicts, or failures; unchanged state stays quiet.
+The schedule is app-local, not installed by cloning the repository, and does not
+run builds, provider calls, or merges.
 [Git merge-tree](https://git-scm.com/docs/git-merge-tree),
 [GitHub fork syncing](https://docs.github.com/en/pull-requests/how-tos/work-with-forks/syncing-a-fork)
 
 `rerere` can reuse a previously recorded resolution when the same conflict
-recurs. Recommended opt-in: repository-local `rerere.enabled=true` and
+recurs. Approved and enabled in this repository: local `rerere.enabled=true` and
 `rerere.autoupdate=false`, so reused edits still require inspection/staging.
 It cannot decide whether two new protocol behaviors are compatible. These
-settings were researched, not silently enabled, and this merge does not claim
-to have recorded preimages before conflict resolution.
+settings affect all worktrees sharing this repository, not other repositories.
+They were enabled after the v0.44.0 merge, so no preimages from that already
+resolved merge are claimed. The previous Git configuration was backed up outside
+the repository before changing these two settings. On a fresh clone, opt in with
+`git config --local rerere.enabled true` and
+`git config --local rerere.autoupdate false`; these settings are not versioned.
 [Git rerere](https://git-scm.com/docs/git-rerere)
 
 Avoid blanket `ours` merge strategies, union merges of source code, and
@@ -65,6 +77,64 @@ produce an invalid combination. `git-imerge` is an optional tool for subdividing
 large integrations, not the default here; the current semantic overlap needs
 human policy decisions regardless of merge granularity.
 [git-imerge repository](https://github.com/mhagger/git-imerge)
+
+## Executable safeguards and merge gates
+
+Requirements: a Git version supporting `merge-tree --write-tree`, Bash, Node.js
+18 or newer, and the existing Rust/smoke prerequisites (Python 3, curl, jq).
+The preflight exits 0 for a textually clean merge, 1 for conflicts, and 2 for an
+invalid invocation or Git/tool failure. It never applies a merge, updates the
+index, or overwrites dirty files. Git may write temporary merge objects; an
+explicit fetch updates remote-tracking refs. Inspect the reported commits even
+when the simulation passes.
+
+Run these gates from the development worktree after every actual integration:
+
+```bash
+bash scripts/test_upstream_preflight.sh
+OPENCODEX_HOME="$(mktemp -d)" OPENCODEX_PORT=31987 node --test scripts/isolated-run.test.cjs
+node scripts/isolated-run.cjs cargo fmt --all --check
+node scripts/isolated-run.cjs env RUSTFLAGS=-Dwarnings cargo clippy --all-targets --all-features -- -D warnings
+node scripts/isolated-run.cjs env RUSTFLAGS=-Dwarnings cargo test --all-features --workspace -- --test-threads=1
+node scripts/isolated-run.cjs env RUSTFLAGS=-Dwarnings bash .claude/skills/run-shunt/smoke.sh
+```
+
+The committed runner replaces the session-only `/tmp` verification helpers.
+It creates a fresh `OPENCODEX_HOME`, pins `OPENCODEX_PORT=31987` and the mock smoke
+ports `SHUNT_PORT=31711` / `MOCK_PORT=31712` (overriding inherited values), removes the
+inherited Cursor overrides used by local sessions, and compares production
+config modification time, SHA-256, and invalid/backup inventory before and after
+the child. It serializes local runs and preserves temporary homes for diagnostics.
+This is an environment guard, **not an OS sandbox**: never pass it a command that
+explicitly targets the production home or port 10100, and ensure child servers
+are shut down before the command exits. Never nest the runner. A busy lock means
+no command started; do not delete another run's lock.
+
+CI retains its full fmt/Clippy/workspace gates, adds tooling fixture tests and
+the mock gateway smoke, and uses the runner for test and coverage processes.
+Do not use retries or weaker assertions to hide failures. The existing intermittent
+Antigravity process EOF timeout remains documented in
+[the sync evidence](upstream-sync-v0.44.0.md); a green rerun does not fix it.
+
+### Compatibility ownership map
+
+Keep future patches within these modules when possible. This is a review map,
+not a proposal to move working code merely to change its paths.
+
+| Boundary | Focused implementation | Regression coverage included in the full suite |
+| --- | --- | --- |
+| Endpoint route precedence / native relay | `src/codex_endpoint.rs`, `src/adapters/responses/inbound.rs` | `tests/inbound_codex_routes.rs`, `tests/inbound_codex_endpoint.rs`, `tests/inbound_codex_websocket.rs` |
+| Strict local translation vs upstream core | `src/model/inbound_responses/` | Inbound endpoint and translation unit tests |
+| Generic Chat / subscription separation | `src/adapters/openai_chat/`, `src/adapters/command_code/`, `src/auth/command_code.rs` | `tests/openai_chat_conformance.rs`, `tests/command_code_conformance.rs`, `tests/command_code_api_conformance.rs` |
+| Provider admission, credential and release claims | Shared proxy admission plus provider-owned modules | `src/proxy/opencode_go_tests.rs`, `tests/opencode_go_evidence.rs`, `tests/release_security.rs`, `tests/release_matrix.rs` |
+
+Config/auth/dispatch overlap still requires semantic review regardless of this
+layout. Public config/provider semantics and credential writeback remain approval
+boundaries. For user-facing changes, update README and site in all four locales,
+build with `node scripts/isolated-run.cjs npm --prefix site run build`, and verify
+affected rendered links. This maintenance-only change affects engineering docs
+and CI, not runtime behavior: README/site translations need no change; generated
+wiki files remain untouched.
 
 ## What the requested research established
 

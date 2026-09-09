@@ -9,13 +9,18 @@ and the per-milestone specs alongside it — read those before proposing changes
 `shunt` is a Rust (stable, edition 2021) Cargo project.
 
 ```bash
-cargo build
-cargo test
-cargo clippy --all-targets -- -D warnings
-cargo fmt --all --check
+node scripts/isolated-run.cjs cargo build
+node scripts/isolated-run.cjs cargo test --all-features --workspace
+node scripts/isolated-run.cjs cargo clippy --all-targets --all-features -- -D warnings
+node scripts/isolated-run.cjs cargo fmt --all --check
 ```
 
 All four must pass before a PR is ready; CI enforces them.
+The Node.js (18+) wrapper gives each process tree a fresh `OPENCODEX_HOME` and
+checks the production OpenCodeX config fingerprint before and after. It is not a
+sandbox: never explicitly target the live home or port 10100, and shut down owned
+servers before exiting. See [upstream maintenance](docs/upstream-maintenance.md)
+for preflight, mock smoke, compatibility gates, and reviewed conflict reuse.
 
 ### Working in a worktree
 
