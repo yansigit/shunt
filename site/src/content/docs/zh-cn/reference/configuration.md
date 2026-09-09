@@ -393,6 +393,14 @@ codex = "gpt-5.2"
 | `display_name` | — | 在 `/model` 选择器中显示的标签 |
 | `upstream_model` | — | 从已配置上游名称到后端模型 id 的映射；有序 `[[upstreams]]` 可形成多条目故障转移链，旧式 provider 只允许一个条目 |
 
+### OpenCode Go（证据门控，不支持）
+
+OpenCode Go 目前不受支持。已准入集合为空（空准入集合）；shunt 在凭据前门控中、凭据查找或网络分发之前拒绝显式 Go 选择，因此当前不会发送凭据或 `x-opencode-session` header。
+
+可选配置使用 `kind = "opencode_go"`、`SHUNT_OPENCODE_GO_API_KEY` 和规范目标 `https://opencode.ai/zen/go/v1`。候选为 `glm-5.3-flash`、`omen-alpha`、`muse-spark-1.3-contributor`、`deepseek-v4-flash`。这些并非受支持或已实时验证的模型。未知字段、错误 wire、按系列推断、不支持的 effort 别名和失败证据都会被拒绝。网关要求严格的权威终止，不会从宽松 EOF 合成成功，也不会修复不完整的 turn。
+
+未来准入需要精确的模型、目标、wire、effort 和 capability 证据、hermetic 一致性以及凭据安全验证。条件性的 `x-opencode-session` 只能在复用匹配 Chat 合约时发送到规范目标。当前空准入集合不生成此 header。
+
 ## `[sentry]`(可选)
 
 可选启用的错误上报,发送到你自己的 Sentry 项目。未设置 `dsn` 时关闭;与 `[otel]` 相互独立。上报网关自身的诊断信息 — 致命的网关启动/服务错误、panic 和 `error` 级日志事件(`warn`/`info` 作为 breadcrumb,仅含消息)— 此外,只要设置了 `dsn`,每当上游提供方本身返回失败响应时都会无条件发送一个错误/警告事件:5xx 响应对应 `error`,429/529(限流/过载)对应 `warning`,并且仅附带 `model`、`provider`、`upstream_status` 三个标签。流式请求在返回 `200` 后、终止事件之前断开时,`cut_kind` 会区分原因:`eof` 表示上游在消息中途关闭连接,`transport_error` 表示读取正文失败,`marker` 表示 shunt 已检测到断流并发出 fail-closed 流错误,且不会发送正常完成事件。请求/响应正文、头部和凭证永远不会发送。指标和 tracing 各自是进一步的独立可选项。

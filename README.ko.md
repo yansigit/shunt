@@ -290,6 +290,21 @@ provider = "kimi"
 
 전체 목록과 프로바이더별 참고 사항은 [프로바이더](https://shunt.dev/guides/providers/)를 참고하세요.
 
+## OpenCode Go (증거 게이트, 지원 없음)
+
+OpenCode Go는 현재 지원되지 않습니다. 허용된 OpenCode Go 집합은 비어 있으며(빈 허용 집합), shunt는 자격 증명 전 게이트에서 모든 명시적 Go 선택을 자격 증명 조회나 네트워크 디스패치 전에 거부합니다. 따라서 현재 자격 증명과 `x-opencode-session` 헤더는 전송되지 않습니다.
+
+옵트인 구성 ID는 `kind = "opencode_go"`이며 `SHUNT_OPENCODE_GO_API_KEY`와 표준 대상 `https://opencode.ai/zen/go/v1`을 사용합니다. 현재 소스 전용 후보는 다음과 같습니다.
+
+- `glm-5.3-flash`
+- `omen-alpha`
+- `muse-spark-1.3-contributor`
+- `deepseek-v4-flash`
+
+이 후보들은 지원되거나 실시간 검증된 모델이 아닙니다. 알 수 없는 필드, 잘못된 wire, 패밀리 추론, 지원되지 않는 effort 별칭 및 실패한 증거는 모두 거부됩니다. 게이트웨이는 엄격한 권위 있는 터미널을 요구하며 허용적인 EOF에서 성공을 합성하거나 불완전한 턴을 복구하지 않습니다.
+
+미래 승격에는 정확한 모델·대상·wire·effort·capability 증거, hermetic 적합성 및 자격 증명 안전 캡처 또는 라이브 검증이 필요합니다. 일치하는 Chat 계약을 재사용할 때만 표준 대상에 한해 안정적인 불투명 conversation-scoped `x-opencode-session`을 보낼 수 있습니다. 빈 허용 집합인 현재는 이 세션 생산자가 없습니다. 자세한 내용은 [OpenCode Go 프로바이더 가이드](https://shunt.dev/ko/providers/opencode-go/)와 [구성 레퍼런스](https://shunt.dev/ko/reference/configuration/)를 참고하세요.
+
 ## 문서
 
 모든 내용은 **[shunt.dev](https://shunt.dev)**에 있습니다.

@@ -81,7 +81,17 @@ fn assert_locale_contract(
     strict_terminal: &str,
     forbidden_positive: &str,
 ) {
-    assert_zero_support_contract(text, surface);
+    for token in [
+        "SHUNT_OPENCODE_GO_API_KEY",
+        "https://opencode.ai/zen/go/v1",
+        "opencode_go",
+        "x-opencode-session",
+    ] {
+        assert!(
+            text.contains(token),
+            "{surface} is missing required token {token:?}"
+        );
+    }
     assert!(
         text.contains(zero_support),
         "{surface} is missing localized zero-support wording {zero_support:?}"
