@@ -1,5 +1,77 @@
 use std::fs;
 
+fn assert_guide(locale: &str, zero: &str, empty: &str, before: &str, positive: &str) {
+    let prefix = if locale.is_empty() {
+        String::new()
+    } else {
+        format!("{locale}/")
+    };
+    let path = format!("site/src/content/docs/{prefix}guides/providers.mdx");
+    let text = read(&path);
+    let go = section(&text, "## OpenCode Go");
+    for token in [
+        "opencode-go",
+        "opencode_go",
+        "SHUNT_OPENCODE_GO_API_KEY",
+        "https://opencode.ai/zen/go/v1",
+        zero,
+        empty,
+        before,
+    ] {
+        assert!(go.contains(token), "{path}: missing {token:?}");
+    }
+    let link = format!("](/{prefix}providers/opencode-go/)");
+    assert!(go.contains(&link), "{path}: missing locale provider link");
+    assert!(
+        !go.contains(positive),
+        "{path}: affirmative Go support claim"
+    );
+}
+
+#[test]
+fn opencode_go_docs_guides_en() {
+    assert_guide(
+        "",
+        "not supported",
+        "empty admitted set",
+        "before credential lookup",
+        "OpenCode Go is supported",
+    );
+}
+
+#[test]
+fn opencode_go_docs_guides_ko() {
+    assert_guide(
+        "ko",
+        "현재 지원되지 않습니다",
+        "허용 집합은 비어",
+        "자격 증명 조회",
+        "OpenCode Go는 지원됩니다",
+    );
+}
+
+#[test]
+fn opencode_go_docs_guides_ja() {
+    assert_guide(
+        "ja",
+        "現在サポートされていません",
+        "許可集合は空",
+        "資格情報の参照",
+        "OpenCode Go はサポートされています",
+    );
+}
+
+#[test]
+fn opencode_go_docs_guides_zh_cn() {
+    assert_guide(
+        "zh-cn",
+        "目前不受支持",
+        "准入集合为空",
+        "凭据查找",
+        "OpenCode Go 受支持",
+    );
+}
+
 fn read(path: &str) -> String {
     fs::read_to_string(path)
         .unwrap_or_else(|error| panic!("{path} is missing or unreadable: {error}"))
