@@ -1,3 +1,4 @@
+---
 phase: "15"
 slug: "exact-opencode-go-evidence-gate"
 status: draft
@@ -29,12 +30,9 @@ names the parseable artifact, not unspecified Markdown prose.
 | 15-01 Task 3 | OGO-03/04 | `opencode_go_router_boundaries`: crate-local server injection, zero Go lookup/HTTP counters, separate legitimate generic lookup counts, exact native rejection preserved and pinned/unknown native Go guarded | pending |
 | 15-02 Task 1 | OGO-01/02 | four complete candidate records in the fenced ledger frame, rejected register, admitted `[]`, eight edge dispositions incl. flagged OGO-02 | pending |
 | 15-03 Task 1 | OGO-01/02/03 | English provider/README/config/nav (`site/src/lib/i18n.ts`) + engineering note `docs/opencode-go-evidence-gate.md` | pending |
-| 15-03 Task 2 | OGO-01/03 | per-file doc assertions in `tests/opencode_go_docs.rs` (one fn per English surface) | pending |
 | 15-05 Task 1 | OGO-01/02/03 + REL-05 | nine locale files (ko/ja/zh-cn README + provider + configuration) with native anchors, no invented English anchors | pending |
-| 15-05 Task 2 | REL-05 | per-file locale assertions extended in `tests/opencode_go_docs.rs` (one fn per locale surface) | pending |
 | 15-06 Task 1 | OGO-03/REL-05 | four actual `guides/providers.mdx` overview files (en/ko/ja/zh-cn) updated with zero-admission wording and locale links | pending |
-| 15-06 Task 2 | REL-05 | one independent guide assertion per overview file in `tests/opencode_go_docs.rs` | pending |
-| 15-04 Task 1 | OGO-02/04 | real-rejection CLI smoke: boot with fake key, actual POST /v1/messages, Anthropic-shape gateway error, fixture request count 0, temp home cleaned | pending |
+| 15-04 Task 1 | OGO-02/04 | real-rejection CLI smoke: canonical config, fake key, actual POST /v1/messages, Anthropic-shape gateway error, temp home cleaned; zero-egress proof separately owned by 15-01 | pending |
 | 15-04 Task 2 | OGO-02/03/04 | fmt, warm-cache `RUSTFLAGS=-Dwarnings` Clippy/workspace, site build, fingerprint audit, 15-05 rows present | pending |
 
 ## Exact focused commands
@@ -42,15 +40,20 @@ names the parseable artifact, not unspecified Markdown prose.
 - `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib opencode_go_config_acceptance -- --test-threads=1`
 - `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib opencode_go_router_boundaries -- --test-threads=1`
 - `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test opencode_go_evidence ledger -- --test-threads=1`
-- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test opencode_go_docs opencode_go_docs -- --test-threads=1`
-- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test opencode_go_docs opencode_go_docs_locale -- --test-threads=1`
+- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test opencode_go_docs -- --test-threads=1`
 - `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test check_cli opencode_go_cli_negative -- --test-threads=1`
 - `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib config::presets::tests::preset_table_contains_the_supported_backends_in_documented_order -- --test-threads=1`
-- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test opencode_go_docs opencode_go_docs_guides -- --test-threads=1`
 
 Each command uses ONE Cargo `--` separator: the test-name filter sits before
 it, libtest options (`--test-threads=1`) after it. Zero selection is failure;
 the first tracer run records a behavioral RED, never a compile failure.
+
+Plans 15-03, 15-05 and 15-06 each combine documentation and per-file assertions
+in Task 1. Run the entire docs binary and inspect actual named results/counts:
+at least 5, 14 and 18 respectively. Record behavioral RED before content edits,
+a missing-token mutation failure, and restored GREEN. Cargo's exit code alone
+does not detect zero selection. Navigation assertions cover links/labels only;
+other contract assertions are scoped to new Go sections, not unrelated providers.
 
 ## Release gates
 
@@ -58,7 +61,7 @@ Run as separate wrapper invocations (no chained conjunctions inside one call;
 never HTML-encoded):
 
 - `node /tmp/shunt-phase12-isolated-run.cjs cargo fmt --all --check`
-- `node /tmp/shunt-phase12-isolated-run.cjs cargo clippy --all-targets --all-features -- -D warnings` (warm cache, `RUSTFLAGS=-Dwarnings`)
+- `node /tmp/shunt-phase12-isolated-run.cjs env RUSTFLAGS=-Dwarnings cargo clippy --all-targets --all-features -- -D warnings` (warm cache, `RUSTFLAGS=-Dwarnings`)
 - `node /tmp/shunt-phase12-isolated-run.cjs env RUSTFLAGS=-Dwarnings cargo test --all-features --workspace`
 - `node /tmp/shunt-phase12-isolated-run.cjs npm --prefix site run build`
 

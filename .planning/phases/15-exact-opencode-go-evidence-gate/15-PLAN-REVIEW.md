@@ -223,3 +223,19 @@ Read-only command-path/failure-direction probes reported no findings, but those
 presence checks do not disprove the semantic issues above. Existing ordered
 preset tests were confirmed in source, not executed. Historical Phase 14 test
 results are not Phase 15 verification. Production state was not loaded or changed.
+
+## Approved approach adjustment — fresh review PASSED
+
+User approved root-led targeted corrections followed by fresh checking. Root
+corrected the seven findings: canonical CLI config with separately attributed
+crate-local counters; serialized waves 1/2/3/4/5/6; combined docs RED/GREEN tasks
+with actual count and mutation checks; restored validation frontmatter; aligned
+native/helper semantics; scoped Go-section assertions/nav exception; unknown
+wire for absent source candidates. No safety gate was removed.
+
+Fresh reviewer `/root/go_root_correction_check` (gpt-5.6-luna, explicit high)
+returned PASSED: all six plans valid, acyclic, complete OGO-01..04 coverage and
+locked-decision alignment; no substantive blocker. Its two advisories were
+clarified: EDGE schema remains unchanged with planned verification references
+and null unresolved OGO-02; Clippy now explicitly sets RUSTFLAGS=-Dwarnings.
+Phase execution may begin. This is a planning pass, not implementation proof.
