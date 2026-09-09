@@ -1,6 +1,6 @@
 ---
 phase: 13-generic-openai-chat-completions
-verified: 2026-09-08T20:05:39Z
+verified: 2026-09-09T03:52:11Z
 status: passed
 score: 12/12 consolidated must-haves verified
 behavior_unverified: 0
@@ -63,7 +63,7 @@ covered_files:
   - tests/openai_chat_translate/assembly.rs
   - tests/openai_chat_translate/caps.rs
   - tests/retry.rs
-covered_digest: "v1:sha256:0357844c326f6316dbcc983f992733cd76e49055a9e1be1eaebc06505f34e0c8"
+covered_digest: "v1:sha256:1b795db620286e19b72fe2f26d3ac2701869cd73e8ac1c8a03aa0ffe546747ed"
 decision_coverage:
   honored: 11
   total: 11
@@ -71,6 +71,10 @@ decision_coverage:
 ---
 
 # Phase 13: Generic OpenAI Chat Completions verification
+
+## Phase 15 re-verification (2026-09-09)
+
+Independent source audit reviewed the OpenCode Go additions touching shared config, routing, capability filtering, and failover. The new kind is explicitly identity-bound, uses the existing OpenAI Chat adapter only after routing, and is denied by default before credential/network seams; generic OpenAI Chat selection/fallback and terminal/retry boundaries remain unchanged. Root executed `node /tmp/shunt-phase12-isolated-run.cjs env RUSTFLAGS=-Dwarnings cargo test --quiet --all-features --workspace` at `eb60174`: 2,972 passed, 0 failed, 2 existing ignored. No Phase 13 truth, artifact, key link, or negative boundary regressed. Production OpenCodex config mtime/SHA and backup/invalid inventory were unchanged.
 
 ## Phase 14 regression re-verification (2026-09-08)
 

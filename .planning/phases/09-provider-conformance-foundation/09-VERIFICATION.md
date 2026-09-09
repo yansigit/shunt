@@ -1,6 +1,6 @@
 ---
 phase: 09-provider-conformance-foundation
-verified: 2026-09-08T20:00:00Z
+verified: 2026-09-09T03:52:11Z
 status: passed
 score: 8/8 must-haves verified
 covered_files:
@@ -50,7 +50,7 @@ covered_files:
   - tests/passthrough.rs
   - tests/responses_translate.rs
   - tests/retry.rs
-covered_digest: "v1:sha256:74c5eda098ebd2e9a1c4c29eb2c6e972cb36d8d722534f8acaa45ed75372dd0f"
+covered_digest: "v1:sha256:5f4fd496e46b75fe785e4e3bfcbc8c04a9a4830ca189a12c9e44d7c14e93abde"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
@@ -67,6 +67,10 @@ human_verification: []
 ---
 
 # Phase 9: Provider Conformance Foundation Verification Report
+
+## Phase 15 re-verification (2026-09-09)
+
+Independent source audit found the post-report edits are either Phase 15 bookkeeping/docs or the deny-by-default OpenCode Go admission gate. The gate runs after capability filtering, rejects an OpenCode Go primary before credential resolution, and removes only OpenCode Go fallback routes; existing provider failover, retry, Responses, and commitment paths are unchanged. Root executed `node /tmp/shunt-phase12-isolated-run.cjs env RUSTFLAGS=-Dwarnings cargo test --quiet --all-features --workspace` at `eb60174`: 2,972 passed, 0 failed, 2 existing ignored. No Phase 9 truth, artifact, key link, or negative boundary regressed. Production OpenCodex config mtime/SHA and backup/invalid inventory were unchanged.
 
 Transition-only fingerprint refresh, 2026-09-08: PROJECT.md now moves the
 verified Command Code scope from Active to Validated and updates its footer.

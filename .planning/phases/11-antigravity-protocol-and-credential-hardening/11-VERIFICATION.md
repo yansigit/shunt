@@ -1,6 +1,6 @@
 ---
 phase: 11-antigravity-protocol-and-credential-hardening
-verified: 2026-09-08T20:05:39Z
+verified: 2026-09-09T03:52:11Z
 status: passed
 score: 10/10 must-haves verified
 covered_files:
@@ -57,7 +57,7 @@ covered_files:
   - tests/antigravity_tool_scope.rs
   - tests/antigravity_translate.rs
   - tests/gemini_conformance.rs
-covered_digest: "v1:sha256:55785d7b8ee81174219fff8f8668161b102ed507d17080c31976c10921fc831f"
+covered_digest: "v1:sha256:bd0c45a5f8e880441fc658b42fdf92cedb5a6b9df2a156ce223a5c6e4425b313"
 behavior_unverified: 0
 overrides_applied: 0
 decision_coverage:
@@ -68,6 +68,10 @@ human_verification: []
 ---
 
 # Phase 11: Antigravity Verification
+
+## Phase 15 re-verification (2026-09-09)
+
+Independent source audit found only Phase 15 bookkeeping/docs plus a `#[cfg(test)]` router dependency-injection seam in the covered files; no Antigravity credential, catalog, protocol, retry, or cancellation implementation changed. Root executed `node /tmp/shunt-phase12-isolated-run.cjs env RUSTFLAGS=-Dwarnings cargo test --quiet --all-features --workspace` at `eb60174`: 2,972 passed, 0 failed, 2 existing ignored. No Phase 11 truth, artifact, key link, or negative boundary regressed. Production OpenCodex config mtime/SHA and backup/invalid inventory were unchanged.
 
 ## Phase 14 regression re-verification (2026-09-08)
 

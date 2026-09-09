@@ -6,7 +6,7 @@ current_phase: 16
 current_phase_name: Cross-Provider Release Gate
 current_plan: Not started
 status: planning
-stopped_at: Phase 15 complete, ready to plan Phase 16
+stopped_at: Phase 16 smart discuss; live-smoke opt-in scope awaiting user decision
 last_updated: "2026-09-09T03:44:25.464Z"
 last_activity: 2026-09-08
 last_activity_desc: Phase 15 complete, transitioned to Phase 16
@@ -146,6 +146,19 @@ Stopped at: Phase 15 complete, ready to plan Phase 16
 Resume file: None
 
 ## Operator Next Steps
+
+- Latest autonomous preflight: independent Luna/high audit re-verified Phases
+  9/11/12/13/14 after Phase 15 shared changes. All Phases 9–15 now have fresh
+  passing verification. Root reran isolated full workspace tests at eb60174
+  (2,972 passed, zero failed, two existing ignored), fmt and warnings-denied
+  Clippy; production fingerprints stayed unchanged. No code changed.
+- Phase 16 smart-discuss must resolve the separately opt-in live-smoke scope
+  before writing final CONTEXT.md. Recommend one bounded request per distinct
+  provider/auth path (maximum eight), existing authorized credentials only,
+  no retries, isolated homes/ports and synthetic prompt, <=128 output tokens,
+  <=60 seconds each; skip any path whose cost/reasoning bounds or credentials
+  cannot be established. Cap planned paid usage at US$1 total. No calls yet.
+  Source credentials remain immutable; no production proxy/home is used.
 
 - Phase 15: 6/6 plans, 13/13 truths, 11/11 decisions; user replied "sure pass"
   during verify-work for the consolidated evidence-boundary review. UAT 1/1 passed.

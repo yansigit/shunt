@@ -1,6 +1,6 @@
 ---
 phase: 14-command-code-product-separation
-verified: 2026-09-08T20:18:04Z
+verified: 2026-09-09T03:52:11Z
 status: passed
 score: 12/12 consolidated must-haves verified
 behavior_unverified: 0
@@ -82,10 +82,14 @@ covered_files:
   - tests/command_code_conformance.rs
   - tests/command_code_translate.rs
   - tests/command_code_translate/response.rs
-covered_digest: v1:sha256:73c2ae7866105f2abde08ad53618425138cbb93717691bbc14aacd5216ee17c1
+covered_digest: v1:sha256:81397d7a7afaf31ed3fca3dfd6363781fc2419356647d2e5fdb2b674e735c956
 ---
 
 # Phase 14: Command Code Product Separation verification
+
+## Phase 15 re-verification (2026-09-09)
+
+Independent source audit reviewed the OpenCode Go additions in shared config, presets, routing, capability filtering, and failover. They add a distinct API-key identity with an empty evidence allowlist; Command Code API-key/subscription dispatch, credentials, history, terminal grammar, retry, and cancellation paths are untouched. Root executed `node /tmp/shunt-phase12-isolated-run.cjs env RUSTFLAGS=-Dwarnings cargo test --quiet --all-features --workspace` at `eb60174`: 2,972 passed, 0 failed, 2 existing ignored. No Phase 14 truth, artifact, key link, or negative boundary regressed. Production OpenCodex config mtime/SHA and backup/invalid inventory were unchanged.
 
 Goal: API-key and subscription products preserve separate transport, credentials,
 session and terminal semantics. Root goal-backward verification; independent
@@ -201,5 +205,3 @@ is admitted as live-compatible merely because its hermetic tests pass.
 
 **Result:** Phase14's implementation goal is met within the declared source-derived,
 hermetic scope. The milestone and live-provider release gate are not complete.
-
-
