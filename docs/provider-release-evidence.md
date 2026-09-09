@@ -2490,7 +2490,7 @@ rationale).
   ],
   "go": {
     "admitted": [],
-    "policy": "OpenCode Go admits zero tuples per D-02. The Phase 15 exact evidence gate (tests/opencode_go_evidence.rs) remains the only promotion path; captured and live evidence are prerequisites for any future admission."
+    "policy": "OpenCode Go admits zero tuples per D-02. Future promotion requires exact hermetic conformance plus credential-safe captured or live verification under the existing evidence gate; this ledger grants no admission."
   },
   "unbound_contracts": [
     {
@@ -2635,7 +2635,7 @@ rationale).
         },
         "auth": {
           "status": "covered",
-          "evidence": "src/auth/mod.rs#api_key_provider_requires_env_var"
+          "evidence": "tests/passthrough.rs#messages_forwards_incoming_credentials_unchanged"
         },
         "cancellation": {
           "status": "covered",
@@ -2661,7 +2661,7 @@ rationale).
     {
       "provider": "custom-openai-chat",
       "auth": "api_key",
-      "model_policy": "Client-declared id and base URL for any OpenAI-Chat-Completions-compatible upstream (Vercel AI Gateway and similar); no per-model support claim.",
+      "model_policy": "Client-declared id and base URL for an OpenAI-Chat-Completions-compatible upstream; no vendor-wide or per-model support claim. Vercel's documented Anthropic route is represented separately.",
       "wire": "client-declared-base-url/chat/completions",
       "scenarios": {
         "normal": {
@@ -2716,7 +2716,7 @@ rationale).
     {
       "provider": "gemini",
       "auth": "google_oauth",
-      "model_policy": "Model id is carried in the Code Assist request envelope; admission follows the resolved upstream catalog, never a static guess.",
+      "model_policy": "An operator-declared upstream model is carried in the Google Code Assist request envelope; no catalog gate or per-model entitlement claim is inferred from the distinct native Antigravity contract.",
       "wire": "https://cloudcode-pa.googleapis.com/v1internal:{streamGenerateContent|generateContent}",
       "scenarios": {
         "normal": {
@@ -2830,12 +2830,12 @@ rationale).
 ## Provenance classes
 
 - **source** — every row above: derived from tracked repository source at the
-  pinned revision, inspected 2026-09-08. Command Code subscription rows are
+  pinned revision, with the per-row inspection date. Command Code subscription rows are
   translated from OpenCodex at `055c3ecf0de6c35f59195fc434d6b08525182b7f`
   (noticed in `THIRD-PARTY-NOTICES.md`, sanitized: exact model/effort tuples
   only).
 - **capture** / **live** — separate per-row fields, currently `none`. Phase 16
-  live-smoke plans append actual bounded records here under the D-04–D-06
+  live-smoke plans record actual bounded outcomes separately under the D-04–D-06
   budget; a missing record is never inferred from a source-derived pass.
 - **static** — visual/build checks are recorded by the phase verification
   plans, never inside this ledger's rows.
