@@ -14,6 +14,7 @@ provides:
   - Auditable zero-attempt smoke dispositions
 affects: [16-05]
 actuals:
+  tokens: 1505
   tasks: 1
   commits: 1
 tech-stack:

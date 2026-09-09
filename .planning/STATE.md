@@ -4,19 +4,19 @@ milestone: v2
 milestone_name: Provider Compatibility
 current_phase: 16
 current_phase_name: Cross-Provider Release Gate
-current_plan: 16-04 pending; 16-01 through 16-03 complete
+current_plan: 16-05 final verification; 16-01 through 16-04 complete
 status: executing
-stopped_at: Phase 16 ledger, documentation, and security plans complete; smoke dispositions and final gates pending; live smoke 0/8
+stopped_at: Phase 16 final review and regression after durable fixture relocation; live smoke 0/8
 last_updated: "2026-09-09T05:54:45Z"
 last_activity: 2026-09-09
-last_activity_desc: Phase 16 plans 01, 02, and 03 complete
+last_activity_desc: Phase 16 plans 01 through 04 complete; final Computer evaluation passed
 state_head: d42ce164524f716057125504e45dd1fd052ee841
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 48
-  completed_plans: 46
-  percent: 96
+  completed_plans: 47
+  percent: 98
 total_plans_in_phase: 5
 ---
 
@@ -32,10 +32,10 @@ See: `.planning/PROJECT.md` (updated 2026-09-08 after Phase 15)
 ## Current Position
 
 Phase: 16 (Cross-Provider Release Gate) — EXECUTING
-Current Plan: 16-04 pending; 16-01 through 16-03 complete
+Current Plan: 16-05 final verification; 16-01 through 16-04 complete
 Total Plans in Phase: 5
-Status: Executing; wave 3 next
-Last activity: 2026-09-09 — Ledger, docs, and security plans committed; final smoke and release gates pending
+Status: Executing; final review
+Last activity: 2026-09-09 — Zero-attempt smoke dispositions complete; site and Computer gates passed; final independent review pending
 
 ## Performance Metrics
 

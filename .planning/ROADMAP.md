@@ -278,7 +278,7 @@ Plans:
 | 13. Generic OpenAI Chat Completions | v2 | 5/5 | Complete    | 2026-09-08 |
 | 14. Command Code Product Separation | v2 | 6/6 | Complete    | 2026-09-08 |
 | 15. Exact OpenCode Go Evidence Gate | v2 | 6/6 | Complete    | 2026-09-08 |
-| 16. Cross-Provider Release Gate | v2 | 3/5 | In progress | - |
+| 16. Cross-Provider Release Gate | v2 | 4/5 | In progress | - |
 
 ## Scope Boundaries
 
