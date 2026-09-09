@@ -2,46 +2,46 @@
 gsd_state_version: "1.0"
 milestone: v2
 milestone_name: Provider Compatibility
-current_phase: 15
-current_phase_name: Exact OpenCode Go Evidence Gate
-current_plan: 6
-status: verifying
-stopped_at: Phase 15 implementation and automated gates complete; consolidated judgment UAT pending
-last_updated: "2026-09-09T03:17:42Z"
+current_phase: 16
+current_phase_name: Cross-Provider Release Gate
+current_plan: Not started
+status: planning
+stopped_at: Phase 15 complete, ready to plan Phase 16
+last_updated: "2026-09-09T03:44:25.464Z"
 last_activity: 2026-09-08
-last_activity_desc: All six plans complete; independent verifier human_needed with 13/13 truths and no implementation blockers
-state_head: fedc58e
+last_activity_desc: Phase 15 complete, transitioned to Phase 16
+state_head: 11a9a6948fdc4cc478d9585344b09bb06262d744
 progress:
   total_phases: 8
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 43
   completed_plans: 43
-  percent: 75
-total_plans_in_phase: 6
+  percent: 88
+total_plans_in_phase: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-09-08 after Phase 14)
+See: `.planning/PROJECT.md` (updated 2026-09-08 after Phase 15)
 
 **Core value:** Protocol-faithful, streaming-safe client behavior in a bounded, lean gateway.
-**Current focus:** Phase 15 — Exact OpenCode Go Evidence Gate
+**Current focus:** Phase 16 — Cross-Provider Release Gate
 
 ## Current Position
 
-Phase: 15 (Exact OpenCode Go Evidence Gate) — HUMAN VERIFICATION PENDING
-Current Plan: 6
-Total Plans in Phase: 6
-Status: All six plans implemented; consolidated judgment UAT pending
-Last activity: 2026-09-08 — 2,972 tests passed, no failures, two existing ignored; independent final verification 13/13
+Phase: 16 — Cross-Provider Release Gate
+Current Plan: Not started
+Total Plans in Phase: 0
+Status: Ready to plan
+Last activity: 2026-09-08 — Phase 15 complete, transitioned to Phase 16
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 62
+- Total plans completed: 68
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -63,6 +63,7 @@ Last activity: 2026-09-08 — 2,972 tests passed, no failures, two existing igno
 | 12 | 8 | - | - |
 | 13 | 5 | - | - |
 | 14 | 6 | - | - |
+| 15 | 6 | - | - |
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
@@ -123,24 +124,13 @@ None yet.
 
 ### Blockers/Concerns
 
-Phase 15 dispatch recovered on the user's model retry request. Earlier GLM/high
-research completed successfully. Omen without a reasoning override failed with
-provider 400/1210: thinking cannot be disabled; use low, high or max. Luna/high
-then completed pattern mapping and wrote 15-PATTERNS.md. Independent planning,
-checking and implementation remain pending; no model dispatch is Shunt wire proof.
-Source-only evidence admits zero tuples; strict EOF policy is already locked.
-
-Latest user preference: `opencode-go/omen-alpha`, `opencode-go/glm-5.3-flash`,
-and `gpt-5.6-luna` are all candidates, always with explicit high thinking effort.
-Omen/high planner attempt was accepted but stayed running for approximately ten
-minutes without a result or plan artifact, then was interrupted. No provider
-error was reported. Spawn/follow-up controls were no longer exposed afterward,
-so the Luna/high retry was not launched. Planning/checking remain incomplete.
-Preflight passed context-drift and UI checks; general codebase drift remains
-advisory. Eight deterministic edge-probe rows are in 15-EDGE-COVERAGE.json;
-OGO-02 remains unclassified and must be surfaced, never silently dismissed.
-
-The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent OpenCodex supplies schema-derived Run output-token deltas and context checkpoints; 83 hermetic tests passed in isolated state. After CLI installation, an isolated read-only Composer 2.5 probe succeeded with streamed events and result usage, including cache fields. CLI output is not raw Connect evidence: do not infer protobuf field mappings or claim Shunt live verification. Original CLI settings/credential files were backed up and remained unchanged. All eight Cursor plans and phase verification are complete. The approved bounded request-local KV architecture is implemented and tested; live gateway availability remains the Phase 16 opt-in gate.
+- Phase 15 is complete with zero Go admissions; captured/live evidence remains
+  mandatory before any future promotion. No live-provider or GUI pass is claimed.
+- Phase 16 must address cosmetic docs wording/sidebar warnings, visual verification,
+  cross-provider coverage/provenance and isolated live smoke results or explicit skips.
+- Subagent candidates: opencode-go/omen-alpha, opencode-go/glm-5.3-flash,
+  gpt-5.6-luna; always set explicit high thinking effort. Prior planning/dispatch
+  blockers were resolved; do not treat host model availability as Shunt wire proof.
 
 ## Deferred Items
 
@@ -151,63 +141,24 @@ The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent O
 
 ## Session Continuity
 
-Last session: 2026-09-08T20:18:14Z
-Stopped at: Phase 15 revision 2 written; all five structure checks pass; independent check blocked by dispatch/CLI quota
-Resume file: .planning/phases/15-exact-opencode-go-evidence-gate/15-CONTEXT.md
-
-Luna/high planning retry completed and wrote two draft plans. Root preflight
-found decision coverage 5/11 plus invalid Cargo filters and execution-order gaps;
-see 15-PLAN-PREFLIGHT.md. Independent checker dispatch was unavailable afterward.
-Do not mark planned or execute until revised plans pass independent checking.
-
-Latest continuation: Luna/high revised Phase 15 into four draft plans, and
-GLM/high independently checked the revision. Decision coverage is now 11/11;
-remaining issue count decreased from 11 to 8 (4 blockers, 4 warnings). All four
-plans lack autonomous frontmatter; product-marker design and cfg(test) module
-ownership remain incomplete. Full findings and revision-2 input are recorded in
-15-PLAN-REVIEW.md. Revision iteration 2/3 is allowed but was not dispatched:
-spawn/follow-up controls were no longer exposed after the checker returned.
-No implementation or tests ran; no production state was touched. Continue with
-GLM/high planner revision, fresh independent checker, then execution gates.
-
-Revision 2 is now written by `/root/go_revision2_glm` (GLM/high): five plans,
-all structure-valid, decision coverage 11/11. Independent checking has NOT run.
-Native dispatch controls were no longer exposed after its return; approved
-Cursor CLI fallback with `gpt-5.6-luna-high` in read-only ask mode exited before
-review due to usage limit (reported reset 2026-09-18). Do not increase spending
-or treat quota failure as review evidence. Resume a fresh independent checker
-using an available approved high-thinking model, against these five revised
-plans. No new revision is needed before that check. No code/tests/live provider
-smoke occurred; isolation wrapper verified production fingerprints unchanged.
+Last session: 2026-09-09T03:43:32Z
+Stopped at: Phase 15 complete, ready to plan Phase 16
+Resume file: None
 
 ## Operator Next Steps
 
-- CURRENT checkpoint (supersedes historical execution/planning notes below): all
-  six Phase 15 plans are complete. Isolated formatter, warnings-denied Clippy,
-  full workspace suite (2,972 passed, zero failed, two existing ignored), bounded
-  regression rerun, 173-page site build, 12 built-page checks and dedicated
-  unary/streaming CLI negative smoke passed. Production fingerprints unchanged.
-  Luna/high final verification: 13/13 truths, 11/11 decisions, no implementation
-  blocker, but human_needed for consolidated judgment prohibitions and the
-  explicitly unresolved future OGO-02 evidence assumption. See 15-UAT.md; run
-  `/gsd:verify-work 15` before phase closure. GLM/high code-only UI review found
-  two cosmetic documentation warnings; rendered layout remains unverified.
-  Zero Go tuples admitted; no live/GUI success claimed. Phase 16 and milestone
-  closure remain unstarted. Preserve unrelated config.json/state.json/.gsd/lock.
-
-- Latest checkpoint supersedes the historical blocked planning notes above:
-  the user approved root-led corrections, fresh Luna/high checking passed, and
-  Phase 15 plans 01/02 are complete (2/6). Real-router admission tests passed
-  8/8, including counter/mutation proof; the evidence ledger passed 2/2 and
-  admits zero tuples. Formatting and warnings-denied Clippy passed with the
-  production fingerprint inventory unchanged. Luna/high is executing English
-  documentation plan 03; GLM/high is independently reviewing the runtime.
-  Remaining work: locale plan 05, guides plan 06, CLI/release plan 04, phase
-  verification, Phase 16 acceptance, and milestone closure. No live or GUI
-  verification is claimed. Preserve the OGO-02 manual evidence assumption.
-
-- The user-approved installed GSD gate validator repair is complete and backed up at `/Users/user/gsd-gate-backup-mEVeg3`. Dotted query names validate; gate checks were rerun without disabling them. See 13-01-SUMMARY.md.
-- Phase 13 is complete: 5/5 plans, 2,875 passed, 0 failed, 2 existing ignored; CLI/curl Chat smoke and all documentation locales pass. Validation has no gaps; all 19 authored security threats have mitigations. Computer visual checks remain skipped/blocked, never passed.
-- Phase 14 is complete: 6/6 plans, 2,942 passed, zero failed, two pre-existing ignored; bounded regression, formatter, Clippy, docs build and owned CLI/curl smoke passed. All 21 authored security threats are mitigated; live/Computer acceptance is not claimed. No production mutation.
-- Phase 15 public opt-in configuration is approved (2026-09-08), with backups first and no changes to existing provider settings or credential writeback. Fresh byte-verified owner-only backups: `/Users/user/shunt-phase15-backup-YQSxN3`. Continue Phase 15 research and planning from 15-CONTEXT.md.
-- Transition warning about `node /tmp/shunt-phase12-isolated-run.cjs` in 14-03-SUMMARY is a prose command misclassified as a repository file, not a missing implementation artifact. Graduation scan found no LEARNINGS files and skipped under its minimum-data guard.
+- Phase 15: 6/6 plans, 13/13 truths, 11/11 decisions; user replied "sure pass"
+  during verify-work for the consolidated evidence-boundary review. UAT 1/1 passed.
+  This is not release approval or a Go/live/visual support claim.
+- Existing automated evidence: 2,972 passed, zero failures, two pre-existing ignored;
+  fmt, warnings-denied Clippy, bounded regression, 173-page site build, 12 built-page
+  checks, isolated unary/streaming CLI smoke passed. Production state unchanged.
+- Phase 16 Cross-Provider Release Gate has not been planned or implemented. Start
+  its context/planning, retain the two cosmetic UI-review warnings and unperformed
+  visual check as release inputs; preserve no-writeback and production isolation.
+- Owner-only byte-verified settings/credential backups remain at
+  /Users/user/shunt-phase15-backup-YQSxN3. Do not inspect secrets or touch production.
+- Transition warning about "node /tmp/shunt-phase12-isolated-run.cjs" in the CLI
+  summary is a command misclassified as a repository artifact, not missing code.
+  Graduation scan found no LEARNINGS files and skipped under its minimum-data guard.
+- Preserve unrelated .planning/config.json, .planning/state.json, .gsd/ and milestone lock.

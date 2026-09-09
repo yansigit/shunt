@@ -1,7 +1,7 @@
 ---
 phase: 15-exact-opencode-go-evidence-gate
 verified: 2026-09-09T03:17:42Z
-status: human_needed
+status: passed
 score: 13/13 truths verified
 behavior_unverified: 0
 overrides_applied: 0
@@ -9,8 +9,9 @@ decision_coverage:
   honored: 11
   total: 11
   not_honored: []
-human_verification:
-  - "Consolidated judgment review required for all 16 plan judgment-tier prohibitions and the explicitly unresolved OGO-02 future captured/live-evidence assumption; no implementation rerun is required."
+human_verification: []
+human_review_completed: 2026-09-09T03:43:32Z
+human_review_source: 15-UAT.md
 covered_files:
   - .planning/REQUIREMENTS.md
   - .planning/ROADMAP.md
@@ -71,12 +72,14 @@ covered_files:
   - tests/check_cli.rs
   - tests/opencode_go_docs.rs
   - tests/opencode_go_evidence.rs
-covered_digest: "v1:sha256:49fd7d1986c976eda21d8cc2e04dfa7d2d4d1fe59f19160d0c5ab37dd54a115d"
+covered_digest: "v1:sha256:0c9953d7d88cfb6f945f2959d1b2604810b9ddf8155cc90613f9b03bbcd4f999"
 ---
 
 # Phase 15: Exact OpenCode Go Evidence Gate — Verification
 
 ## Verdict
+
+**UAT resolution:** On 2026-09-09 the user replied "sure pass" within verify-work after the recommendation to pass Phase 15's evidence-boundary review only. The consolidated judgment checkpoint is resolved. The historical human-needed assessment below is retained for provenance; canonical status is now passed. This does not admit any Go tuple or assert live/visual verification, and it does not waive Phase 16 release checks.
 
 All 4 roadmap success criteria and all 13 consolidated plan truths are verified in the codebase and named behavioral evidence. The phase is **human-needed**, not failed: the plans deliberately classify 16 negative constraints as judgment-tier prohibitions, and the evidence ledger keeps OGO-02’s future captured/live promotion assumption unresolved. Those items require one consolidated maintainer judgment review; repeating the passing hermetic suite cannot resolve them.
 
@@ -134,3 +137,7 @@ All 11 trackable CONTEXT.md decisions are honored.
 The bounded 600-second GSD regression rerun exited 0; production config mtime/SHA and backup inventory remained unchanged. The code-only UI audit reports cosmetic wording/nav-label warnings and explicitly unverified rendered layout. It does not add an implementation blocker or claim visual acceptance. These observations are retained in 15-UI-REVIEW.md and the consolidated 15-UAT.md checkpoint.
 
 Decision gate output: `All trackable CONTEXT.md decisions are honored by shipped artifacts.` (11/11; warning-only gate.)
+
+## Transition reconciliation
+
+After the passing UAT/completion predicate, phase.complete changed only the covered ROADMAP completion markers and REQUIREMENTS checkboxes/status cells (diff inspected). No code, tests, plans, or evidence changed. The fingerprint was regenerated through verification.fingerprint to account for those bookkeeping edits, preserving the verified behavioral scope and original automated test evidence. Phase 16 remains incomplete.

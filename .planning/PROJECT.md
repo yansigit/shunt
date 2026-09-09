@@ -65,10 +65,15 @@ behavior while Shunt stays bounded, predictable, and operationally lean.
 - ✓ Generic OpenAI Chat serves Anthropic Messages with strict request translation, bounded unary/SSE semantics, tool assembly, cancellation and credential-safe conservative retries — Phase 13
 - ✓ Command Code API-key and subscription paths preserve separate credentials, request/terminal contracts, tools and cancellation without new credential persistence; hermetic and owned smoke checks pass, with live acceptance reserved for Phase 16 — Phase 14
 
+Validated in Phase 15: exact OpenCode Go identity and dated evidence gate, with
+zero tuples admitted and pre-credential rejection. Automated checks and the user
+evidence-boundary review passed; future admission still needs captured/live evidence.
+
 ### Active
 
-- [ ] OpenCode Go support is limited to exact model/wire combinations whose
-  behavior can be cleanly implemented and verified.
+- [ ] Complete Phase 16 cross-provider release checks: coverage/provenance,
+  isolated opt-in live smokes or explicit skips, documentation parity, visual
+  verification, and final repository quality/security review.
 
 ### Out of Scope
 
@@ -137,7 +142,7 @@ written tests are preferred.
 | No persistence or repair layer without evidence | Keeps Shunt bounded and avoids speculative complexity | ✓ Validated for v1; deferred requirements remain in v2 |
 | Port OpenCodex provider behavior selectively | Its issue history provides valuable wire invariants and fixtures, while its generalized infrastructure does not fit Shunt | ✓ Foundation validated in Phase 9 |
 | Keep existing credential writeback behavior unchanged | Provider compatibility does not justify expanding persistence authority | ✓ Preserved in Phase 9 |
-| Treat OpenCode Go as exact-model compatibility | The provider spans three wire protocols and has recent model-specific regressions | — Pending |
+| Treat OpenCode Go as exact-model compatibility | The provider spans three wire protocols and has recent model-specific regressions | ✓ Validated in Phase 15 with zero admissions; no live-support claim |
 | Exclude Google AI Studio Web completely | It is known nonfunctional and unrelated to the supported Code Assist transport | ✓ Preserved in Phase 9 |
 | Treat provider terminals as authoritative only after complete bounded framing | Prevents malformed input, provider errors, and transport cuts from becoming clean completion | ✓ Validated in Phase 9 |
 | Keep replay commitment only at production-reachable semantic redispatch seams | Generic HTTP retry is structurally pre-response; WebSocket fallback and continuation recovery carry actual output/tool evidence | ✓ Validated in Phase 9 |
@@ -162,4 +167,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Revisit deferred work only with evidence from usage or failing transcripts.
 
 ---
-*Last updated: 2026-09-08 after Phase 14*
+*Last updated: 2026-09-08 after Phase 15*

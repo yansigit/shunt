@@ -35,7 +35,7 @@ Full phase goals, requirements, success criteria, and plan references are kept i
 - [x] **Phase 12: Cursor Evidence-Backed Hardening** - Correct Cursor profiles, continuation, tools, terminal handling, cancellation, and pre-output failover from verified evidence. (completed 2026-09-07)
 - [x] **Phase 13: Generic OpenAI Chat Completions** - Add a bounded OpenAI Chat transport with complete Anthropic message, tool, image, streaming, and error translation. (completed 2026-09-08)
 - [x] **Phase 14: Command Code Product Separation** - Support the API-key Chat product and proprietary subscription product as distinct authenticated transports. (completed 2026-09-08)
-- [ ] **Phase 15: Exact OpenCode Go Evidence Gate** - Expose only exact model/wire tuples that pass dated captured and safe live evidence, with zero tuples as a valid result.
+- [x] **Phase 15: Exact OpenCode Go Evidence Gate** - Expose only exact model/wire tuples that pass dated captured and safe live evidence, with zero tuples as a valid result. (completed 2026-09-08)
 - [ ] **Phase 16: Cross-Provider Release Gate** - Prove provider coverage, provenance, credential safety, documentation parity, and repository quality before merge.
 
 ## Phase Details
@@ -277,7 +277,7 @@ Plans:
 | 12. Cursor Evidence-Backed Hardening | v2 | 8/8 | Complete    | 2026-09-07 |
 | 13. Generic OpenAI Chat Completions | v2 | 5/5 | Complete    | 2026-09-08 |
 | 14. Command Code Product Separation | v2 | 6/6 | Complete    | 2026-09-08 |
-| 15. Exact OpenCode Go Evidence Gate | v2 | 6/6 | Human verification pending |  |
+| 15. Exact OpenCode Go Evidence Gate | v2 | 6/6 | Complete    | 2026-09-08 |
 | 16. Cross-Provider Release Gate | v2 | 0/TBD | Not started | - |
 
 ## Scope Boundaries

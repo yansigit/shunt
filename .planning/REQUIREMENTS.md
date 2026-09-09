@@ -79,10 +79,10 @@ requirement maps to exactly one roadmap phase after roadmap creation.
 
 ### Exact-Model OpenCode Go Evaluation
 
-- [ ] **OGO-01**: Each OpenCode Go candidate has a dated evidence record identifying the exact model, canonical destination, wire protocol, required headers, context, modalities, effort, tools, field filtering, terminal behavior, and capture or live source.
-- [ ] **OGO-02**: An OpenCode Go tuple is exposed or documented as supported only after its exact model and wire pass hermetic tests plus a credential-safe captured or live verification; the phase may validly ship no tuples.
-- [ ] **OGO-03**: Each supported OpenCode Go tuple reuses the matching Chat, Responses, or Anthropic contract and sends a stable opaque `x-opencode-session` only to the canonical OpenCode Go destination.
-- [ ] **OGO-04**: Unknown, family-inferred, ambiguous, or failed OpenCode Go tuples remain unsupported and are rejected before credential lookup or network dispatch.
+- [x] **OGO-01**: Each OpenCode Go candidate has a dated evidence record identifying the exact model, canonical destination, wire protocol, required headers, context, modalities, effort, tools, field filtering, terminal behavior, and capture or live source.
+- [x] **OGO-02**: An OpenCode Go tuple is exposed or documented as supported only after its exact model and wire pass hermetic tests plus a credential-safe captured or live verification; the phase may validly ship no tuples.
+- [x] **OGO-03**: Each supported OpenCode Go tuple reuses the matching Chat, Responses, or Anthropic contract and sends a stable opaque `x-opencode-session` only to the canonical OpenCode Go destination.
+- [x] **OGO-04**: Unknown, family-inferred, ambiguous, or failed OpenCode Go tuples remain unsupported and are rejected before credential lookup or network dispatch.
 
 ### Security, Bounds, and Failure Invariants
 
@@ -172,10 +172,10 @@ Each committed requirement has exactly one owning phase.
 | CCS-06 | Phase 14 | Complete |
 | CCS-07 | Phase 14 | Complete |
 | CCS-08 | Phase 14 | Complete |
-| OGO-01 | Phase 15 | Pending |
-| OGO-02 | Phase 15 | Pending |
-| OGO-03 | Phase 15 | Pending |
-| OGO-04 | Phase 15 | Pending |
+| OGO-01 | Phase 15 | Complete |
+| OGO-02 | Phase 15 | Complete |
+| OGO-03 | Phase 15 | Complete |
+| OGO-04 | Phase 15 | Complete |
 | SAFE-01 | Phase 9 | Complete |
 | SAFE-02 | Phase 9 | Complete |
 | SAFE-03 | Phase 9 | Complete |
