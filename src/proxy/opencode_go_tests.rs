@@ -217,8 +217,10 @@ impl CredentialResolver for CountingResolver {
     }
 }
 
-/// Loopback upstream fixture: counts requests per provider path so any leaked
-/// Go egress (even without a credential) is observable.
+/// Plain-HTTP fixture counters prove legitimate generic HTTP traffic. The Go
+/// URL is HTTPS, so these HTTP counters alone cannot detect a leaked Go attempt:
+/// TLS would fail first. Go rejection is proved by the credential seam counters
+/// and response assertions; DNS pinning prevents external provider access.
 #[derive(Default)]
 struct FixtureCounts {
     generic_requests: AtomicUsize,
@@ -232,8 +234,8 @@ async fn fixture_upstream(
 ) -> axum::response::Response {
     let bytes = to_bytes(body, usize::MAX).await.expect("fixture body");
     let _payload: Value = serde_json::from_slice(&bytes).expect("fixture receives a JSON body");
-    // The canonical Go base URL is https://opencode.ai/zen/go/v1, so leaked
-    // Go egress arrives on a /zen/go/... path, not a /go/ prefix.
+    // Classify a Go-shaped plaintext request defensively; canonical Go uses
+    // HTTPS and therefore cannot reach this handler through successful TLS.
     if uri.path().contains("/zen/go/") {
         counts.go_requests.fetch_add(1, Ordering::SeqCst);
     } else {

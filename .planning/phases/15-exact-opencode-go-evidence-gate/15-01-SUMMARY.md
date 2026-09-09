@@ -31,7 +31,7 @@ key-decisions:
 
 - `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib opencode_go_config_acceptance -- --test-threads=1` — passed (1/1).
 - `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib opencode_go_ -- --test-threads=1` — 8 passed, 0 failed (5 real boundary tests + 3 config/gate tests).
-- Mutation proof (gate removal): temporarily short-circuited `enforce_opencode_go_admission` behind `SHUNT_MUTATION_PROOF` in `src/proxy/capability.rs`, then `SHUNT_MUTATION_PROOF=1 node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib opencode_go_router_boundaries -- --test-threads=1` — 1 passed, 4 FAILED: the fallback-drop test returned 401 (Go leg genuinely dispatched to the fixture) instead of 502 with zero Go seams; go-primary returned 401 instead of 400 "not admitted"; count_tokens returned 501 instead of 400; pinned-native became unreachable at `codex_endpoint.rs:522`. The short-circuit was then removed and the suite returned to 8/8 green — removing the gate makes the real boundary tests fail, so they are not vacuous counters. (The exact-Go native test still passes under the mutation by design: it exercises the independent `resolve_native_inbound` layer, not the admission gate.)
+- Mutation proof (gate removal): temporarily short-circuited `enforce_opencode_go_admission` behind `SHUNT_MUTATION_PROOF` in `src/proxy/capability.rs`, then ran the isolated `opencode_go_router_boundaries` filter — 1 passed, 4 failed. Fallback-drop and Go-primary returned 401, count_tokens returned 501, and pinned-native reached an unreachable branch. These are rejected expectations, not proof of a completed upstream Go HTTP exchange. Restoring the gate restored 8/8 green. Exact-native still passed under mutation because its independent routing rejection precedes the shared gate. No mutation marker remains.
 - `node /tmp/shunt-phase12-isolated-run.cjs cargo clippy --all-targets --all-features -- -D warnings` — clean.
 - `node /tmp/shunt-phase12-isolated-run.cjs cargo fmt --all --check` — clean.
 - `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --workspace` — exit 0, 0 failed (one `antigravity_process::streaming_turn_translates_stub_events_to_sse` load flake in a first run; it passed in isolation in 0.19s and the full suite passed on re-run).
@@ -46,6 +46,14 @@ key-decisions:
 
 ## Deviations and remaining limits
 
+- Independent GLM/high review found no runtime safety hole. It identified an
+  evidence wording defect: the loopback fixture is plain HTTP while canonical
+  Go uses HTTPS. The Go HTTP-path counter cannot distinguish a leaked TLS
+  attempt and is not independent zero-egress proof. The actual discriminating
+  evidence is the injected credential lookup counter plus request outcomes;
+  DNS pinning contains any attempted provider network access to loopback.
+  Generic positive-control HTTP exchanges are genuine. Test comments now make
+  this limit explicit; no test or assertion was weakened.
 - The crate-local boundary harness uses injected resolver/client seams and the shared gate; it does not claim live provider, credential, socket, or Computer verification.
 - No public docs, credential writeback, session header, EOF recovery, dynamic catalog, or admitted Go tuple was added.
 - Corrected after root review: the original Task 3 summary over-claimed. The replaced harness uses a real router, real POSTs, a DNS-pinned loopback client, and injected resolver/client seams (synthetic credentials only); generic count_tokens control is an honest 501 estimate rather than 200, because OpenAiChat count_tokens is estimation-only by design. No dormant session producer, new wire format, or credential writeback was introduced.
