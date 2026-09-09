@@ -14,6 +14,9 @@ use crate::{error::ShuntError, model::responses::anthropic_error_type, server::A
 pub(crate) mod capability;
 pub(crate) mod failover;
 
+#[cfg(test)]
+mod opencode_go_tests;
+
 pub async fn post(
     State(state): State<AppState>,
     method: Method,
