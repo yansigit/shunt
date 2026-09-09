@@ -4,18 +4,18 @@ milestone: v2
 milestone_name: Provider Compatibility
 current_phase: 15
 current_phase_name: Exact OpenCode Go Evidence Gate
-current_plan: 3
-status: executing
-stopped_at: Phase 15 plans 01 and 02 complete; English documentation execution underway
-last_updated: "2026-09-09T01:27:54.330Z"
+current_plan: 6
+status: verifying
+stopped_at: Phase 15 implementation and automated gates complete; consolidated judgment UAT pending
+last_updated: "2026-09-09T03:17:42Z"
 last_activity: 2026-09-08
-last_activity_desc: Approved root corrections independently passed; runtime and ledger verified
-state_head: 7e518bf
+last_activity_desc: All six plans complete; independent verifier human_needed with 13/13 truths and no implementation blockers
+state_head: fedc58e
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 43
-  completed_plans: 39
+  completed_plans: 43
   percent: 75
 total_plans_in_phase: 6
 ---
@@ -31,11 +31,11 @@ See: `.planning/PROJECT.md` (updated 2026-09-08 after Phase 14)
 
 ## Current Position
 
-Phase: 15 (Exact OpenCode Go Evidence Gate) — EXECUTING
-Current Plan: 3
+Phase: 15 (Exact OpenCode Go Evidence Gate) — HUMAN VERIFICATION PENDING
+Current Plan: 6
 Total Plans in Phase: 6
-Status: Executing Phase 15
-Last activity: 2026-09-08 — Phase 15 plans 01/02 complete; plan 03 executing
+Status: All six plans implemented; consolidated judgment UAT pending
+Last activity: 2026-09-08 — 2,972 tests passed, no failures, two existing ignored; independent final verification 13/13
 
 ## Performance Metrics
 
@@ -181,6 +181,19 @@ plans. No new revision is needed before that check. No code/tests/live provider
 smoke occurred; isolation wrapper verified production fingerprints unchanged.
 
 ## Operator Next Steps
+
+- CURRENT checkpoint (supersedes historical execution/planning notes below): all
+  six Phase 15 plans are complete. Isolated formatter, warnings-denied Clippy,
+  full workspace suite (2,972 passed, zero failed, two existing ignored), bounded
+  regression rerun, 173-page site build, 12 built-page checks and dedicated
+  unary/streaming CLI negative smoke passed. Production fingerprints unchanged.
+  Luna/high final verification: 13/13 truths, 11/11 decisions, no implementation
+  blocker, but human_needed for consolidated judgment prohibitions and the
+  explicitly unresolved future OGO-02 evidence assumption. See 15-UAT.md; run
+  `/gsd:verify-work 15` before phase closure. GLM/high code-only UI review found
+  two cosmetic documentation warnings; rendered layout remains unverified.
+  Zero Go tuples admitted; no live/GUI success claimed. Phase 16 and milestone
+  closure remain unstarted. Preserve unrelated config.json/state.json/.gsd/lock.
 
 - Latest checkpoint supersedes the historical blocked planning notes above:
   the user approved root-led corrections, fresh Luna/high checking passed, and
