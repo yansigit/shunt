@@ -9,7 +9,7 @@ requires:
 provides:
   - Synchronized English README, provider, configuration and engineering-note guidance
   - Single-source navigation entry with four locale labels
-  - Five deterministic per-file documentation contract tests
+  - Five deterministic per-file documentation contract tests plus heading-scope coverage
 affects: [15-04, 15-05, 16]
 tech-stack:
   added: []
@@ -23,7 +23,7 @@ key-files:
     - README.md
     - site/src/content/docs/reference/configuration.md
     - site/src/lib/i18n.ts
-requirements-completed: [OGO-01, OGO-02, OGO-03]
+requirements-completed: []
 coverage:
   - id: english-docs
     description: Empty-admission and conditional session contract is synchronized across English surfaces
@@ -66,8 +66,9 @@ owned by plan 05; generated `wiki/` remains untouched.
 ## Verification
 
 - RED: isolated integration binary selected all 5 named tests and failed all 5
-  on missing Go surfaces (behavioral failures, not compilation failures).
-- GREEN: `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test opencode_go_docs -- --test-threads=1` — 5 passed, 0 failed.
+  on missing Go surfaces (behavioral failures, not compilation failures). The
+  raw RED output was not persisted as a standalone artifact or commit.
+- GREEN: `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test opencode_go_docs -- --test-threads=1` — 6 passed, 0 failed (five per-file assertions plus heading scope).
 - Mutation: temporarily removed the provider's `SHUNT_OPENCODE_GO_API_KEY`
   token; the same binary selected 5 tests and failed exactly
   `opencode_go_docs_provider` (exit 101); token restored and GREEN rerun.
@@ -81,7 +82,12 @@ owned by plan 05; generated `wiki/` remains untouched.
 
 ## Deviations
 
-None.
+- The implementation commit `42c3089` combined the TDD test additions and
+  documentation changes; no standalone RED commit was created. This summary
+  records that history rather than inventing a missing RED commit or artifact.
+- The section extractor now stops at the next same-or-higher Markdown heading,
+  with a focused test preventing sibling configuration sections from entering
+  the Go contract scope.
 
 ## Self-check: PASSED
 
