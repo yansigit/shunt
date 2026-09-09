@@ -73,6 +73,48 @@ fn assert_zero_support_contract(text: &str, surface: &str) {
     }
 }
 
+fn assert_locale_contract(
+    text: &str,
+    surface: &str,
+    zero_support: &str,
+    pre_credential: &str,
+    strict_terminal: &str,
+    forbidden_positive: &str,
+) {
+    assert_zero_support_contract(text, surface);
+    assert!(
+        text.contains(zero_support),
+        "{surface} is missing localized zero-support wording {zero_support:?}"
+    );
+    assert!(
+        text.contains(pre_credential),
+        "{surface} is missing localized pre-credential wording {pre_credential:?}"
+    );
+    assert!(
+        text.contains(strict_terminal),
+        "{surface} is missing localized terminal wording {strict_terminal:?}"
+    );
+    assert!(
+        !text.contains(forbidden_positive),
+        "{surface} contains forbidden localized positive claim {forbidden_positive:?}"
+    );
+    for candidate in [
+        "glm-5.3-flash",
+        "omen-alpha",
+        "muse-spark-1.3-contributor",
+        "deepseek-v4-flash",
+    ] {
+        assert!(
+            text.contains(candidate),
+            "{surface} is missing candidate {candidate:?}"
+        );
+    }
+    assert!(
+        !text.contains("](#future-promotion-contract)"),
+        "{surface} invents an English locale fragment anchor"
+    );
+}
+
 #[test]
 fn opencode_go_docs_readme() {
     let text = read("README.md");
@@ -167,5 +209,128 @@ fn opencode_go_docs_engineering_note() {
     assert!(
         text.contains("wiki/"),
         "engineering note must describe the generated wiki boundary"
+    );
+}
+
+#[test]
+fn opencode_go_docs_locale_readme_ko() {
+    let text = read("README.ko.md");
+    let scoped = section(&text, "## OpenCode Go (증거 게이트, 지원 없음)");
+    assert_locale_contract(
+        &scoped,
+        "README.ko.md OpenCode Go section",
+        "OpenCode Go는 현재 지원되지 않습니다",
+        "자격 증명 전 게이트",
+        "엄격한 권위 있는 터미널",
+        "OpenCode Go는 지원됩니다",
+    );
+}
+
+#[test]
+fn opencode_go_docs_locale_readme_ja() {
+    let text = read("README.ja.md");
+    let scoped = section(&text, "## OpenCode Go（証拠ゲート、サポートなし）");
+    assert_locale_contract(
+        &scoped,
+        "README.ja.md OpenCode Go section",
+        "OpenCode Go は現在サポートされていません",
+        "資格情報取得前ゲート",
+        "厳格な権威ある終端",
+        "OpenCode Go はサポートされています",
+    );
+}
+
+#[test]
+fn opencode_go_docs_locale_readme_zh_cn() {
+    let text = read("README.zh-CN.md");
+    let scoped = section(&text, "## OpenCode Go（证据门控，不支持）");
+    assert_locale_contract(
+        &scoped,
+        "README.zh-CN.md OpenCode Go section",
+        "OpenCode Go 目前不受支持",
+        "凭据前门控",
+        "严格的权威终止",
+        "OpenCode Go 受支持",
+    );
+}
+
+#[test]
+fn opencode_go_docs_locale_provider_ko() {
+    let text = read("site/src/content/docs/ko/providers/opencode-go.md");
+    assert_locale_contract(
+        &text,
+        "ko OpenCode Go provider page",
+        "OpenCode Go는 현재 지원되지 않습니다",
+        "자격 증명 전 게이트",
+        "엄격한 권위 있는 터미널",
+        "OpenCode Go는 지원됩니다",
+    );
+}
+
+#[test]
+fn opencode_go_docs_locale_provider_ja() {
+    let text = read("site/src/content/docs/ja/providers/opencode-go.md");
+    assert_locale_contract(
+        &text,
+        "ja OpenCode Go provider page",
+        "OpenCode Go は現在サポートされていません",
+        "資格情報取得前ゲート",
+        "厳格な権威ある終端",
+        "OpenCode Go はサポートされています",
+    );
+}
+
+#[test]
+fn opencode_go_docs_locale_provider_zh_cn() {
+    let text = read("site/src/content/docs/zh-cn/providers/opencode-go.md");
+    assert_locale_contract(
+        &text,
+        "zh-cn OpenCode Go provider page",
+        "OpenCode Go 目前不受支持",
+        "凭据前门控",
+        "严格的权威终止",
+        "OpenCode Go 受支持",
+    );
+}
+
+#[test]
+fn opencode_go_docs_locale_configuration_ko() {
+    let text = read("site/src/content/docs/ko/reference/configuration.md");
+    let scoped = section(&text, "### OpenCode Go (증거 게이트, 지원 없음)");
+    assert_locale_contract(
+        &scoped,
+        "ko configuration OpenCode Go section",
+        "OpenCode Go는 현재 지원되지 않습니다",
+        "자격 증명 전 게이트",
+        "엄격한 권위 있는 터미널",
+        "OpenCode Go는 지원됩니다",
+    );
+}
+
+#[test]
+fn opencode_go_docs_locale_configuration_ja() {
+    let text = read("site/src/content/docs/ja/reference/configuration.md");
+    let scoped = section(&text, "### OpenCode Go（証拠ゲート、サポートなし）");
+    assert_locale_contract(
+        &scoped,
+        "ja configuration OpenCode Go section",
+        "OpenCode Go は現在サポートされていません",
+        "資格情報取得前ゲート",
+        "厳格な権威ある終端",
+        "OpenCode Go はサポートされています",
+    );
+}
+
+#[test]
+fn opencode_go_docs_locale_configuration_zh_cn() {
+    let text = read("site/src/content/docs/zh-cn/reference/configuration.md");
+    let scoped = section(&text, "### OpenCode Go（证据门控，不支持）");
+    assert_locale_contract(
+        &scoped,
+        "zh-cn configuration OpenCode Go section",
+        "OpenCode Go 目前不受支持",
+        "凭据前门控",
+        "严格的权威终止",
+        "OpenCode Go 受支持",
     );
 }
