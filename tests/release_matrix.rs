@@ -5,6 +5,7 @@
 //! admission. Sends no network requests.
 
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::fs;
 
 const LEDGER_PATH: &str = "docs/provider-release-evidence.md";
@@ -81,7 +82,7 @@ fn validate_scenario(row_id: &str, name: &str, entry: &Value) -> Result<(), Stri
             let path = format!("{}/{file}", env!("CARGO_MANIFEST_DIR"));
             let source = fs::read_to_string(&path)
                 .map_err(|_| format!("{row_id}/{name}: evidence file {file} missing"))?;
-            if !source.contains(&format!("fn {test}")) {
+            if test.is_empty() || !source.contains(&format!("fn {test}(")) {
                 return Err(format!("{row_id}/{name}: test {evidence} not found"));
             }
         }
@@ -91,13 +92,17 @@ fn validate_scenario(row_id: &str, name: &str, entry: &Value) -> Result<(), Stri
                 .filter(|s| !s.is_empty())
                 .ok_or_else(|| format!("{row_id}/{name}: not_applicable without rationale"))?;
         }
-        _ => return Err(format!("{row_id}/{name}: missing or invalid scenario entry")),
+        _ => {
+            return Err(format!(
+                "{row_id}/{name}: missing or invalid scenario entry"
+            ))
+        }
     }
     Ok(())
 }
 
 fn validate_row(row: &Value) -> Result<(), String> {
-    let id = tuple(&row)?;
+    let id = tuple(row)?;
     let row_id = format!("{}/{}/{}/{}", id.0, id.1, id.2, id.3);
     for key in ["scenarios", "provenance", "capture", "live"] {
         if row.get(key).is_none() || row[key].is_null() {
@@ -111,21 +116,18 @@ fn validate_row(row: &Value) -> Result<(), String> {
     match provenance["class"].as_str() {
         Some("source") => {
             for key in ["repository", "revision", "inspected", "sanitization"] {
-                if provenance[key]
-                    .as_str()
-                    .filter(|s| !s.is_empty())
-                    .is_none()
-                {
+                if provenance[key].as_str().filter(|s| !s.is_empty()).is_none() {
                     return Err(format!("{row_id}: source provenance missing {key}"));
                 }
             }
         }
-        Some("capture") | Some("live") | Some("static") => {}
         _ => return Err(format!("{row_id}: invalid provenance class")),
     }
     for key in ["capture", "live"] {
-        if row[key].as_str().is_none() {
-            return Err(format!("{row_id}: {key} must be a string class marker"));
+        if row[key] != "none" {
+            return Err(format!(
+                "{row_id}: no captured or live proof has been recorded"
+            ));
         }
     }
     Ok(())
@@ -133,12 +135,22 @@ fn validate_row(row: &Value) -> Result<(), String> {
 
 fn validate(v: &Value) -> Result<(), String> {
     let rows = v["rows"].as_array().ok_or("missing rows")?;
-    if rows.is_empty() {
-        return Err("rows must not be empty".into());
+    if rows.len() != 45 {
+        return Err("the finite inventory requires 45 exact documented model rows".into());
     }
     let mut tuples = Vec::new();
     for row in rows {
         let id = tuple(row)?;
+        if [
+            "passthrough",
+            "catalog-declared",
+            "claude-builtin-catalog",
+            "not-admitted",
+        ]
+        .contains(&id.2.as_str())
+        {
+            return Err("a contract placeholder is not an exact model identity".into());
+        }
         if tuples.contains(&id) {
             return Err(format!("duplicate tuple {id:?}"));
         }
@@ -150,21 +162,52 @@ fn validate(v: &Value) -> Result<(), String> {
     if tuples != sorted {
         return Err("rows are not in deterministic tuple order".into());
     }
+    // Freeze the reviewed finite identity set independently of the mutable ledger.
+    // Changing a model/credential/destination requires a new explicit review.
+    let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&tuples).unwrap()));
+    if digest != "fac32c4f8a23712c0d372dc1743b2f9a14efdea88581a7376daef8a6881b59de" {
+        return Err("reviewed exact tuple inventory changed".into());
+    }
+    let contracts = v["unbound_contracts"]
+        .as_array()
+        .ok_or("missing unbound contracts")?;
+    let names: Vec<_> = contracts
+        .iter()
+        .map(|r| r["provider"].as_str().unwrap_or_default())
+        .collect();
+    if names
+        != [
+            "antigravity-cli",
+            "commandcode",
+            "custom-anthropic",
+            "custom-openai-chat",
+            "gemini",
+            "kimi-code",
+        ]
+    {
+        return Err("generic/account-catalog contract inventory changed".into());
+    }
+    for contract in contracts {
+        if contract.get("model").is_some()
+            || contract["selection"].as_str().is_none_or(str::is_empty)
+        {
+            return Err("unbound contract must not invent a model identity".into());
+        }
+        let mut checked = contract.clone();
+        checked["model"] = json!("contract-only");
+        validate_row(&checked)?;
+    }
     let go = &v["go"];
     if go["admitted"] != json!([]) {
         return Err("Go admission must remain empty".into());
     }
-    if go["policy"]
-        .as_str()
-        .filter(|s| !s.is_empty())
-        .is_none()
-    {
+    if go["policy"].as_str().filter(|s| !s.is_empty()).is_none() {
         return Err("missing Go rejection policy".into());
     }
     for row in rows {
         if row["provider"] == "cursor" {
             let wire = row["wire"].as_str().unwrap_or_default();
-            if !wire.starts_with(CURSOR_AGENT_WIRE) {
+            if wire != CURSOR_AGENT_WIRE {
                 return Err(format!(
                     "cursor row must record the active agent wire, got {wire}"
                 ));
@@ -219,6 +262,26 @@ fn release_matrix_ledger_validation_is_idempotent() {
 #[test]
 fn release_matrix_ledger_rejects_mutations() {
     let base = ledger();
+    let mut invented = base.clone();
+    invented["rows"][0]["model"] = json!("invented-model");
+    assert!(
+        validate(&invented).is_err(),
+        "invented model identity must fail"
+    );
+    let mut omitted = base.clone();
+    omitted["rows"].as_array_mut().unwrap().pop();
+    assert!(validate(&omitted).is_err(), "missing model row must fail");
+    let mut unbound = base.clone();
+    unbound["unbound_contracts"][0]["model"] = json!("invented-model");
+    assert!(
+        validate(&unbound).is_err(),
+        "contract must not infer a model"
+    );
+    for key in ["capture", "live"] {
+        let mut fabricated = base.clone();
+        fabricated["rows"][0][key] = json!("pass");
+        assert!(validate(&fabricated).is_err(), "fabricated {key} must fail");
+    }
     let row_keys = [
         "provider",
         "auth",
@@ -247,22 +310,38 @@ fn release_matrix_ledger_rejects_mutations() {
     assert!(validate(&v).is_err(), "covered without evidence must fail");
     let mut v = base.clone();
     v["rows"][0]["scenarios"]["normal"] = json!({"status": "not_applicable"});
-    assert!(validate(&v).is_err(), "not_applicable without rationale must fail");
+    assert!(
+        validate(&v).is_err(),
+        "not_applicable without rationale must fail"
+    );
     let mut v = base.clone();
     let duplicate = base["rows"][0].clone();
     v["rows"].as_array_mut().unwrap().push(duplicate);
     assert!(validate(&v).is_err(), "duplicate tuple identity must fail");
     let mut v = base.clone();
-    v["rows"][0]["provenance"].as_object_mut().unwrap().remove("revision");
-    assert!(validate(&v).is_err(), "missing provenance revision must fail");
+    v["rows"][0]["provenance"]
+        .as_object_mut()
+        .unwrap()
+        .remove("revision");
+    assert!(
+        validate(&v).is_err(),
+        "missing provenance revision must fail"
+    );
     let mut v = base.clone();
     v["rows"][0]["provenance"]["class"] = json!("fabricated");
     assert!(validate(&v).is_err(), "invalid provenance class must fail");
     let mut v = base.clone();
-    v["rows"][0]["scenarios"]["normal"] = json!({"status": "covered", "evidence": "tests/nope.rs#missing_test"});
+    v["rows"][0]["scenarios"]["normal"] =
+        json!({"status": "covered", "evidence": "tests/nope.rs#missing_test"});
     assert!(validate(&v).is_err(), "nonexistent evidence test must fail");
     let mut v = base.clone();
-    v["rows"][0]["wire"] = json!("https://api2.cursor.sh");
+    let cursor = v["rows"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|row| row["provider"] == "cursor")
+        .unwrap();
+    cursor["wire"] = json!("https://api2.cursor.sh");
     assert!(validate(&v).is_err(), "preset cursor wire must be rejected");
     let mut v = base.clone();
     v["go"]["admitted"] = json!([{"provider": "opencode-go"}]);
@@ -274,10 +353,7 @@ fn release_matrix_ledger_rejects_mutations() {
     // validate through the same file-based entrypoint.
     let mut valid = base.clone();
     valid["rows"] = json!([]);
-    let dir = std::env::temp_dir().join(format!(
-        "shunt-release-matrix-{}",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("shunt-release-matrix-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let fixture = dir.join("fixture.md");
     std::fs::write(
@@ -286,7 +362,10 @@ fn release_matrix_ledger_rejects_mutations() {
     )
     .unwrap();
     let parsed = ledger_from_path(fixture.to_str().unwrap());
-    assert!(parse_ledger_text("no fence").is_err(), "missing fence must fail");
+    assert!(
+        parse_ledger_text("no fence").is_err(),
+        "missing fence must fail"
+    );
     std::fs::remove_dir_all(&dir).unwrap();
     assert_eq!(parsed, valid);
     assert!(validate(&parsed).is_err(), "empty rows fixture must fail");
