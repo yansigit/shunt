@@ -152,7 +152,7 @@ The user authorized Cursor CLI probing and existing OpenCodex suites. Adjacent O
 ## Session Continuity
 
 Last session: 2026-09-08T20:18:14Z
-Stopped at: Phase 15 revision 1 independently checked; 4 blockers and 4 warnings remain; revision 2 pending
+Stopped at: Phase 15 revision 2 written; all five structure checks pass; independent check blocked by dispatch/CLI quota
 Resume file: .planning/phases/15-exact-opencode-go-evidence-gate/15-CONTEXT.md
 
 Luna/high planning retry completed and wrote two draft plans. Root preflight
@@ -169,6 +169,16 @@ ownership remain incomplete. Full findings and revision-2 input are recorded in
 spawn/follow-up controls were no longer exposed after the checker returned.
 No implementation or tests ran; no production state was touched. Continue with
 GLM/high planner revision, fresh independent checker, then execution gates.
+
+Revision 2 is now written by `/root/go_revision2_glm` (GLM/high): five plans,
+all structure-valid, decision coverage 11/11. Independent checking has NOT run.
+Native dispatch controls were no longer exposed after its return; approved
+Cursor CLI fallback with `gpt-5.6-luna-high` in read-only ask mode exited before
+review due to usage limit (reported reset 2026-09-18). Do not increase spending
+or treat quota failure as review evidence. Resume a fresh independent checker
+using an available approved high-thinking model, against these five revised
+plans. No new revision is needed before that check. No code/tests/live provider
+smoke occurred; isolation wrapper verified production fingerprints unchanged.
 
 ## Operator Next Steps
 

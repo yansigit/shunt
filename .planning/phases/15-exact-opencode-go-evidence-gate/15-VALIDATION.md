@@ -1,4 +1,3 @@
----
 phase: "15"
 slug: "exact-opencode-go-evidence-gate"
 status: draft
@@ -13,43 +12,55 @@ All stateful commands use `node /tmp/shunt-phase12-isolated-run.cjs`, a fresh
 `OPENCODEX_HOME`, and a non-10100 fixture port. Production config mtime/SHA and
 backup inventory are checked before and after. No credentials are inspected.
 
+## Machine-readable ledger frame
+
+The 15-EVIDENCE.md ledger lives in one fenced JSON code block tagged
+`opencode-go-ledger` with the top-level shape
+`{candidates: [...], rejected: [...], admitted: []}` (admitted exactly empty).
+`tests/opencode_go_evidence.rs` parses that fenced block itself — validation
+names the parseable artifact, not unspecified Markdown prose.
+
 ## Per-task verification map
 
 | Plan/task | Requirement | Evidence | Status |
 |---|---|---|---|
-| 15-01 Task 1 | OGO-02/04 | crate-local behavioral RED then GREEN; primary/fallback/count-tokens/Codex zero lookup and zero HTTP counters | pending |
-| 15-01 Task 2 | OGO-03/04 | private seam proves no bearer/session header and generic positive controls | pending |
-| 15-02 Task 1 | OGO-01/02 | four complete candidate records, rejected ledger, seven resolved edges plus flagged OGO-02 | pending |
-| 15-03 Task 1 | OGO-01/02/03 | English provider/README/config contract | pending |
-| 15-03 Task 2 | REL-05 | ko/ja/zh-cn README/provider/config parity and links | pending |
-| 15-04 Task 1 | OGO-02/04 | synthetic isolated CLI status + zero outbound + cleanup | pending |
-| 15-04 Task 2 | OGO-02/03/04 | fmt, warm-cache RUSTFLAGS=-Dwarnings Clippy/workspace, site build, fingerprint audit | pending |
+| 15-01 Task 1 | OGO-02/04 | behavioral RED via `opencode_go_config_acceptance` (compiles today; fails on `UnknownProviderPreset`) | pending |
+| 15-01 Task 2 | OGO-02/04 | additive `ProviderKind::OpenCodeGo` + preset row GREEN; shared gate wired at both forward paths; no dormant adapter | pending |
+| 15-01 Task 3 | OGO-03/04 | `opencode_go_router_boundaries`: zero lookup/HTTP counters, no bearer/session, generic positive controls | pending |
+| 15-02 Task 1 | OGO-01/02 | four complete candidate records in the fenced ledger frame, rejected register, admitted `[]`, eight edge dispositions incl. flagged OGO-02 | pending |
+| 15-03 Task 1 | OGO-01/02/03 | English provider/README/config/nav (`site/src/lib/i18n.ts`) + engineering note `docs/opencode-go-evidence-gate.md` | pending |
+| 15-03 Task 2 | OGO-01/03 | per-file doc assertions in `tests/opencode_go_docs.rs` (one fn per English surface) | pending |
+| 15-05 Task 1 | OGO-01/02/03 + REL-05 | nine locale files (ko/ja/zh-cn README + provider + configuration) with native anchors, no invented English anchors | pending |
+| 15-05 Task 2 | REL-05 | per-file locale assertions extended in `tests/opencode_go_docs.rs` (one fn per locale surface) | pending |
+| 15-04 Task 1 | OGO-02/04 | real-rejection CLI smoke: boot with fake key, actual POST /v1/messages, Anthropic-shape gateway error, fixture request count 0, temp home cleaned | pending |
+| 15-04 Task 2 | OGO-02/03/04 | fmt, warm-cache `RUSTFLAGS=-Dwarnings` Clippy/workspace, site build, fingerprint audit, 15-05 rows present | pending |
 
 ## Exact focused commands
 
-- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib opencode_go_empty_admission -- --test-threads=1`
+- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib opencode_go_config_acceptance -- --test-threads=1`
 - `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --lib opencode_go_router_boundaries -- --test-threads=1`
-- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test opencode_go_evidence -- opencode_go_ledger -- --test-threads=1`
-- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test check_cli -- opencode_go_cli_negative -- --test-threads=1`
+- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test opencode_go_evidence ledger -- --test-threads=1`
+- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test opencode_go_docs opencode_go_docs -- --test-threads=1`
+- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test opencode_go_docs opencode_go_docs_locale -- --test-threads=1`
+- `node /tmp/shunt-phase12-isolated-run.cjs cargo test --all-features --test check_cli opencode_go_cli_negative -- --test-threads=1`
 
-Each command must select at least one test; zero selection is failure. The
-first tracer run records behavioral RED, not compile failure.
+Each command uses ONE Cargo `--` separator: the test-name filter sits before
+it, libtest options (`--test-threads=1`) after it. Zero selection is failure;
+the first tracer run records a behavioral RED, never a compile failure.
 
 ## Release gates
 
-Run separately or with raw shell `&&` (never HTML-encoded):
+Run as separate wrapper invocations (no chained conjunctions inside one call;
+never HTML-encoded):
 
-`node /tmp/shunt-phase12-isolated-run.cjs cargo fmt --all --check`
+- `node /tmp/shunt-phase12-isolated-run.cjs cargo fmt --all --check`
+- `node /tmp/shunt-phase12-isolated-run.cjs cargo clippy --all-targets --all-features -- -D warnings` (warm cache, `RUSTFLAGS=-D warnings`)
+- `node /tmp/shunt-phase12-isolated-run.cjs env RUSTFLAGS=-Dwarnings cargo test --all-features --workspace`
+- `node /tmp/shunt-phase12-isolated-run.cjs npm --prefix site run build`
 
-`node /tmp/shunt-phase12-isolated-run.cjs cargo clippy --all-targets --all-features -- -D warnings`
-
-`node /tmp/shunt-phase12-isolated-run.cjs env RUSTFLAGS=-Dwarnings cargo test --all-features --workspace`
-
-`node /tmp/shunt-phase12-isolated-run.cjs npm --prefix site run build`
-
-Rejected evidence must remain classified as failed evidence, unknown,
-wrong-wire, family-inferred, unsupported effort, or wrong terminal. OGO-02
-unclassified remains a flagged manual assumption. No live success claim is
-permitted in the empty-admission implementation.
+Rejected evidence remains classified as failed evidence, unknown fields,
+wrong wire, family inference, unsupported effort, wrong terminal, or
+unverified live. OGO-02 unclassified remains a flagged manual assumption. No
+live success claim is permitted in the empty-admission implementation.
 
 **Approval:** pending executed checks.

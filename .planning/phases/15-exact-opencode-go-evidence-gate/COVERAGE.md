@@ -19,12 +19,12 @@
 
 | source | item | plan | status |
 |---|---|---|---|
-| GOAL | Exact OpenCode Go combinations are exposed only after proof; zero tuples valid | 15-01..15-04 | COVERED |
-| REQ | OGO-01 dated complete evidence records | 15-02, 15-03 | COVERED |
+| GOAL | Exact OpenCode Go combinations are exposed only after proof; zero tuples valid | 15-01..15-05 | COVERED |
+| REQ | OGO-01 dated complete evidence records | 15-02, 15-03, 15-05 | COVERED |
 | REQ | OGO-02 hermetic + credential-safe admission, empty set valid | 15-01, 15-02, 15-04 | COVERED |
-| REQ | OGO-03 matching wire/session contract after proof | 15-03, 15-04 | COVERED |
+| REQ | OGO-03 matching wire/session contract after proof | 15-03, 15-05, 15-04 | COVERED |
 | REQ | OGO-04 fail before credentials/network | 15-01 | COVERED |
-| RESEARCH | Four candidates remain candidate-only; omen-alpha and muse-spark-1.3 have zero pinned evidence | 15-02, 15-03 | COVERED |
+| RESEARCH | Four candidates remain candidate-only; omen-alpha and muse-spark-1.3 have zero pinned evidence | 15-02, 15-03, 15-05 | COVERED |
 | RESEARCH | Strict terminal policy rejects EOF even with complete JSON | 15-01, 15-02, 15-04 | COVERED |
 | RESEARCH | Explicit product marker must survive preset expansion | 15-01 | COVERED |
 | RESEARCH | No speculative session header or multi-wire dispatch while empty | 15-01, 15-03 | COVERED |
@@ -36,5 +36,5 @@
 | CONTEXT | D-07 conditional opaque session only after proof | 15-01, 15-03 | COVERED |
 | CONTEXT | D-08 strict terminal/retry/cancellation | 15-01, 15-02, 15-04 | COVERED |
 | CONTEXT | D-09 isolated commands and production-state safety | all tasks | COVERED |
-| CONTEXT | D-10 tracer, gates, docs parity | 15-01, 15-03, 15-04 | COVERED |
-| CONTEXT | D-11 no live claim or credential inspection | 15-02, 15-03, 15-04 | COVERED |
+| CONTEXT | D-10 tracer, gates, docs parity | 15-01, 15-03, 15-05, 15-04 | COVERED |
+| CONTEXT | D-11 no live claim or credential inspection | 15-02, 15-03, 15-05, 15-04 | COVERED |

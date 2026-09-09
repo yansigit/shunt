@@ -116,3 +116,31 @@ an unrelated missing-credential startup failure.
 No runtime edits, tests, live calls or support admissions occurred. Revision 2
 dispatch controls were not exposed after the checker returned. Preserve these
 drafts; do not mark planned or execute until revision and independent check pass.
+
+## Revision 2 — written, independent check pending
+
+Planner `/root/go_revision2_glm`, `opencode-go/glm-5.3-flash`, high, returned
+PLANNING COMPLETE. Five plans now specify ProviderKind::OpenCodeGo without new
+ProviderConfig fields; config-acceptance behavioral RED; owned cfg(test) module;
+actual HTTP CLI rejection smoke with synthetic key; structured prohibition
+records; split English and locale docs with per-file assertions. These are planner
+claims awaiting independent semantic review, not accepted findings dispositions.
+
+Root checks: all five verify.plan-structure results valid with no warnings;
+decision coverage 11/11. Root removed one trailing space found by git diff --check.
+No implementation, build, or test suite ran.
+
+Native subagent dispatch controls were no longer exposed after the planner
+returned. The user-approved Cursor CLI fallback lists `gpt-5.6-luna-high`.
+Attempted an independent checker in read-only `--mode ask`, explicit high model,
+through the isolation wrapper. It exited 1 before review with ActionRequiredError:
+usage limit reached; reset reported as 2026-09-18. No spend-limit changes made.
+Wrapper confirmed production OpenCodex config mtime/SHA and backup inventory
+unchanged after help, model discovery and the rejected review invocation.
+
+No checker verdict exists for revision 2; no issue-count or review-iteration
+advance is inferred from the quota failure. Resume independent checking with an
+available approved high-thinking candidate. Do not rerun the producing revision
+or implement blindly. Still inspect serializer conformance, fallback filtering
+versus whole-chain rejection, native inbound rejection ordering and docs guide
+ownership rather than trusting structure-only checks.
