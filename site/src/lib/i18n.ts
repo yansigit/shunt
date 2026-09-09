@@ -67,6 +67,11 @@ export const NAVIGATION: NavigationGroup[] = [
       { label: "Mimo (Xiaomi)", slug: "providers/mimo" },
       { label: "OpenRouter", slug: "providers/openrouter" },
       { label: "Vercel AI Gateway", slug: "providers/vercel-ai-gateway" },
+      {
+        label: "OpenCode Go",
+        translations: { ko: "OpenCode Go (한국어)", ja: "OpenCode Go (日本語)", "zh-cn": "OpenCode Go (简体中文)" },
+        slug: "providers/opencode-go",
+      },
     ],
   },
   {

@@ -375,6 +375,24 @@ A fetch failure, non-2xx response, oversized body (capped at 1 MiB), invalid JSO
 
 Whether the poller runs at all, and its polling interval, are decided once from the boot config — exactly like `[server.pool] usage_refresh_seconds` above: if `[server.status]` is absent, empty, or `refresh_seconds` is `0` at boot, no background task is created, and a later reload that enables it does not retroactively start one. Once running, each tick re-reads the current `sources` list from the live (possibly reloaded) config, so edits to which sources are polled take effect from the next tick onward; the polling interval itself does not change on reload.
 
+### OpenCode Go (evidence-gated, zero support)
+
+OpenCode Go is currently **not supported** and has an empty admitted set. The
+explicit opt-in kind is `opencode_go`; its exact key is
+`SHUNT_OPENCODE_GO_API_KEY`, and its canonical destination is
+`https://opencode.ai/zen/go/v1`. Every Go selection is rejected before
+pre-credential lookup and dispatch, so no credential or `x-opencode-session` is
+emitted today.
+
+The four source-only candidates are `glm-5.3-flash`, `omen-alpha`,
+`muse-spark-1.3-contributor`, and `deepseek-v4-flash`. They are not supported
+or live-verified. Missing or unknown fields, family inference, wrong wires,
+unsupported effort aliases, and failed evidence remain rejected. A future
+admitted tuple must reuse the matching existing Chat contract, pass hermetic and
+credential-safe captured/live evidence, and use strict authoritative terminal
+semantics. Only a future proven tuple may send a stable opaque,
+conversation-scoped `x-opencode-session`, and only to the canonical destination.
+
 ## `[[upstreams]]` (ordered failover)
 
 `[[upstreams]]` is an ordered array of named upstreams. Declaration order is the global failover order; a model's `[models.upstream_model]` map selects which entries participate. The map's textual order does not affect routing.
