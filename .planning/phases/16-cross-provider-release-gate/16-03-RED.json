@@ -1,0 +1,9 @@
+{
+  "command": "node /tmp/shunt-phase16-serialized-run.cjs cargo test --all-features --test opencode_go_docs opencode_go_docs -- --test-threads=1",
+  "exitCode": 101,
+  "targetTest": "opencode_go_docs_plain_empty_wording",
+  "targetFile": "tests/opencode_go_docs.rs",
+  "expected": "Plain zero-admission wording without redundant parenthetical glosses; plain locale brand labels.",
+  "actual": "README.md contains empty admitted set is empty; navigation retains suffixed locale labels.",
+  "output": "running 20 tests\ntest opencode_go_docs_nav_i18n ... FAILED\ntest opencode_go_docs_plain_empty_wording ... FAILED\n---- opencode_go_docs_plain_empty_wording stdout ----\nthread panicked at tests/opencode_go_docs.rs:299:13:\nREADME.md: redundant wording \"empty admitted set is empty\"\ntest result: FAILED. 18 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
+}

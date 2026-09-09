@@ -125,7 +125,6 @@ fn assert_zero_support_contract(text: &str, surface: &str) {
         "https://opencode.ai/zen/go/v1",
         "opencode_go",
         "not supported",
-        "empty admitted set",
         "x-opencode-session",
     ] {
         assert!(
@@ -133,6 +132,10 @@ fn assert_zero_support_contract(text: &str, surface: &str) {
             "{surface} is missing required token {token:?}"
         );
     }
+    assert!(
+        text.contains("empty admitted set") || text.contains("admitted set is empty"),
+        "{surface} is missing the explicit empty-admission statement"
+    );
     for positive in [
         "OpenCode Go is supported",
         "OpenCode Go is live-verified",
@@ -264,15 +267,37 @@ fn opencode_go_docs_nav_i18n() {
         "i18n navigation is missing the Go provider link"
     );
     for label in [
-        "OpenCode Go",
-        "OpenCode Go (한국어)",
-        "OpenCode Go (日本語)",
-        "OpenCode Go (简体中文)",
+        "label: \"OpenCode Go\"",
+        "ko: \"OpenCode Go\"",
+        "ja: \"OpenCode Go\"",
+        "\"zh-cn\": \"OpenCode Go\"",
     ] {
         assert!(
             text.contains(label),
             "i18n navigation is missing locale label {label:?}"
         );
+    }
+}
+
+#[test]
+fn opencode_go_docs_plain_empty_wording() {
+    for path in [
+        "README.md", "README.ko.md", "README.ja.md", "README.zh-CN.md",
+        "site/src/content/docs/providers/opencode-go.md",
+        "site/src/content/docs/ko/providers/opencode-go.md",
+        "site/src/content/docs/ja/providers/opencode-go.md",
+        "site/src/content/docs/zh-cn/providers/opencode-go.md",
+        "site/src/content/docs/ko/reference/configuration.md",
+        "site/src/content/docs/ja/reference/configuration.md",
+        "site/src/content/docs/zh-cn/reference/configuration.md",
+    ] {
+        let text = read(path);
+        for redundant in [
+            "empty admitted set is empty", "(the empty admitted set)",
+            "(빈 허용 집합)", "（空の許可集合）", "（空准入集合）",
+        ] {
+            assert!(!text.contains(redundant), "{path}: redundant wording {redundant:?}");
+        }
     }
 }
 
