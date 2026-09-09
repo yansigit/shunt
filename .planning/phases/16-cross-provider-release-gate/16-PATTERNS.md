@@ -18,7 +18,7 @@ never the research shorthand.
 
 | New/Modified File | Role | Data Flow | Closest Tracked Analog | Match Quality |
 |---|---|---|---|---|
-| .planning/phases/16-cross-provider-release-gate/16-RELEASE-MATRIX.md (new) | evidence/ledger artifact | static transform (markdown + fenced JSON) | .planning/phases/15-exact-opencode-go-evidence-gate/15-EVIDENCE.md (validated by tests/opencode_go_evidence.rs) | exact |
+| docs/provider-release-evidence.md (new, durable through planning archive) | evidence/ledger artifact | static transform (markdown + fenced JSON) | .planning/phases/15-exact-opencode-go-evidence-gate/15-EVIDENCE.md (validated by tests/opencode_go_evidence.rs) | exact |
 | tests/release_matrix.rs (new; or a named extension in an existing release test file — prefer the smallest tracked seam) | test | request-response assertions over a static artifact | tests/opencode_go_evidence.rs | exact |
 | site/src/lib/i18n.ts (modify) | config/i18n label table | static transform | itself; fix the OpenCode Go sidebar translations at site/src/lib/i18n.ts:70-74 | exact |
 | site/src/content/docs/{,ko/,ja/,zh-cn/}guides/providers.mdx and providers/opencode-go.* (modify, wording only) | docs | static transform | per-file assertions in tests/opencode_go_docs.rs | exact |
@@ -28,7 +28,7 @@ never the research shorthand.
 
 ## Pattern Assignments
 
-### 16-RELEASE-MATRIX.md (evidence ledger, static)
+### docs/provider-release-evidence.md (evidence ledger, static)
 
 **Analog:** .planning/phases/15-exact-opencode-go-evidence-gate/15-EVIDENCE.md
 as parsed by tests/opencode_go_evidence.rs:1-140.
